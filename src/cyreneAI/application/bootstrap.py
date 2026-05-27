@@ -4,6 +4,7 @@ from pathlib import Path
 
 from cyreneAI.application.runtime import CyreneAIRuntime
 from cyreneAI.core.bot.bot_protocol import BotChannelRegistryProtocol
+from cyreneAI.core.bot.registry import BotChannelRegistry
 from cyreneAI.core.bot.session_manager import BotSessionManager
 from cyreneAI.core.bot.session_protocol import BotSessionStoreProtocol
 from cyreneAI.core.context.builder import ContextWindowBuilder
@@ -24,6 +25,9 @@ from cyreneAI.infra.adapters.skills.filesystem.loader import FileSystemSkillLoad
 from cyreneAI.infra.adapters.vector_stores.sqlite.builder import (
     create_sqlite_vector_store,
 )
+from cyreneAI.infra.bootstrap.registrations.bot_channels import (
+    register_default_bot_channels,
+)
 from cyreneAI.infra.bootstrap.registrations.providers import register_default_providers
 from cyreneAI.infra.database.sqlite.builder import create_sqlite_context_store
 
@@ -38,6 +42,7 @@ async def build_cyrene_ai_runtime(
     vector_store: VectorStoreProtocol | None = None,
     vector_database_path: str | Path | None = None,
     bot_channel_registry: BotChannelRegistryProtocol | None = None,
+    enable_memory_bot_channel: bool = False,
     bot_session_store: BotSessionStoreProtocol | None = None,
     bot_session_manager: BotSessionManager | None = None,
 ) -> CyreneAIRuntime:
@@ -78,6 +83,12 @@ async def build_cyrene_ai_runtime(
     if runtime_bot_session_manager is None and bot_session_store is not None:
         runtime_bot_session_manager = BotSessionManager(bot_session_store)
 
+    runtime_bot_channel_registry = bot_channel_registry
+    if enable_memory_bot_channel:
+        if runtime_bot_channel_registry is None:
+            runtime_bot_channel_registry = BotChannelRegistry()
+        register_default_bot_channels(runtime_bot_channel_registry)
+
     runtime_tool_registry = tool_registry or ToolRegistry()
     return CyreneAIRuntime(
         provider_manager=provider_manager,
@@ -91,6 +102,6 @@ async def build_cyrene_ai_runtime(
         skill_manager=skill_manager,
         tool_registry=runtime_tool_registry,
         tool_manager=ToolManager(runtime_tool_registry),
-        bot_channel_registry=bot_channel_registry,
+        bot_channel_registry=runtime_bot_channel_registry,
         bot_session_manager=runtime_bot_session_manager,
     )

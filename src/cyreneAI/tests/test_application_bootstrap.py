@@ -170,6 +170,25 @@ def test_build_cyrene_ai_runtime_wires_bot_channel_registry() -> None:
     asyncio.run(_run_build_runtime_wires_bot_channel_registry())
 
 
+async def _run_build_runtime_can_enable_memory_bot_channel() -> None:
+    runtime = await build_cyrene_ai_runtime(
+        enable_memory_bot_channel=True,
+    )
+
+    assert runtime.bot_channel_registry is not None
+    assert runtime.bot_channel_registry.exists("memory")
+    assert isinstance(
+        runtime.bot_channel_registry.get_channel("memory"),
+        InMemoryBotChannel,
+    )
+
+    await runtime.close()
+
+
+def test_build_cyrene_ai_runtime_can_enable_memory_bot_channel() -> None:
+    asyncio.run(_run_build_runtime_can_enable_memory_bot_channel())
+
+
 async def _run_build_runtime_wires_bot_session_store() -> None:
     store = InMemoryBotSessionStore()
 
