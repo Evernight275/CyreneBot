@@ -1,0 +1,50 @@
+# 环境变量
+.env
+.env.*
+
+# 虚拟环境
+.venv/
+venv/
+env/
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 构建与打包产物
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# 测试与类型检查缓存
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# IDE 相关文件
+.vscode/
+.idea/
+
+# 日志文件
+logs/
+*.log
+
+# 数据库文件
+*.db
+*.sqlite
+*.sqlite3
+
+# 临时文件
+*.tmp
+*.bak
+*.swp
+
+# 外部对比/临时克隆
+.external/
+
+.codex/
+.agents/

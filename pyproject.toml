@@ -1,0 +1,28 @@
+[project]
+name = "CyreneAI"
+version = "0.1.0"
+description = "A cleanly layered AI runtime for provider, context, skill, and tool orchestration."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "openai",
+    "python-dotenv",
+    "httpx",
+    "pydantic",
+    "pytest",
+    "pytest-asyncio",
+    "google-genai",
+    "anthropic",
+    "sqlalchemy",
+    "aiosqlite",
+]
+
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["src/cyreneAI/tests"]

@@ -1,0 +1,117 @@
+from __future__ import annotations
+
+from cyreneAI.core.errors.base import ConflictError, NotFoundError, StateError
+from cyreneAI.core.schema.provider import ProviderInfo, ProviderConfig
+from cyreneAI.core.provider.provider_protocol import (
+    ProviderFactoryProtocol,
+    ProviderInstanceProtocol,
+)
+
+
+class ProviderManager:
+    """
+    Provider 运行时管理器。
+
+    只负责 provider 实例生命周期：
+    1. 创建
+    2. 获取
+    3. 移除
+    4. 重载
+    5. 关闭
+    """
+
+    def __init__(self, factory: ProviderFactoryProtocol) -> None:
+        self._factory = factory
+        self._instances: dict[str, ProviderInstanceProtocol] = {}
+
+    async def add(self, config: ProviderConfig) -> ProviderInstanceProtocol:
+        """
+        根据配置创建并加入 provider 实例。
+        """
+
+        provider_id = config.provider_id
+
+        if provider_id in self._instances:
+            raise ConflictError(f"Provider instance already exists: {provider_id}")
+
+        instance = await self._factory.create(config)
+        self._instances[provider_id] = instance
+
+        return instance
+
+    def get(self, provider_id: str) -> ProviderInstanceProtocol:
+        """
+        获取 provider 实例。
+        """
+
+        instance = self._instances.get(provider_id)
+
+        if instance is None:
+            raise NotFoundError(f"Provider instance not found: {provider_id}")
+
+        return instance
+
+    def exists(self, provider_id: str) -> bool:
+        """
+        判断 provider 实例是否存在。
+        """
+
+        return provider_id in self._instances
+
+    def list_running(self) -> list[ProviderInfo]:
+        """
+        列出当前运行中的 provider 信息。
+        """
+
+        return [instance.info for instance in self._instances.values()]
+
+    async def remove(self, provider_id: str) -> None:
+        """
+        移除并关闭 provider 实例。
+        """
+
+        instance = self._instances.pop(provider_id, None)
+
+        if instance is None:
+            raise NotFoundError(f"Provider instance not found: {provider_id}")
+
+        await instance.close()
+
+    async def reload(self, config: ProviderConfig) -> ProviderInstanceProtocol:
+        """
+        重新加载 provider 实例。
+
+        成功创建新实例后，再关闭旧实例，避免 reload 失败导致原实例丢失。
+        """
+
+        provider_id = config.provider_id
+        old_instance = self._instances.get(provider_id)
+
+        new_instance = await self._factory.create(config)
+        self._instances[provider_id] = new_instance
+
+        if old_instance is not None:
+            await old_instance.close()
+
+        return new_instance
+
+    async def close_all(self) -> None:
+        """
+        关闭全部 provider 实例。
+        """
+
+        errors: list[Exception] = []
+
+        for provider_id, instance in list(self._instances.items()):
+            try:
+                await instance.close()
+            except Exception as exc:
+                errors.append(exc)
+            finally:
+                self._instances.pop(provider_id, None)
+
+        if errors:
+            raise StateError(
+                f"Failed to close {len(errors)} provider instance(s)",
+                cause=errors[0],
+            )
