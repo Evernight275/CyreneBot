@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from openai.types import CreateEmbeddingResponse
 from openai.types.chat import ChatCompletion
 
@@ -11,7 +13,7 @@ from cyreneAI.core.schema.message import (
     Message,
     MessageRole,
 )
-from cyreneAI.core.schema.tool import ToolChoice, ToolDefinition
+from cyreneAI.core.schema.tool import ToolCall, ToolChoice, ToolDefinition
 from cyreneAI.infra.adapters.providers.openai_compatible.mapper import (
     map_chat_request,
     map_chat_response,
@@ -32,6 +34,21 @@ def test_map_chat_request_builds_openai_compatible_payload() -> None:
                     ContentPart(type=ContentPartType.TEXT, text="hello"),
                     ContentPart(type=ContentPartType.IMAGE, text="ignored"),
                 ],
+            ),
+            Message(
+                role=MessageRole.ASSISTANT,
+                tool_calls=[
+                    ToolCall(
+                        id="call-1",
+                        name="lookup",
+                        arguments="{\"key\":\"value\"}",
+                    )
+                ],
+                metadata={
+                    "openai_compatible": {
+                        "reasoning_content": "thinking before tool call",
+                    }
+                },
             )
         ],
         temperature=0,
@@ -58,8 +75,28 @@ def test_map_chat_request_builds_openai_compatible_payload() -> None:
         {
             "role": "user",
             "content": "hello",
-        }
+        },
+        {
+            "role": "assistant",
+            "tool_calls": [
+                {
+                    "id": "call-1",
+                    "type": "function",
+                    "function": {
+                        "name": "lookup",
+                        "arguments": "{\"key\":\"value\"}",
+                    },
+                }
+            ],
+        },
     ]
+    deepseek_payload = map_chat_request(
+        request,
+        include_reasoning_content=True,
+    )
+    assert deepseek_payload["messages"][1]["reasoning_content"] == (
+        "thinking before tool call"
+    )
     assert payload["temperature"] == 0
     assert payload["max_tokens"] == 16
     assert payload["stream"] is False
@@ -87,6 +124,28 @@ def test_map_chat_request_builds_openai_compatible_payload() -> None:
     assert "top_p" not in payload
 
 
+def test_map_chat_request_filters_empty_assistant_messages() -> None:
+    request = ChatRequest(
+        provider_id="provider-1",
+        model="test-model",
+        messages=[
+            Message(role=MessageRole.ASSISTANT),
+            Message(role=MessageRole.USER, content=[
+                ContentPart(type=ContentPartType.TEXT, text="hello")
+            ]),
+        ],
+    )
+
+    payload = map_chat_request(request)
+
+    assert payload["messages"] == [
+        {
+            "role": "user",
+            "content": "hello",
+        }
+    ]
+
+
 def test_map_chat_response_builds_core_response() -> None:
     completion = ChatCompletion(
         id="chatcmpl-test",
@@ -100,6 +159,7 @@ def test_map_chat_response_builds_core_response() -> None:
                 "message": {
                     "role": "assistant",
                     "content": "pong",
+                    "reasoning_content": "thinking before answer",
                     "tool_calls": [
                         {
                             "id": "call-1",
@@ -133,9 +193,58 @@ def test_map_chat_response_builds_core_response() -> None:
     assert response.message.role == MessageRole.ASSISTANT
     assert response.message.content is not None
     assert response.message.content[0].text == "pong"
+    assert response.message.tool_calls is not None
+    assert response.message.tool_calls[0].id == "call-1"
+    assert response.message.metadata == {
+        "openai_compatible": {
+            "reasoning_content": "thinking before answer",
+        }
+    }
     assert response.tool_calls[0].id == "call-1"
     assert response.tool_calls[0].name == "lookup"
     assert response.tool_calls[0].arguments == "{\"key\":\"value\"}"
+
+
+def test_map_chat_response_normalizes_content_and_extracts_think_tags() -> None:
+    completion = SimpleNamespace(
+        model="test-model",
+        usage=None,
+        choices=[
+            SimpleNamespace(
+                finish_reason="stop",
+                usage=SimpleNamespace(
+                    prompt_tokens=5,
+                    completion_tokens=6,
+                    total_tokens=11,
+                ),
+                message=SimpleNamespace(
+                    content=[
+                        {"type": "text", "text": "<think>hidden</think>"},
+                        {"type": "text", "text": "visible"},
+                    ],
+                    refusal=None,
+                    tool_calls=None,
+                    reasoning_content=None,
+                ),
+            )
+        ],
+        model_dump=lambda mode: {"model": "test-model"},
+    )
+
+    response = map_chat_response("provider-1", completion)
+
+    assert response.message is not None
+    assert response.message.content is not None
+    assert response.message.content[0].text == "visible"
+    assert response.message.metadata == {
+        "openai_compatible": {
+            "reasoning_content": "hidden",
+        }
+    }
+    assert response.usage is not None
+    assert response.usage.prompt_tokens == 5
+    assert response.usage.completion_tokens == 6
+    assert response.usage.total_tokens == 11
 
 
 def test_map_finish_reason_handles_known_and_unknown_values() -> None:

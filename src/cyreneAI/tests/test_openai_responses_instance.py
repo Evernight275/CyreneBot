@@ -104,9 +104,19 @@ class _FakeResponses:
         return self.response
 
 
+class _FakeModels:
+    async def list(self) -> Any:
+        return type(
+            "ModelList",
+            (),
+            {"data": [type("Model", (), {"id": "gpt-test"})()]},
+        )()
+
+
 class _FakeOpenAIClient:
     def __init__(self, responses: _FakeResponses) -> None:
         self.responses = responses
+        self.models = _FakeModels()
         self.closed = False
 
     async def close(self) -> None:
@@ -166,5 +176,20 @@ def test_openai_responses_instance_chat_translates_errors() -> None:
             await instance.chat(_request())
 
         assert caught.value.cause is error
+
+    asyncio.run(run())
+
+
+def test_openai_responses_instance_lists_models() -> None:
+    async def run() -> None:
+        instance = OpenAIResponsesProviderInstance(
+            config=_config(),
+            info=_provider_info(),
+            client=_FakeOpenAIClient(_FakeResponses(response=_response())),
+        )
+
+        models = await instance.list_models()
+
+        assert [model.model_id for model in models] == ["gpt-test"]
 
     asyncio.run(run())

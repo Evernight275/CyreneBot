@@ -37,6 +37,12 @@ class TelegramBotClient:
         """
         return await self.request("sendMessage", payload)
 
+    async def get_me(self) -> dict[str, Any]:
+        """
+        调用 getMe。
+        """
+        return await self.request("getMe")
+
     async def set_webhook(
         self,
         *,
@@ -111,9 +117,9 @@ class TelegramBotClient:
         """
         try:
             response = await self._request(method, payload or {})
-            response.raise_for_status()
-            body = response.json()
+            body = _parse_response_body(response)
             if not isinstance(body, dict):
+                response.raise_for_status()
                 raise TelegramBotAPIError("Telegram response body must be an object")
             if body.get("ok") is not True:
                 raise TelegramBotAPIError(
@@ -121,6 +127,7 @@ class TelegramBotClient:
                     error_code=body.get("error_code"),
                     payload=body,
                 )
+            response.raise_for_status()
             result = body.get("result")
             return result if isinstance(result, dict) else {"result": result}
         except Exception as exc:
@@ -144,3 +151,11 @@ class TelegramBotClient:
 
         async with httpx.AsyncClient(timeout=self._timeout) as client:
             return await client.request("POST", url, json=payload)
+
+
+def _parse_response_body(response: httpx.Response) -> Any:
+    try:
+        return response.json()
+    except ValueError:
+        response.raise_for_status()
+        raise TelegramBotAPIError("Telegram response body must be JSON")

@@ -5,7 +5,7 @@ import asyncio
 import pytest
 
 from cyreneAI.core.errors.base import ConflictError, NotFoundError, StateError
-from cyreneAI.core.errors.provider import ProviderNotFoundError
+from cyreneAI.core.errors.provider import ProviderError, ProviderNotFoundError
 from cyreneAI.core.provider.factory import ProviderFactory
 from cyreneAI.core.provider.manager import ProviderManager
 from cyreneAI.core.provider.registry import ProviderRegistry
@@ -13,6 +13,7 @@ from cyreneAI.core.schema.provider import (
     ProviderCapability,
     ProviderConfig,
     ProviderInfo,
+    ProviderModel,
     ProviderType,
 )
 
@@ -32,11 +33,13 @@ def _info(
     provider_type: ProviderType = ProviderType.OPENAI_COMPATIBLE,
     *,
     capabilities: list[ProviderCapability] | None = None,
+    models: list[str] | None = None,
 ) -> ProviderInfo:
     return ProviderInfo(
         provider_type=provider_type,
         name=f"{provider_type} test",
         description="test provider",
+        models=models,
         capabilities=capabilities,
     )
 
@@ -57,6 +60,25 @@ class _FakeProviderInstance:
         self.closed = True
         if self.close_error is not None:
             raise self.close_error
+
+
+class _FakeModelListingProviderInstance(_FakeProviderInstance):
+    def __init__(
+        self,
+        config: ProviderConfig,
+        *,
+        models: list[ProviderModel] | None = None,
+        list_error: Exception | None = None,
+    ) -> None:
+        super().__init__(config)
+        self.info = _info(config.provider_type, models=["catalog-model"])
+        self.models = models or []
+        self.list_error = list_error
+
+    async def list_models(self) -> list[ProviderModel]:
+        if self.list_error is not None:
+            raise self.list_error
+        return self.models
 
 
 async def _build_instance(config: ProviderConfig) -> _FakeProviderInstance:
@@ -194,5 +216,45 @@ def test_provider_manager_close_all_collects_close_errors() -> None:
 
         assert caught.value.cause is failure
         assert not manager.exists("provider-1")
+
+    asyncio.run(run())
+
+
+def test_provider_manager_lists_models_from_instance() -> None:
+    async def run() -> None:
+        async def build(config: ProviderConfig) -> _FakeModelListingProviderInstance:
+            return _FakeModelListingProviderInstance(
+                config,
+                models=[ProviderModel(model_id="runtime-model")],
+            )
+
+        factory = ProviderFactory()
+        factory.register(ProviderType.OPENAI_COMPATIBLE, build)
+        manager = ProviderManager(factory)
+        await manager.add(_config())
+
+        assert await manager.list_models("provider-1") == [
+            ProviderModel(model_id="runtime-model")
+        ]
+
+    asyncio.run(run())
+
+
+def test_provider_manager_falls_back_to_catalog_models() -> None:
+    async def run() -> None:
+        async def build(config: ProviderConfig) -> _FakeModelListingProviderInstance:
+            return _FakeModelListingProviderInstance(
+                config,
+                list_error=ProviderError("model listing failed"),
+            )
+
+        factory = ProviderFactory()
+        factory.register(ProviderType.OPENAI_COMPATIBLE, build)
+        manager = ProviderManager(factory)
+        await manager.add(_config())
+
+        assert await manager.list_models("provider-1") == [
+            ProviderModel(model_id="catalog-model")
+        ]
 
     asyncio.run(run())

@@ -18,5 +18,6 @@ ANTHROPIC_PROVIDER_INFO = ProviderInfo(
     features=[
         ProviderFeature.TOOL_CALLING,
         ProviderFeature.STREAMING,
+        ProviderFeature.MODEL_LISTING,
     ],
 )

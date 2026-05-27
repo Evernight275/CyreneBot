@@ -22,7 +22,7 @@ from cyreneAI.core.schema.message import (
     MessageRole,
 )
 from cyreneAI.core.schema.provider import ProviderConfig, ProviderType
-from cyreneAI.core.schema.tool import ToolChoice, ToolDefinition
+from cyreneAI.core.schema.tool import ToolDefinition
 from cyreneAI.infra.bootstrap.registrations.openai_compatible import (
     register_openai_compatible_provider,
 )
@@ -73,7 +73,7 @@ async def _run_real_chat() -> None:
             )
         ],
         temperature=0,
-        max_tokens=16,
+        max_tokens=64,
     )
 
     try:
@@ -159,7 +159,6 @@ async def _run_real_chat_with_tool_calls() -> None:
                 },
             )
         ],
-        tool_choice=ToolChoice(mode="tool", name="lookup_order_status"),
     )
 
     try:

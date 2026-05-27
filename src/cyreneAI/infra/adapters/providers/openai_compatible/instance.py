@@ -13,10 +13,12 @@ from cyreneAI.infra.adapters.providers.openai_compatible.mapper import (
 from cyreneAI.core.schema.provider import (
     ProviderConfig,
     ProviderInfo,
+    ProviderModel,
 )
 from cyreneAI.core.errors.provider import ProviderConfigurationError
 from cyreneAI.core.schema.chat import ChatRequest, ChatResponse
 from cyreneAI.core.schema.embedding import EmbeddingRequest, EmbeddingResponse
+from cyreneAI.infra.adapters.providers.model_mapper import map_provider_model
 
 
 class OpenAICompatibleProviderInstance:
@@ -44,7 +46,10 @@ class OpenAICompatibleProviderInstance:
 
     async def chat(self, request: ChatRequest) -> ChatResponse:
         try:
-            payload = map_chat_request(request)
+            payload = map_chat_request(
+                request,
+                include_reasoning_content=_is_deepseek_provider(self.config),
+            )
             response = await self._client.chat.completions.create(**payload)
             return map_chat_response(
                 provider_id=self.config.provider_id,
@@ -63,3 +68,27 @@ class OpenAICompatibleProviderInstance:
             )
         except Exception as exc:
             raise_openai_error(exc)
+
+    async def list_models(self) -> list[ProviderModel]:
+        try:
+            response = await self._client.models.list()
+            return [
+                model
+                for model in (map_provider_model(item) for item in response.data)
+                if model is not None
+            ]
+        except Exception as exc:
+            raise_openai_error(exc)
+
+
+def _is_deepseek_provider(config: ProviderConfig) -> bool:
+    values = [
+        config.provider_id,
+        config.base_url,
+        *config.metadata.keys(),
+        *config.metadata.values(),
+    ]
+    return any(
+        isinstance(value, str) and "deepseek" in value.casefold()
+        for value in values
+    )

@@ -22,7 +22,7 @@ from cyreneAI.core.schema.provider import (
     ProviderInfo,
     ProviderType,
 )
-from cyreneAI.core.schema.tool import ToolChoice, ToolDefinition
+from cyreneAI.core.schema.tool import ToolCall, ToolChoice, ToolDefinition
 from cyreneAI.infra.adapters.providers.openai_compatible.instance import (
     OpenAICompatibleProviderInstance,
 )
@@ -62,6 +62,19 @@ class _FakeEmbeddings:
         return self.response
 
 
+class _FakeModels:
+    async def list(self):
+        return type(
+            "ModelList",
+            (),
+            {
+                "data": [
+                    type("Model", (), {"id": "chat-model", "owned_by": "provider"})()
+                ]
+            },
+        )()
+
+
 class _FakeOpenAIClient:
     def __init__(
         self,
@@ -88,6 +101,7 @@ class _FakeOpenAIClient:
             )
         self.chat = _FakeChat(response)
         self.embeddings = _FakeEmbeddings(embedding_response)
+        self.models = _FakeModels()
         self.closed = False
 
     async def close(self) -> None:
@@ -225,6 +239,78 @@ def test_openai_compatible_instance_passes_tool_call_payload() -> None:
     asyncio.run(_run_chat_with_tool_call())
 
 
+async def _run_chat_omits_reasoning_content_for_standard_provider() -> None:
+    client = _FakeOpenAIClient()
+    config = ProviderConfig(
+        provider_id="standard-openai-compatible",
+        provider_type=ProviderType.OPENAI_COMPATIBLE,
+        api_key="test-key",
+    )
+    instance = OpenAICompatibleProviderInstance(
+        config=config,
+        info=_provider_info(),
+        client=client,
+    )
+
+    await instance.chat(_request_with_reasoning_content())
+
+    assert client.chat.completions.payload is not None
+    assert "reasoning_content" not in client.chat.completions.payload["messages"][0]
+
+
+def test_openai_compatible_instance_omits_reasoning_content_by_default() -> None:
+    asyncio.run(_run_chat_omits_reasoning_content_for_standard_provider())
+
+
+async def _run_chat_includes_reasoning_content_for_deepseek_provider() -> None:
+    client = _FakeOpenAIClient()
+    config = ProviderConfig(
+        provider_id="deepseek",
+        provider_type=ProviderType.OPENAI_COMPATIBLE,
+        api_key="test-key",
+    )
+    instance = OpenAICompatibleProviderInstance(
+        config=config,
+        info=_provider_info(),
+        client=client,
+    )
+
+    await instance.chat(_request_with_reasoning_content())
+
+    assert client.chat.completions.payload is not None
+    assert client.chat.completions.payload["messages"][0]["reasoning_content"] == (
+        "thinking before tool call"
+    )
+
+
+def test_openai_compatible_instance_includes_reasoning_content_for_deepseek() -> None:
+    asyncio.run(_run_chat_includes_reasoning_content_for_deepseek_provider())
+
+
+def _request_with_reasoning_content() -> ChatRequest:
+    return ChatRequest(
+        provider_id="test",
+        model="test-model",
+        messages=[
+            Message(
+                role=MessageRole.ASSISTANT,
+                tool_calls=[
+                    ToolCall(
+                        id="call-1",
+                        name="lookup",
+                        arguments="{\"key\":\"value\"}",
+                    )
+                ],
+                metadata={
+                    "openai_compatible": {
+                        "reasoning_content": "thinking before tool call",
+                    }
+                },
+            )
+        ],
+    )
+
+
 async def _run_embedding_request() -> None:
     embedding_response = CreateEmbeddingResponse(
         object="list",
@@ -279,3 +365,23 @@ async def _run_embedding_request() -> None:
 
 def test_openai_compatible_instance_passes_embedding_payload() -> None:
     asyncio.run(_run_embedding_request())
+
+
+def test_openai_compatible_instance_lists_models() -> None:
+    async def run() -> None:
+        instance = OpenAICompatibleProviderInstance(
+            config=ProviderConfig(
+                provider_id="test",
+                provider_type=ProviderType.OPENAI_COMPATIBLE,
+                api_key="test-key",
+            ),
+            info=_provider_info(),
+            client=_FakeOpenAIClient(),
+        )
+
+        models = await instance.list_models()
+
+        assert models[0].model_id == "chat-model"
+        assert models[0].metadata == {"owned_by": "provider"}
+
+    asyncio.run(run())

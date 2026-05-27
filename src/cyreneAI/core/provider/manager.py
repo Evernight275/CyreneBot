@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from cyreneAI.core.errors.base import ConflictError, NotFoundError, StateError
-from cyreneAI.core.schema.provider import ProviderInfo, ProviderConfig
+from cyreneAI.core.errors.provider import ProviderError
+from cyreneAI.core.schema.provider import ProviderInfo, ProviderConfig, ProviderModel
 from cyreneAI.core.provider.provider_protocol import (
     ProviderFactoryProtocol,
     ProviderInstanceProtocol,
@@ -65,6 +66,24 @@ class ProviderManager:
 
         return [instance.info for instance in self._instances.values()]
 
+    async def list_models(self, provider_id: str) -> list[ProviderModel]:
+        """
+        列出 provider 可用模型。
+
+        如果运行时 provider 不支持实时列模型，或实时请求失败，则回退到
+        provider catalog 中声明的静态模型列表。
+        """
+
+        instance = self.get(provider_id)
+        list_models = getattr(instance, "list_models", None)
+        if list_models is not None:
+            try:
+                return await list_models()
+            except ProviderError:
+                return _catalog_models(instance.info)
+
+        return _catalog_models(instance.info)
+
     async def remove(self, provider_id: str) -> None:
         """
         移除并关闭 provider 实例。
@@ -115,3 +134,10 @@ class ProviderManager:
                 f"Failed to close {len(errors)} provider instance(s)",
                 cause=errors[0],
             )
+
+
+def _catalog_models(info: ProviderInfo) -> list[ProviderModel]:
+    return [
+        ProviderModel(model_id=model_id)
+        for model_id in (info.models or [])
+    ]

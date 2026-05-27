@@ -4,12 +4,13 @@ from anthropic import AsyncAnthropic
 
 from cyreneAI.core.errors.provider import ProviderConfigurationError
 from cyreneAI.core.schema.chat import ChatRequest, ChatResponse
-from cyreneAI.core.schema.provider import ProviderConfig, ProviderInfo
+from cyreneAI.core.schema.provider import ProviderConfig, ProviderInfo, ProviderModel
 from cyreneAI.infra.adapters.providers.anthropic.errors import raise_anthropic_error
 from cyreneAI.infra.adapters.providers.anthropic.mapper import (
     map_anthropic_request,
     map_anthropic_response,
 )
+from cyreneAI.infra.adapters.providers.model_mapper import map_provider_model
 
 
 class AnthropicProviderInstance:
@@ -42,5 +43,16 @@ class AnthropicProviderInstance:
                 provider_id=self.config.provider_id,
                 response=response,
             )
+        except Exception as exc:
+            raise_anthropic_error(exc)
+
+    async def list_models(self) -> list[ProviderModel]:
+        try:
+            response = await self._client.models.list()
+            return [
+                model
+                for model in (map_provider_model(item) for item in response.data)
+                if model is not None
+            ]
         except Exception as exc:
             raise_anthropic_error(exc)

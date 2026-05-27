@@ -5,7 +5,7 @@ from google import genai
 
 from cyreneAI.core.errors.provider import ProviderConfigurationError
 from cyreneAI.core.schema.chat import ChatRequest, ChatResponse
-from cyreneAI.core.schema.provider import ProviderConfig, ProviderInfo
+from cyreneAI.core.schema.provider import ProviderConfig, ProviderInfo, ProviderModel
 from cyreneAI.infra.adapters.providers.google_genai.errors import (
     raise_google_genai_error,
 )
@@ -13,6 +13,7 @@ from cyreneAI.infra.adapters.providers.google_genai.mapper import (
     map_google_genai_request,
     map_google_genai_response,
 )
+from cyreneAI.infra.adapters.providers.model_mapper import map_provider_model
 
 
 class GoogleGenAIProviderInstance:
@@ -57,5 +58,16 @@ class GoogleGenAIProviderInstance:
                 provider_id=self.config.provider_id,
                 response=response,
             )
+        except Exception as exc:
+            raise_google_genai_error(exc)
+
+    async def list_models(self) -> list[ProviderModel]:
+        try:
+            response = await asyncio.to_thread(self._client.models.list)
+            return [
+                model
+                for model in (map_provider_model(item) for item in response)
+                if model is not None
+            ]
         except Exception as exc:
             raise_google_genai_error(exc)

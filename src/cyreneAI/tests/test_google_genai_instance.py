@@ -79,9 +79,13 @@ class _FakeModels:
     def __init__(
         self,
         response: GenerateContentResponse | None = None,
+        models_response: list[Any] | None = None,
         error: Exception | None = None,
     ) -> None:
         self.response = response
+        self.models_response = models_response or [
+            type("Model", (), {"name": "models/gemini-test"})()
+        ]
         self.error = error
         self.payload: dict[str, Any] | None = None
 
@@ -91,6 +95,11 @@ class _FakeModels:
             raise self.error
         assert self.response is not None
         return self.response
+
+    def list(self) -> list[Any]:
+        if self.error is not None:
+            raise self.error
+        return self.models_response
 
 
 class _FakeGoogleClient:
@@ -202,5 +211,20 @@ def test_google_genai_instance_chat_translates_errors() -> None:
             await instance.chat(_request())
 
         assert caught.value.cause is error
+
+    asyncio.run(run())
+
+
+def test_google_genai_instance_lists_models() -> None:
+    async def run() -> None:
+        instance = GoogleGenAIProviderInstance(
+            config=_config(),
+            info=_provider_info(),
+            client=_FakeGoogleClient(_FakeModels(response=_response())),
+        )
+
+        models = await instance.list_models()
+
+        assert [model.model_id for model in models] == ["models/gemini-test"]
 
     asyncio.run(run())

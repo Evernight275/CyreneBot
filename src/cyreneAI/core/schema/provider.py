@@ -38,6 +38,7 @@ class ProviderFeature(StrEnum):
     STREAMING = "streaming"
     VISION = "vision"
     JSON_MODE = "json_mode"
+    MODEL_LISTING = "model_listing"
 
 
 class ProviderType(StrEnum):
@@ -65,6 +66,16 @@ class ProviderInfo(ProviderBase):
     models: list[str] | None = None
     capabilities: list[ProviderCapability] | None = None
     features: list[ProviderFeature] | None = None
+
+
+class ProviderModel(ProviderBase):
+    """
+    provider 模型信息schema
+    """
+
+    model_id: str
+    name: str | None = None
+    metadata: dict[str, str] = Field(default_factory=dict)
 
 
 class ProviderReference(ProviderBase):

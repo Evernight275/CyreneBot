@@ -19,5 +19,6 @@ OPENAI_RESPONSES_PROVIDER_INFO = ProviderInfo(
         ProviderFeature.TOOL_CALLING,
         ProviderFeature.STREAMING,
         ProviderFeature.JSON_MODE,
+        ProviderFeature.MODEL_LISTING,
     ],
 )

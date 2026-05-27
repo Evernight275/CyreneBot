@@ -170,6 +170,21 @@ async def _run_chat_orchestrator_request() -> None:
             ChatResponse(
                 provider_id="provider-1",
                 model="fake-model",
+                message=Message(
+                    role=MessageRole.ASSISTANT,
+                    tool_calls=[
+                        ToolCall(
+                            id="call-1",
+                            name="lookup",
+                            arguments="{\"key\":\"value\"}",
+                        )
+                    ],
+                    metadata={
+                        "openai_compatible": {
+                            "reasoning_content": "thinking before tool call",
+                        }
+                    },
+                ),
                 tool_calls=[
                     ToolCall(
                         id="call-1",
@@ -251,6 +266,14 @@ async def _run_chat_orchestrator_request() -> None:
     assert provider_request.messages[1].role == MessageRole.USER
 
     feedback_request = provider.requests[1]
+    assert feedback_request.messages[-2].role == MessageRole.ASSISTANT
+    assert feedback_request.messages[-2].tool_calls is not None
+    assert feedback_request.messages[-2].tool_calls[0].id == "call-1"
+    assert feedback_request.messages[-2].metadata == {
+        "openai_compatible": {
+            "reasoning_content": "thinking before tool call",
+        }
+    }
     assert feedback_request.messages[-1].role == MessageRole.TOOL
     assert feedback_request.messages[-1].name == "lookup"
     assert feedback_request.messages[-1].tool_call_id == "call-1"

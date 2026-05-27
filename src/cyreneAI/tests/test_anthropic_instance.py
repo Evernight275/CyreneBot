@@ -93,9 +93,27 @@ class _FakeMessages:
         return self.response
 
 
+class _FakeModels:
+    async def list(self) -> Any:
+        return type(
+            "ModelList",
+            (),
+            {
+                "data": [
+                    type(
+                        "Model",
+                        (),
+                        {"id": "claude-test", "display_name": "Claude Test"},
+                    )()
+                ]
+            },
+        )()
+
+
 class _FakeAnthropicClient:
     def __init__(self, messages: _FakeMessages) -> None:
         self.messages = messages
+        self.models = _FakeModels()
         self.closed = False
 
     async def close(self) -> None:
@@ -155,5 +173,21 @@ def test_anthropic_instance_chat_translates_errors() -> None:
             await instance.chat(_request())
 
         assert caught.value.cause is error
+
+    asyncio.run(run())
+
+
+def test_anthropic_instance_lists_models() -> None:
+    async def run() -> None:
+        instance = AnthropicProviderInstance(
+            config=_config(),
+            info=_provider_info(),
+            client=_FakeAnthropicClient(_FakeMessages(response=_response())),
+        )
+
+        models = await instance.list_models()
+
+        assert models[0].model_id == "claude-test"
+        assert models[0].name == "Claude Test"
 
     asyncio.run(run())

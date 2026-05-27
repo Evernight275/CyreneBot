@@ -1,7 +1,11 @@
 from __future__ import annotations
 from enum import StrEnum
+from typing import Any
+
+from pydantic import Field
 
 from cyreneAI.core.schema.base import CyreneAISchema
+from cyreneAI.core.schema.tool import ToolCall
 
 
 class MessageRole(StrEnum):
@@ -50,3 +54,5 @@ class Message(CyreneAISchema):
     content: list[ContentPart] | None = None
     name: str | None = None
     tool_call_id: str | None = None
+    tool_calls: list[ToolCall] | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)

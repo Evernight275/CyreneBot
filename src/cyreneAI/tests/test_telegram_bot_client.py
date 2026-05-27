@@ -83,6 +83,45 @@ def test_telegram_bot_client_sends_request() -> None:
     asyncio.run(run())
 
 
+def test_telegram_bot_client_get_me() -> None:
+    async def run() -> None:
+        http_client = FakeHTTPClient(
+            _response(
+                200,
+                {
+                    "ok": True,
+                    "result": {
+                        "id": 123,
+                        "is_bot": True,
+                        "username": "cyrene_bot",
+                    },
+                },
+            )
+        )
+        client = TelegramBotClient(
+            "token",
+            base_url="https://telegram.example",
+            client=http_client,
+        )
+
+        result = await client.get_me()
+
+        assert result == {
+            "id": 123,
+            "is_bot": True,
+            "username": "cyrene_bot",
+        }
+        assert http_client.requests == [
+            {
+                "method": "POST",
+                "url": "https://telegram.example/bottoken/getMe",
+                "json": {},
+            }
+        ]
+
+    asyncio.run(run())
+
+
 def test_telegram_bot_client_translates_api_error() -> None:
     async def run() -> None:
         client = TelegramBotClient(
@@ -101,6 +140,30 @@ def test_telegram_bot_client_translates_api_error() -> None:
 
         with pytest.raises(BotActionError):
             await client.send_message({"chat_id": "99", "text": "pong"})
+
+    asyncio.run(run())
+
+
+def test_telegram_bot_client_uses_telegram_error_description_for_http_error() -> None:
+    async def run() -> None:
+        client = TelegramBotClient(
+            "token",
+            client=FakeHTTPClient(
+                _response(
+                    400,
+                    {
+                        "ok": False,
+                        "error_code": 400,
+                        "description": "Bad Request: chat not found",
+                    },
+                )
+            ),
+        )
+
+        with pytest.raises(BotActionError) as caught:
+            await client.send_message({"chat_id": "99", "text": "pong"})
+
+        assert str(caught.value) == "Bad Request: chat not found"
 
     asyncio.run(run())
 
