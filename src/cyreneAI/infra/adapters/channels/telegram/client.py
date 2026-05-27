@@ -37,6 +37,43 @@ class TelegramBotClient:
         """
         return await self.request("sendMessage", payload)
 
+    async def set_webhook(
+        self,
+        *,
+        url: str,
+        secret_token: str | None = None,
+        allowed_updates: list[str] | None = None,
+        drop_pending_updates: bool | None = None,
+    ) -> dict[str, Any]:
+        """
+        调用 setWebhook。
+        """
+        payload: dict[str, Any] = {
+            "url": url,
+        }
+        if secret_token is not None:
+            payload["secret_token"] = secret_token
+        if allowed_updates is not None:
+            payload["allowed_updates"] = allowed_updates
+        if drop_pending_updates is not None:
+            payload["drop_pending_updates"] = drop_pending_updates
+        return await self.request("setWebhook", payload)
+
+    async def delete_webhook(
+        self,
+        *,
+        drop_pending_updates: bool = False,
+    ) -> dict[str, Any]:
+        """
+        调用 deleteWebhook。
+        """
+        return await self.request(
+            "deleteWebhook",
+            {
+                "drop_pending_updates": drop_pending_updates,
+            },
+        )
+
     async def request(
         self,
         method: str,

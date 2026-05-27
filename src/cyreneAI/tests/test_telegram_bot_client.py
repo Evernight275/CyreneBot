@@ -103,3 +103,77 @@ def test_telegram_bot_client_translates_api_error() -> None:
             await client.send_message({"chat_id": "99", "text": "pong"})
 
     asyncio.run(run())
+
+
+def test_telegram_bot_client_sets_webhook() -> None:
+    async def run() -> None:
+        http_client = FakeHTTPClient(
+            _response(
+                200,
+                {
+                    "ok": True,
+                    "result": True,
+                },
+            )
+        )
+        client = TelegramBotClient(
+            "token",
+            base_url="https://telegram.example",
+            client=http_client,
+        )
+
+        result = await client.set_webhook(
+            url="https://bot.example/webhook",
+            secret_token="secret",
+            allowed_updates=["message"],
+            drop_pending_updates=True,
+        )
+
+        assert result == {"result": True}
+        assert http_client.requests == [
+            {
+                "method": "POST",
+                "url": "https://telegram.example/bottoken/setWebhook",
+                "json": {
+                    "url": "https://bot.example/webhook",
+                    "secret_token": "secret",
+                    "allowed_updates": ["message"],
+                    "drop_pending_updates": True,
+                },
+            }
+        ]
+
+    asyncio.run(run())
+
+
+def test_telegram_bot_client_deletes_webhook() -> None:
+    async def run() -> None:
+        http_client = FakeHTTPClient(
+            _response(
+                200,
+                {
+                    "ok": True,
+                    "result": True,
+                },
+            )
+        )
+        client = TelegramBotClient(
+            "token",
+            base_url="https://telegram.example",
+            client=http_client,
+        )
+
+        result = await client.delete_webhook(drop_pending_updates=True)
+
+        assert result == {"result": True}
+        assert http_client.requests == [
+            {
+                "method": "POST",
+                "url": "https://telegram.example/bottoken/deleteWebhook",
+                "json": {
+                    "drop_pending_updates": True,
+                },
+            }
+        ]
+
+    asyncio.run(run())
