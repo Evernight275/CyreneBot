@@ -92,6 +92,18 @@ src/cyreneAI/infra/bootstrap/registrations/openai_compatible.py
   装配 provider info 与 adapter builder
 ```
 
+### 供应商差异处理原则
+
+OpenAI-compatible 供应商差异只在 infra adapter 内翻译：
+
+1. 标准字段默认走 mapper 基础路径。
+2. 非标准请求或响应字段只在 `infra/adapters/providers/openai_compatible` 内处理。
+3. 是否启用 quirk 由 instance 根据 `ProviderConfig` 判断。
+4. `core` 不出现具体供应商名称。
+5. `application` 不处理供应商协议差异。
+6. 能力失败后的降级由 manager 或 application 处理，不放进 mapper。
+7. 每个 quirk 必须有 mapper 或 instance 单测。
+
 ## 测试要求
 
 改动 infra provider/adapter/bootstrap 时，至少运行：

@@ -209,6 +209,44 @@ RAGChatOrchestrator
 
 `collection_id`、`chunk_strategy`、RAG context format 这类能力都是应用策略，因此留在 `application`。vector store 只处理 `VectorRecord`、`VectorQuery` 和 `VectorSearchResult`，不理解 RAG。
 
+## OpenAI-Compatible 供应商差异
+
+`openai_compatible` 是协议适配器，不是具体厂商身份。供应商差异优先作为协议语言翻译处理，避免把厂商规则扩散到 `core` 或 `application`。
+
+处理原则：
+
+1. 标准字段默认走 mapper 基础路径。
+2. 非标准请求或响应字段只在 `infra/adapters/providers/openai_compatible` 内处理。
+3. 是否启用某个 quirk 由 provider instance 根据 `ProviderConfig` 判断。
+4. `core` 不出现具体供应商名称。
+5. `application` 不处理供应商协议差异。
+6. 能力失败后的降级由 manager 或 application 编排，不放进 mapper。
+7. 每个 quirk 必须有 mapper 或 instance 单测；真实 API 测试缺少环境变量时必须 skip。
+
+落点约定：
+
+```text
+请求字段差异
+  -> infra/adapters/providers/openai_compatible/mapper.py
+
+响应字段差异
+  -> infra/adapters/providers/openai_compatible/mapper.py
+
+错误语义差异
+  -> infra/adapters/providers/openai_compatible/errors.py
+
+是否启用差异规则
+  -> infra/adapters/providers/openai_compatible/instance.py
+
+实时能力发现
+  -> provider instance
+
+实时能力失败后的退步
+  -> core provider manager 或 application orchestrator
+```
+
+例如 DeepSeek thinking tool-call 需要回传 `reasoning_content`，这是 OpenAI-compatible 供应商差异：`mapper` 提供可选字段映射，`instance` 根据 provider 配置启用，`core` 只保存通用 `Message.metadata`，`application` 不认识 DeepSeek。
+
 ## 扩展落点
 
 新增 provider：
