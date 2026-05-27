@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from cyreneAI.core.bot.bot_protocol import BotChannelRegistryProtocol
+from cyreneAI.core.bot.session_manager import BotSessionManager
 from cyreneAI.core.context.context_protocol import ContextBuilderProtocol
 from cyreneAI.core.context.manager import ContextManager
 from cyreneAI.core.errors.base import StateError
@@ -25,6 +27,8 @@ class CyreneAIRuntime:
     skill_manager: SkillManager | None = None
     tool_registry: ToolRegistryProtocol | None = None
     tool_manager: ToolManager | None = None
+    bot_channel_registry: BotChannelRegistryProtocol | None = None
+    bot_session_manager: BotSessionManager | None = None
 
     async def close(self) -> None:
         """

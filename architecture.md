@@ -1,6 +1,8 @@
-# CyreneAI Architecture
+# CyreneBot Architecture
 
-CyreneAI 的架构目标是把稳定契约、外部适配和应用编排分开。新增业务策略时优先进入 `application`；新增外部系统实现时进入 `infra/adapters`；只有稳定协议和 schema 才进入 `core`。
+CyreneBot 的架构目标是把稳定契约、外部适配和应用编排分开。新增业务策略时优先进入 `application`；新增外部系统实现时进入 `infra/adapters`；只有稳定协议和 schema 才进入 `core`。
+
+当前 Python 包名仍为 `cyreneAI`，这是兼容已有导入路径的过渡安排。Bot framework 的新增内核能力应优先以 channel event、bot session 和 bot action 为稳定抽象。
 
 ## 分层原则
 

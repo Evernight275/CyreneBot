@@ -6,9 +6,14 @@ import json
 import pytest
 
 from cyreneAI.application.bootstrap import build_cyrene_ai_runtime
+from cyreneAI.core.bot.registry import BotChannelRegistry
+from cyreneAI.core.bot.session_manager import BotSessionManager
+from cyreneAI.core.schema.bot import BotChannelDefinition
 from cyreneAI.core.schema.skill import SkillSelectionRequest
 from cyreneAI.core.schema.tool import ToolCall, ToolDefinition, ToolResult
 from cyreneAI.core.schema.vector import VectorQuery, VectorRecord
+from cyreneAI.infra.adapters.channels.memory import InMemoryBotChannel
+from cyreneAI.infra.adapters.bot_sessions.memory import InMemoryBotSessionStore
 from cyreneAI.infra.adapters.vector_stores.memory.store import InMemoryVectorStore
 
 
@@ -138,3 +143,57 @@ def test_build_cyrene_ai_runtime_rejects_duplicate_vector_store_config(
     tmp_path,
 ) -> None:
     asyncio.run(_run_build_runtime_rejects_duplicate_vector_store_config(tmp_path))
+
+
+async def _run_build_runtime_wires_bot_channel_registry() -> None:
+    channel_registry = BotChannelRegistry()
+    channel = InMemoryBotChannel()
+    channel_registry.register(
+        BotChannelDefinition(
+            channel_id="memory",
+            name="Memory",
+        ),
+        channel,
+    )
+
+    runtime = await build_cyrene_ai_runtime(
+        bot_channel_registry=channel_registry,
+    )
+
+    assert runtime.bot_channel_registry is channel_registry
+    assert runtime.bot_channel_registry.get_channel("memory") is channel
+
+    await runtime.close()
+
+
+def test_build_cyrene_ai_runtime_wires_bot_channel_registry() -> None:
+    asyncio.run(_run_build_runtime_wires_bot_channel_registry())
+
+
+async def _run_build_runtime_wires_bot_session_store() -> None:
+    store = InMemoryBotSessionStore()
+
+    runtime = await build_cyrene_ai_runtime(
+        bot_session_store=store,
+    )
+
+    assert runtime.bot_session_manager is not None
+    assert isinstance(runtime.bot_session_manager, BotSessionManager)
+
+    await runtime.close()
+
+
+def test_build_cyrene_ai_runtime_wires_bot_session_store() -> None:
+    asyncio.run(_run_build_runtime_wires_bot_session_store())
+
+
+async def _run_build_runtime_rejects_duplicate_bot_session_config() -> None:
+    with pytest.raises(ValueError):
+        await build_cyrene_ai_runtime(
+            bot_session_store=InMemoryBotSessionStore(),
+            bot_session_manager=BotSessionManager(InMemoryBotSessionStore()),
+        )
+
+
+def test_build_cyrene_ai_runtime_rejects_duplicate_bot_session_config() -> None:
+    asyncio.run(_run_build_runtime_rejects_duplicate_bot_session_config())

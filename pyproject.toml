@@ -1,7 +1,7 @@
 [project]
-name = "CyreneAI"
+name = "CyreneBot"
 version = "0.1.0"
-description = "A cleanly layered AI runtime for provider, context, skill, and tool orchestration."
+description = "A cleanly layered AI bot framework for provider, context, skill, tool, and channel orchestration."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

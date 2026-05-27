@@ -2,6 +2,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from cyreneAI.adapters.bot_sessions import (
+    InMemoryBotSessionStore,
+    create_memory_bot_session_store,
+)
+from cyreneAI.adapters.channels import (
+    InMemoryBotChannel,
+    create_memory_bot_channel,
+)
 from cyreneAI.adapters.documents import (
     CsvDocumentLoader,
     FileSystemDocumentLoader,
@@ -35,6 +43,13 @@ def test_public_adapters_facade_exports_supported_adapters() -> None:
     assert SubprocessToolExecutor.__name__ == "SubprocessToolExecutor"
     assert define_python_tool.__name__ == "define_python_tool"
     assert FileSystemSkillLoader.__name__ == "FileSystemSkillLoader"
+    assert InMemoryBotChannel.__name__ == "InMemoryBotChannel"
+    assert create_memory_bot_channel.__name__ == "create_memory_bot_channel"
+    assert InMemoryBotSessionStore.__name__ == "InMemoryBotSessionStore"
+    assert (
+        create_memory_bot_session_store.__name__
+        == "create_memory_bot_session_store"
+    )
 
 
 def test_public_adapters_facade_does_not_contain_provider_implementations() -> None:

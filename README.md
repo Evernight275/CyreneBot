@@ -1,6 +1,8 @@
-# CyreneAI
+# CyreneBot
 
-CyreneAI 是一个分层的 AI runtime，用于组织 provider、context、skill、tool、embedding、vector store 与 RAG 编排。
+CyreneBot 是一个分层的 AI bot framework，用于组织 channel、provider、context、skill、tool、embedding、vector store 与 RAG 编排。
+
+当前代码包名仍保留为 `cyreneAI`，用于保护已有导入路径；对外项目定位和后续内核演进以 CyreneBot 为准。
 
 ## 当前能力
 
@@ -19,7 +21,7 @@ OpenAI-compatible / OpenAI Responses / Anthropic / Google GenAI adapters
 
 ## 架构边界
 
-CyreneAI 的核心约束是让变化只发生在合适的层：
+CyreneBot 的核心约束是让变化只发生在合适的层：
 
 ```text
 core

@@ -3,6 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from cyreneAI.application.runtime import CyreneAIRuntime
+from cyreneAI.core.bot.bot_protocol import BotChannelRegistryProtocol
+from cyreneAI.core.bot.session_manager import BotSessionManager
+from cyreneAI.core.bot.session_protocol import BotSessionStoreProtocol
 from cyreneAI.core.context.builder import ContextWindowBuilder
 from cyreneAI.core.context.context_protocol import ContextBuilderProtocol
 from cyreneAI.core.context.manager import ContextManager
@@ -34,6 +37,9 @@ async def build_cyrene_ai_runtime(
     tool_registry: ToolRegistryProtocol | None = None,
     vector_store: VectorStoreProtocol | None = None,
     vector_database_path: str | Path | None = None,
+    bot_channel_registry: BotChannelRegistryProtocol | None = None,
+    bot_session_store: BotSessionStoreProtocol | None = None,
+    bot_session_manager: BotSessionManager | None = None,
 ) -> CyreneAIRuntime:
     """
     构建 CyreneAI 应用运行时
@@ -66,6 +72,12 @@ async def build_cyrene_ai_runtime(
     if runtime_vector_store is None and vector_database_path is not None:
         runtime_vector_store = await create_sqlite_vector_store(vector_database_path)
 
+    runtime_bot_session_manager = bot_session_manager
+    if runtime_bot_session_manager is not None and bot_session_store is not None:
+        raise ValueError("bot_session_store and bot_session_manager cannot both be set")
+    if runtime_bot_session_manager is None and bot_session_store is not None:
+        runtime_bot_session_manager = BotSessionManager(bot_session_store)
+
     runtime_tool_registry = tool_registry or ToolRegistry()
     return CyreneAIRuntime(
         provider_manager=provider_manager,
@@ -79,4 +91,6 @@ async def build_cyrene_ai_runtime(
         skill_manager=skill_manager,
         tool_registry=runtime_tool_registry,
         tool_manager=ToolManager(runtime_tool_registry),
+        bot_channel_registry=bot_channel_registry,
+        bot_session_manager=runtime_bot_session_manager,
     )
