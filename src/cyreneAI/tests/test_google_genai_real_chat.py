@@ -36,6 +36,7 @@ def _real_config() -> ProviderConfig:
     load_dotenv()
 
     api_key = os.getenv("GOOGLE_GENAI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    base_url = os.getenv("GOOGLE_GENAI_BASE_URL") or os.getenv("GOOGLE_BASE_URL")
     model = os.getenv("GOOGLE_GENAI_MODEL") or os.getenv("GOOGLE_MODEL")
 
     if not api_key:
@@ -47,6 +48,7 @@ def _real_config() -> ProviderConfig:
         provider_id="real-google-genai",
         provider_type=ProviderType.GOOGLE,
         api_key=api_key,
+        base_url=base_url,
         timeout=timedelta(seconds=30),
         metadata={
             "model": model,

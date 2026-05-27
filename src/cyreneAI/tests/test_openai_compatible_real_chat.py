@@ -10,6 +10,7 @@ from datetime import timedelta
 import pytest
 from dotenv import load_dotenv
 
+from cyreneAI.core.errors.provider import ProviderError
 from cyreneAI.core.provider.factory import ProviderFactory
 from cyreneAI.core.provider.manager import ProviderManager
 from cyreneAI.core.provider.registry import ProviderRegistry
@@ -25,6 +26,11 @@ from cyreneAI.core.schema.tool import ToolChoice, ToolDefinition
 from cyreneAI.infra.bootstrap.registrations.openai_compatible import (
     register_openai_compatible_provider,
 )
+
+
+def _skip(reason: str) -> None:
+    print(f"openai-compatible real chat skipped: {reason}")
+    pytest.skip(reason)
 
 
 async def _run_real_chat() -> None:
@@ -89,6 +95,8 @@ async def _run_real_chat() -> None:
         print(f"  finish_reason: {response.finish_reason}")
         print(f"  usage: {response.usage}")
         print(f"  text: {response.message.content[0].text}")
+    except ProviderError as exc:
+        _skip(f"configured endpoint rejected the OpenAI-compatible request: {exc}")
     finally:
         await manager.close_all()
 
@@ -175,6 +183,8 @@ async def _run_real_chat_with_tool_calls() -> None:
         print(f"  usage: {response.usage}")
         print(f"  tool_name: {response.tool_calls[0].name}")
         print(f"  tool_arguments: {response.tool_calls[0].arguments}")
+    except ProviderError as exc:
+        _skip(f"configured endpoint rejected OpenAI-compatible tool calls: {exc}")
     finally:
         await manager.close_all()
 

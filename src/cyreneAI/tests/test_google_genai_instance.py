@@ -24,6 +24,7 @@ from cyreneAI.core.schema.provider import (
 from cyreneAI.infra.adapters.providers.google_genai.instance import (
     GoogleGenAIProviderInstance,
 )
+from cyreneAI.infra.adapters.providers.google_genai import instance as instance_module
 
 
 def _provider_info() -> ProviderInfo:
@@ -107,6 +108,53 @@ def test_google_genai_instance_requires_api_key() -> None:
             config=_config(api_key=None),
             info=_provider_info(),
         )
+
+
+def test_google_genai_instance_accepts_base_url() -> None:
+    instance = GoogleGenAIProviderInstance(
+        config=ProviderConfig(
+            provider_id="google-test",
+            provider_type=ProviderType.GOOGLE,
+            api_key="test-key",
+            base_url="https://google.example/v1",
+            timeout=timedelta(seconds=3),
+        ),
+        info=_provider_info(),
+        client=_FakeGoogleClient(_FakeModels(response=_response())),
+    )
+
+    assert instance.config.base_url == "https://google.example/v1"
+    assert instance.timeout == 3
+
+
+def test_google_genai_instance_passes_base_url_to_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    class FakeClient:
+        def __init__(self, **kwargs: Any) -> None:
+            captured.update(kwargs)
+            self.models = _FakeModels(response=_response())
+
+    monkeypatch.setattr(instance_module.genai, "Client", FakeClient)
+
+    GoogleGenAIProviderInstance(
+        config=ProviderConfig(
+            provider_id="google-test",
+            provider_type=ProviderType.GOOGLE,
+            api_key="test-key",
+            base_url="https://google.example/v1",
+            timeout=timedelta(seconds=3),
+        ),
+        info=_provider_info(),
+    )
+
+    assert captured["api_key"] == "test-key"
+    assert captured["http_options"] == {
+        "base_url": "https://google.example/v1",
+        "timeout": 3000,
+    }
 
 
 def test_google_genai_instance_chat_maps_payload_and_response() -> None:

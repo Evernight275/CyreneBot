@@ -28,7 +28,16 @@ class GoogleGenAIProviderInstance:
         self.config = config
         self.info = info
         self.timeout = config.timeout.total_seconds() if config.timeout else None
-        self._client = client or genai.Client(api_key=config.api_key)
+        http_options = None
+        if config.base_url is not None or self.timeout is not None:
+            http_options = {
+                "base_url": config.base_url,
+                "timeout": int(self.timeout * 1000) if self.timeout is not None else None,
+            }
+        self._client = client or genai.Client(
+            api_key=config.api_key,
+            http_options=http_options,
+        )
 
     async def close(self) -> None:
         close = getattr(self._client, "close", None)
