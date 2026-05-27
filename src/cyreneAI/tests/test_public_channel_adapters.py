@@ -4,7 +4,9 @@ import asyncio
 
 from cyreneAI.adapters.channels import (
     InMemoryBotChannel,
+    TelegramBotChannel,
     create_memory_bot_channel,
+    create_telegram_bot_channel,
 )
 from cyreneAI.core.schema.bot import BotAction, BotActionType, BotMessage
 from cyreneAI.core.schema.message import ContentPart, ContentPartType
@@ -41,3 +43,12 @@ def test_create_memory_bot_channel_returns_independent_instances() -> None:
         assert second.list_actions() == []
 
     asyncio.run(run())
+
+
+def test_create_telegram_bot_channel_returns_telegram_channel() -> None:
+    channel = create_telegram_bot_channel(
+        token="token",
+        base_url="https://telegram.example",
+    )
+
+    assert isinstance(channel, TelegramBotChannel)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from cyreneAI.core.errors.base import (
+    ConfigurationError,
     CyreneAIError,
     NotFoundError,
     RequestError,
@@ -29,6 +30,14 @@ class BotInputError(BotError, ValidationError):
 class BotUnsupportedEventError(BotError, UnsupportedError):
     """
     当 bot 事件类型不支持时引发此异常。
+    """
+
+    pass
+
+
+class BotConfigurationError(BotError, ConfigurationError):
+    """
+    当 bot 配置错误时引发此异常。
     """
 
     pass

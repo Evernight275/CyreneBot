@@ -8,7 +8,9 @@ from cyreneAI.adapters.bot_sessions import (
 )
 from cyreneAI.adapters.channels import (
     InMemoryBotChannel,
+    TelegramBotChannel,
     create_memory_bot_channel,
+    create_telegram_bot_channel,
 )
 from cyreneAI.adapters.documents import (
     CsvDocumentLoader,
@@ -45,6 +47,8 @@ def test_public_adapters_facade_exports_supported_adapters() -> None:
     assert FileSystemSkillLoader.__name__ == "FileSystemSkillLoader"
     assert InMemoryBotChannel.__name__ == "InMemoryBotChannel"
     assert create_memory_bot_channel.__name__ == "create_memory_bot_channel"
+    assert TelegramBotChannel.__name__ == "TelegramBotChannel"
+    assert create_telegram_bot_channel.__name__ == "create_telegram_bot_channel"
     assert InMemoryBotSessionStore.__name__ == "InMemoryBotSessionStore"
     assert (
         create_memory_bot_session_store.__name__

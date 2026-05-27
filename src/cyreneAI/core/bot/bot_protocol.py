@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Any, Protocol
 
 from cyreneAI.core.schema.bot import BotAction, BotChannelDefinition, BotEvent
 
@@ -25,6 +25,18 @@ class BotEventHandlerProtocol(Protocol):
     async def handle(self, event: BotEvent) -> list[BotAction]:
         """
         处理标准化 bot 事件并返回 channel 动作。
+        """
+        ...
+
+
+class BotUpdateMapperProtocol(Protocol):
+    """
+    channel update 映射协议。
+    """
+
+    def map_update(self, update: dict[str, Any]) -> BotEvent:
+        """
+        将外部 channel update 映射为标准 BotEvent。
         """
         ...
 
