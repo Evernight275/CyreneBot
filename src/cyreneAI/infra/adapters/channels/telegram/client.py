@@ -74,6 +74,33 @@ class TelegramBotClient:
             },
         )
 
+    async def get_updates(
+        self,
+        *,
+        offset: int | None = None,
+        limit: int | None = None,
+        timeout: int | None = None,
+        allowed_updates: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """
+        调用 getUpdates。
+        """
+        payload: dict[str, Any] = {}
+        if offset is not None:
+            payload["offset"] = offset
+        if limit is not None:
+            payload["limit"] = limit
+        if timeout is not None:
+            payload["timeout"] = timeout
+        if allowed_updates is not None:
+            payload["allowed_updates"] = allowed_updates
+
+        result = await self.request("getUpdates", payload)
+        updates = result.get("result")
+        if not isinstance(updates, list):
+            return []
+        return [update for update in updates if isinstance(update, dict)]
+
     async def request(
         self,
         method: str,

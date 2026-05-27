@@ -54,6 +54,25 @@ class TelegramBotChannel:
         payload = map_bot_action_to_send_message_payload(action)
         await self._client.send_message(payload)
 
+    async def poll_events(
+        self,
+        *,
+        offset: int | None = None,
+        limit: int | None = None,
+        timeout: int | None = None,
+        allowed_updates: list[str] | None = None,
+    ) -> list[BotEvent]:
+        """
+        通过 Telegram getUpdates 拉取并映射事件。
+        """
+        updates = await self._client.get_updates(
+            offset=offset,
+            limit=limit,
+            timeout=timeout,
+            allowed_updates=allowed_updates,
+        )
+        return [self.map_update(update) for update in updates]
+
     async def close(self) -> None:
         """
         关闭 channel 持有的外部资源。

@@ -177,3 +177,51 @@ def test_telegram_bot_client_deletes_webhook() -> None:
         ]
 
     asyncio.run(run())
+
+
+def test_telegram_bot_client_get_updates() -> None:
+    async def run() -> None:
+        http_client = FakeHTTPClient(
+            _response(
+                200,
+                {
+                    "ok": True,
+                    "result": [
+                        {"update_id": 1},
+                        {"update_id": 2},
+                        "ignored",
+                    ],
+                },
+            )
+        )
+        client = TelegramBotClient(
+            "token",
+            base_url="https://telegram.example",
+            client=http_client,
+        )
+
+        updates = await client.get_updates(
+            offset=10,
+            limit=2,
+            timeout=30,
+            allowed_updates=["message"],
+        )
+
+        assert updates == [
+            {"update_id": 1},
+            {"update_id": 2},
+        ]
+        assert http_client.requests == [
+            {
+                "method": "POST",
+                "url": "https://telegram.example/bottoken/getUpdates",
+                "json": {
+                    "offset": 10,
+                    "limit": 2,
+                    "timeout": 30,
+                    "allowed_updates": ["message"],
+                },
+            }
+        ]
+
+    asyncio.run(run())
