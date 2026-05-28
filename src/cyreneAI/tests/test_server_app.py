@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import timedelta
 
 from fastapi.testclient import TestClient
@@ -8,6 +9,8 @@ from fastapi.testclient import TestClient
 from cyreneAI.application.runtime import CyreneAIRuntime
 from cyreneAI.core.bot.registry import BotChannelRegistry
 from cyreneAI.core.context.builder import ContextWindowBuilder
+from cyreneAI.core.plugin.manager import PluginManager
+from cyreneAI.core.plugin.registry import PluginRegistry
 from cyreneAI.core.provider.factory import ProviderFactory
 from cyreneAI.core.provider.manager import ProviderManager
 from cyreneAI.core.schema.bot import (
@@ -29,6 +32,10 @@ from cyreneAI.core.schema.message import (
     Message,
     MessageRole,
 )
+from cyreneAI.core.schema.plugin import (
+    PluginCommandDefinition,
+    PluginDefinition,
+)
 from cyreneAI.core.schema.provider import (
     ProviderConfig,
     ProviderInfo,
@@ -36,9 +43,11 @@ from cyreneAI.core.schema.provider import (
     ProviderType,
 )
 from cyreneAI.server import create_app
+from cyreneAI.server.app import _log_plugin_startup_state
 from cyreneAI.server.config import (
     ServerSettings,
     build_bot_polling_state_database_path_from_env,
+    build_plugin_paths_from_env,
     build_provider_configs_from_env,
     build_telegram_bot_token_from_env,
     build_telegram_polling_enabled_from_env,
@@ -369,6 +378,70 @@ def test_server_builds_telegram_polling_config_from_env(monkeypatch) -> None:
     assert build_telegram_polling_timeout_seconds_from_env() == 20
     assert build_telegram_polling_limit_from_env() == 10
     assert build_bot_polling_state_database_path_from_env() == "data/bot_polling.db"
+
+
+def test_server_builds_plugin_paths_from_env(monkeypatch) -> None:
+    monkeypatch.setenv(
+        "CYRENEAI_PLUGIN_PATH",
+        "plugins/demo_hello;plugins/demo_status",
+    )
+
+    assert build_plugin_paths_from_env() == [
+        "plugins/demo_hello",
+        "plugins/demo_status",
+    ]
+
+
+def test_server_disables_plugin_paths_by_default(monkeypatch) -> None:
+    monkeypatch.setenv("CYRENEAI_PLUGIN_PATH", "")
+
+    assert build_plugin_paths_from_env() == []
+
+
+def test_server_logs_loaded_plugins_and_commands(caplog) -> None:
+    registry = PluginRegistry()
+    registry.register(
+        PluginDefinition(
+            plugin_id="demo.hello",
+            name="Demo Hello",
+            description="Demo plugin.",
+            version="0.1.0",
+            commands=[
+                PluginCommandDefinition(
+                    name="hello",
+                    description="Say hello.",
+                    usage="/hello <name>",
+                    aliases=["hi"],
+                )
+            ],
+        )
+    )
+    runtime = CyreneAIRuntime(
+        provider_manager=ProviderManager(ProviderFactory()),
+        context_builder=ContextWindowBuilder(),
+        plugin_manager=PluginManager(registry),
+    )
+
+    with caplog.at_level(logging.INFO, logger="uvicorn.error"):
+        _log_plugin_startup_state(runtime)
+
+    assert "CyreneBot plugins loaded: count=1 plugins=demo.hello@0.1.0" in caplog.text
+    assert (
+        "CyreneBot commands loaded: count=1 commands=/hello <name> aliases=hi"
+        in caplog.text
+    )
+
+
+def test_server_logs_when_plugin_manager_is_missing(caplog) -> None:
+    runtime = CyreneAIRuntime(
+        provider_manager=ProviderManager(ProviderFactory()),
+        context_builder=ContextWindowBuilder(),
+    )
+
+    with caplog.at_level(logging.INFO, logger="uvicorn.error"):
+        _log_plugin_startup_state(runtime)
+
+    assert "CyreneBot plugins disabled: no plugin manager" in caplog.text
 
 
 def test_server_disables_telegram_polling_by_default(monkeypatch) -> None:

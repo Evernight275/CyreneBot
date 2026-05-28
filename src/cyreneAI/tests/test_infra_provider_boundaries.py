@@ -28,6 +28,7 @@ APPLICATION_TOP_LEVEL_NAMES = {
     "chat",
     "generation",
     "knowledge",
+    "plugins",
     "runtime.py",
 }
 

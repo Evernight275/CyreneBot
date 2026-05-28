@@ -6,6 +6,7 @@ from cyreneAI.bootstrap import build_cyrene_ai_runtime
 from cyreneAI.server.app import create_app
 from cyreneAI.server.config import (
     build_bot_polling_state_database_path_from_env,
+    build_plugin_paths_from_env,
     build_provider_configs_from_env,
     build_server_settings_from_env,
     build_telegram_bot_token_from_env,
@@ -17,6 +18,7 @@ from cyreneAI.server.config import (
     build_telegram_webhook_provider_id_from_env,
     build_telegram_webhook_secret_from_env,
 )
+from cyreneAI.infra.adapters.plugins.filesystem import FileSystemPluginLoader
 
 
 app = create_app(
@@ -25,6 +27,10 @@ app = create_app(
             provider_configs=build_provider_configs_from_env(),
             telegram_bot_token=build_telegram_bot_token_from_env(),
             bot_polling_state_database_path=build_bot_polling_state_database_path_from_env(),
+            plugin_loaders=[
+                FileSystemPluginLoader(path)
+                for path in build_plugin_paths_from_env()
+            ],
         )
     ),
     settings=build_server_settings_from_env(),

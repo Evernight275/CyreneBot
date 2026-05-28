@@ -13,6 +13,7 @@ from cyreneAI.core.bot.session_manager import BotSessionManager
 from cyreneAI.core.bot.session_protocol import BotSessionStoreProtocol
 from cyreneAI.core.context.context_protocol import ContextBuilderProtocol
 from cyreneAI.core.context.manager import ContextManager
+from cyreneAI.core.plugin.plugin_protocol import PluginLoaderProtocol
 from cyreneAI.core.provider.factory import ProviderFactory
 from cyreneAI.core.provider.manager import ProviderManager
 from cyreneAI.core.provider.registry import ProviderRegistry
@@ -54,6 +55,8 @@ async def build_cyrene_ai_runtime(
     bot_session_manager: BotSessionManager | None = None,
     bot_polling_state_store: BotPollingStateStoreProtocol | None = None,
     bot_polling_state_database_path: str | Path | None = None,
+    plugin_loaders: list[PluginLoaderProtocol] | None = None,
+    register_builtin_plugins: bool = True,
 ) -> CyreneAIRuntime:
     """
     构建带默认 infra 适配的 CyreneAI 运行时。
@@ -74,6 +77,7 @@ async def build_cyrene_ai_runtime(
         )
 
     skill_manager = None
+    skill_registry = None
     if skill_path is not None:
         skill_registry = SkillRegistry()
         for definition in FileSystemSkillLoader(skill_path).load():
@@ -125,6 +129,9 @@ async def build_cyrene_ai_runtime(
         context_builder=context_builder,
         context_manager=context_manager,
         skill_manager=skill_manager,
+        skill_registry=skill_registry if skill_path is not None else None,
+        plugin_loaders=plugin_loaders,
+        register_builtin_plugins=register_builtin_plugins,
         tool_registry=tool_registry,
         vector_store=runtime_vector_store,
         bot_channel_registry=runtime_bot_channel_registry,

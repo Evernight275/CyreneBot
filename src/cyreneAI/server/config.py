@@ -99,6 +99,19 @@ def build_bot_polling_state_database_path_from_env() -> str | None:
     return _env_str("CYRENEAI_BOT_POLLING_STATE_DATABASE_PATH")
 
 
+def build_plugin_paths_from_env() -> list[str]:
+    load_dotenv()
+
+    raw = _env_str("CYRENEAI_PLUGIN_PATH")
+    if raw is None:
+        return []
+    return [
+        part.strip()
+        for part in raw.split(os.pathsep)
+        if part.strip()
+    ]
+
+
 def build_provider_configs_from_env() -> list[ProviderConfig]:
     load_dotenv()
 

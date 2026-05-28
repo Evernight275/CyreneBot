@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
+import logging
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
@@ -10,6 +11,9 @@ from cyreneAI.server.channel_polling import ChannelPollingRunner
 from cyreneAI.server.config import ServerSettings, build_server_settings_from_env
 from cyreneAI.server.routes import auth, channels, chat, health, images, providers
 from cyreneAI.server.routes import telegram
+
+
+logger = logging.getLogger("uvicorn.error")
 
 
 def create_app(
@@ -25,6 +29,7 @@ def create_app(
 ) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        _log_plugin_startup_state(runtime)
         polling_runner = _build_telegram_polling_runner(app)
         app.state.telegram_polling_runner = polling_runner
         if polling_runner is not None:
@@ -55,6 +60,48 @@ def create_app(
     app.include_router(channels.router)
     app.include_router(telegram.router)
     return app
+
+
+def _log_plugin_startup_state(runtime: CyreneAIRuntime) -> None:
+    plugin_manager = runtime.plugin_manager
+    if plugin_manager is None:
+        logger.info("CyreneBot plugins disabled: no plugin manager")
+        return
+
+    plugins = plugin_manager.list_plugins()
+    commands = plugin_manager.list_commands()
+    plugin_items = [
+        f"{plugin.plugin_id}@{plugin.version}"
+        for plugin in plugins
+        if plugin.enabled
+    ]
+    command_items = [
+        _format_plugin_command(command.name, command.usage, command.aliases)
+        for command in commands
+        if command.enabled
+    ]
+
+    logger.info(
+        "CyreneBot plugins loaded: count=%s plugins=%s",
+        len(plugin_items),
+        ", ".join(plugin_items) or "(none)",
+    )
+    logger.info(
+        "CyreneBot commands loaded: count=%s commands=%s",
+        len(command_items),
+        ", ".join(command_items) or "(none)",
+    )
+
+
+def _format_plugin_command(
+    name: str,
+    usage: str | None,
+    aliases: list[str],
+) -> str:
+    command = usage or f"/{name}"
+    if not aliases:
+        return command
+    return f"{command} aliases={','.join(aliases)}"
 
 
 def _build_telegram_polling_runner(app: FastAPI) -> ChannelPollingRunner | None:

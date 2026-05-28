@@ -54,39 +54,6 @@ def should_parse_bot_command(event: BotEvent) -> bool:
         return False
 
 
-def render_bot_command_result(command: BotCommand) -> str:
-    """
-    渲染内置命令结果，供 channel 直接回复。
-    """
-    if command.name == "start":
-        return "\n".join(
-            [
-                "CyreneAI bot is ready.",
-                "Use /help to see available commands.",
-            ]
-        )
-    if command.name == "help":
-        return "\n".join(
-            [
-                "Available commands:",
-                "/start - Start the bot.",
-                "/help - Show available commands.",
-                "/ping - Check whether the bot is responsive.",
-                "/echo <text> - Echo text back.",
-            ]
-        )
-    if command.name == "ping":
-        return "pong"
-    if command.name == "echo":
-        return command.args_text or "(empty)"
-    return "\n".join(
-        [
-            f"Unknown command: {command.name}",
-            "Use /help to see available commands.",
-        ]
-    )
-
-
 def _split_command_target(name_token: str) -> tuple[str, str | None]:
     name, separator, target = name_token.partition("@")
     if not separator:

@@ -46,8 +46,16 @@ async def _run_build_runtime(tmp_path) -> None:
     assert runtime.context_manager is not None
     assert runtime.vector_manager is not None
     assert runtime.skill_manager is not None
+    assert runtime.plugin_manager is not None
     assert runtime.tool_registry is not None
     assert runtime.tool_manager is not None
+    assert [command.name for command in runtime.plugin_manager.list_commands()] == [
+        "start",
+        "help",
+        "ping",
+        "echo",
+        "status",
+    ]
 
     bundle = runtime.skill_manager.build_instruction_bundle(
         SkillSelectionRequest(text="Use memory.")

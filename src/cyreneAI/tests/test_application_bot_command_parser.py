@@ -4,7 +4,6 @@ import pytest
 
 from cyreneAI.application.bot.command_parser import (
     parse_bot_command,
-    render_bot_command_result,
     should_parse_bot_command,
 )
 from cyreneAI.core.errors.bot import BotInputError
@@ -47,54 +46,6 @@ def test_parse_bot_command_supports_target_suffix() -> None:
     assert command.name == "start"
     assert command.target == "CyreneBot"
     assert command.args == ("now",)
-
-
-def test_render_bot_command_result_handles_start() -> None:
-    command = parse_bot_command(_command_event("/start"))
-
-    assert render_bot_command_result(command) == "\n".join(
-        [
-            "CyreneAI bot is ready.",
-            "Use /help to see available commands.",
-        ]
-    )
-
-
-def test_render_bot_command_result_handles_help() -> None:
-    command = parse_bot_command(_command_event("/help"))
-
-    assert render_bot_command_result(command) == "\n".join(
-        [
-            "Available commands:",
-            "/start - Start the bot.",
-            "/help - Show available commands.",
-            "/ping - Check whether the bot is responsive.",
-            "/echo <text> - Echo text back.",
-        ]
-    )
-
-
-def test_render_bot_command_result_handles_ping() -> None:
-    command = parse_bot_command(_command_event("/ping"))
-
-    assert render_bot_command_result(command) == "pong"
-
-
-def test_render_bot_command_result_handles_echo() -> None:
-    command = parse_bot_command(_command_event('/echo "hello world"'))
-
-    assert render_bot_command_result(command) == "hello world"
-
-
-def test_render_bot_command_result_handles_unknown_command() -> None:
-    command = parse_bot_command(_command_event("/missing"))
-
-    assert render_bot_command_result(command) == "\n".join(
-        [
-            "Unknown command: missing",
-            "Use /help to see available commands.",
-        ]
-    )
 
 
 def test_parse_bot_command_rejects_non_command_text() -> None:

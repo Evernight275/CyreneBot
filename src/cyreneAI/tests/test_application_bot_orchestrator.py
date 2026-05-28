@@ -9,7 +9,12 @@ from cyreneAI.application.bot.orchestrator import (
     ApplicationBotRequest,
     BotOrchestrator,
 )
+from cyreneAI.application.plugins.builtin_bot_commands import (
+    register_builtin_bot_command_plugins,
+)
 from cyreneAI.application.runtime import CyreneAIRuntime
+from cyreneAI.core.plugin.manager import PluginManager
+from cyreneAI.core.plugin.registry import PluginRegistry
 from cyreneAI.core.schema.bot import BotActionType, BotEvent, BotEventType, BotMessage
 from cyreneAI.core.context.builder import ContextWindowBuilder
 from cyreneAI.core.errors.bot import BotInputError, BotUnsupportedEventError
@@ -90,10 +95,14 @@ async def _build_runtime(provider: FakeChatProvider) -> CyreneAIRuntime:
     factory.register(ProviderType.OPENAI_COMPATIBLE, build_provider)
     provider_manager = ProviderManager(factory)
     await provider_manager.add(provider.config)
-    return CyreneAIRuntime(
+    runtime = CyreneAIRuntime(
         provider_manager=provider_manager,
         context_builder=ContextWindowBuilder(),
     )
+    plugin_registry = PluginRegistry()
+    runtime.plugin_manager = PluginManager(plugin_registry)
+    register_builtin_bot_command_plugins(plugin_registry, runtime)
+    return runtime
 
 
 def test_bot_orchestrator_turns_message_event_into_send_action() -> None:
@@ -229,6 +238,71 @@ def test_bot_orchestrator_treats_slash_message_as_command() -> None:
                     "/help - Show available commands.",
                     "/ping - Check whether the bot is responsive.",
                     "/echo <text> - Echo text back.",
+                    "/status - Show runtime status.",
+                ]
+            )
+        )
+
+    asyncio.run(run())
+
+
+def test_bot_orchestrator_rejects_status_command_without_admin() -> None:
+    async def run() -> None:
+        provider = FakeChatProvider(
+            ChatResponse(
+                provider_id="provider-1",
+                message=_chat_message(MessageRole.ASSISTANT, "unused"),
+            )
+        )
+        runtime = await _build_runtime(provider)
+
+        result = await BotOrchestrator(runtime).handle(
+            ApplicationBotRequest(
+                event=_bot_event("/status"),
+                provider_id="provider-1",
+                model="fake-model",
+            )
+        )
+
+        assert provider.requests == []
+        assert result.actions[0].message is not None
+        assert result.actions[0].message.content == _content(
+            "Command /status requires admin permission."
+        )
+
+    asyncio.run(run())
+
+
+def test_bot_orchestrator_runs_status_command_for_admin() -> None:
+    async def run() -> None:
+        provider = FakeChatProvider(
+            ChatResponse(
+                provider_id="provider-1",
+                message=_chat_message(MessageRole.ASSISTANT, "unused"),
+            )
+        )
+        runtime = await _build_runtime(provider)
+
+        result = await BotOrchestrator(runtime).handle(
+            ApplicationBotRequest(
+                event=_bot_event("/status"),
+                provider_id="provider-1",
+                model="fake-model",
+                metadata={"is_admin": True},
+            )
+        )
+
+        assert provider.requests == []
+        assert result.actions[0].message is not None
+        assert result.actions[0].message.content == _content(
+            "\n".join(
+                [
+                    "CyreneAI status:",
+                    "providers: 1",
+                    "bot_channels: 0",
+                    "skills: disabled",
+                    "tools: disabled",
+                    "polling_state: disabled",
                 ]
             )
         )

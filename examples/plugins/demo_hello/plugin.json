@@ -1,0 +1,12 @@
+{
+  "plugin_id": "demo.hello",
+  "name": "Hello",
+  "version": "0.1.0",
+  "description": "A minimal CyreneBot command plugin.",
+  "entrypoint": "main.py",
+  "author": "CyreneAI",
+  "license": "MIT",
+  "keywords": ["demo", "hello"],
+  "capabilities": ["bot_command"],
+  "permissions": []
+}

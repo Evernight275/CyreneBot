@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from cyreneAI.core.bot.bot_protocol import BotChannelRegistryProtocol
 from cyreneAI.core.bot.polling_protocol import BotPollingStateStoreProtocol
@@ -8,11 +9,15 @@ from cyreneAI.core.bot.session_manager import BotSessionManager
 from cyreneAI.core.context.context_protocol import ContextBuilderProtocol
 from cyreneAI.core.context.manager import ContextManager
 from cyreneAI.core.errors.base import StateError
+from cyreneAI.core.plugin.manager import PluginManager
 from cyreneAI.core.provider.manager import ProviderManager
 from cyreneAI.core.skill.manager import SkillManager
 from cyreneAI.core.tool.manager import ToolManager
 from cyreneAI.core.tool.tool_protocol import ToolRegistryProtocol
 from cyreneAI.core.vector.manager import VectorManager
+
+if TYPE_CHECKING:
+    from cyreneAI.application.plugins.host import PluginHost
 
 
 @dataclass(slots=True)
@@ -26,6 +31,8 @@ class CyreneAIRuntime:
     context_manager: ContextManager | None = None
     vector_manager: VectorManager | None = None
     skill_manager: SkillManager | None = None
+    plugin_manager: PluginManager | None = None
+    plugin_host: PluginHost | None = None
     tool_registry: ToolRegistryProtocol | None = None
     tool_manager: ToolManager | None = None
     bot_channel_registry: BotChannelRegistryProtocol | None = None
