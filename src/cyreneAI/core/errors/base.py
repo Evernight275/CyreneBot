@@ -15,6 +15,10 @@ class CyreneAIError(Exception):
         super().__init__(message)
         self.cause = cause
 
+    @property
+    def error_info(self) -> str:
+        return self.__class__.__name__
+
 
 class ConfigurationError(CyreneAIError):
     """
