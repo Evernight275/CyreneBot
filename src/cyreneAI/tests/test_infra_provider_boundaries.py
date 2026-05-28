@@ -227,6 +227,23 @@ def test_application_does_not_define_core_schema_classes() -> None:
     assert violations == []
 
 
+def test_only_core_schema_defines_cyrene_ai_schema_subclasses() -> None:
+    violations = []
+    allowed_dir = CORE_DIR / "schema"
+
+    for path in _python_files(PROJECT_ROOT):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ClassDef):
+                continue
+            if not any(_base_name(base) == "CyreneAISchema" for base in node.bases):
+                continue
+            if not path.is_relative_to(allowed_dir):
+                violations.append((_relative(path), node.name))
+
+    assert violations == []
+
+
 def test_application_top_level_is_grouped_by_use_case_area() -> None:
     invalid_paths = [
         path

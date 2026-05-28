@@ -5,21 +5,8 @@ from datetime import timedelta
 
 from dotenv import load_dotenv
 
-from cyreneAI.core.schema.base import CyreneAISchema
 from cyreneAI.core.schema.provider import ProviderConfig, ProviderType
-
-
-class ServerSettings(CyreneAISchema):
-    """
-    Server runtime settings.
-    """
-
-    admin_username: str | None = None
-    admin_password: str | None = None
-    auth_enabled: bool = True
-    session_secret: str | None = None
-    session_cookie_name: str = "cyrene_admin_session"
-    session_ttl_seconds: int = 12 * 60 * 60
+from cyreneAI.core.schema.server import ServerSettings
 
 
 def build_server_settings_from_env() -> ServerSettings:
