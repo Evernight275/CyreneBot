@@ -4,11 +4,11 @@ from typing import Any
 
 from pydantic import Field
 
-from cyreneAI.application.bot_dispatcher import (
+from cyreneAI.application.bot.dispatcher import (
     ApplicationBotDispatchResult,
     BotDispatcher,
 )
-from cyreneAI.application.bot_orchestrator import ApplicationBotRequest
+from cyreneAI.application.bot.orchestrator import ApplicationBotRequest
 from cyreneAI.application.runtime import CyreneAIRuntime
 from cyreneAI.core.schema.base import CyreneAISchema
 from cyreneAI.core.schema.bot import BotEvent

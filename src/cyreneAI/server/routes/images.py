@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from cyreneAI.application.image_orchestrator import (
+from cyreneAI.application.generation.image_orchestrator import (
     ApplicationImageGenerationRequest,
     ImageGenerationOrchestrator,
 )

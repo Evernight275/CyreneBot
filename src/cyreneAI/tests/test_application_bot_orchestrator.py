@@ -5,7 +5,7 @@ from datetime import timedelta
 
 import pytest
 
-from cyreneAI.application.bot_orchestrator import (
+from cyreneAI.application.bot.orchestrator import (
     ApplicationBotRequest,
     BotOrchestrator,
 )

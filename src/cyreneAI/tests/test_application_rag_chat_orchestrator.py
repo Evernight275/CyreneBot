@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from datetime import timedelta
 
-from cyreneAI.application.rag_chat_orchestrator import (
+from cyreneAI.application.chat.rag_orchestrator import (
     ApplicationRAGChatRequest,
     RAGContextFormat,
     RAGChatOrchestrator,

@@ -5,7 +5,7 @@ from datetime import timedelta
 
 import pytest
 
-from cyreneAI.application.embedding_orchestrator import (
+from cyreneAI.application.generation.embedding_orchestrator import (
     ApplicationEmbeddingRequest,
     EmbeddingOrchestrator,
 )

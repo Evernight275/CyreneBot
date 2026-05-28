@@ -5,8 +5,8 @@ from datetime import timedelta
 
 import pytest
 
-from cyreneAI.application.bot_dispatcher import BotDispatcher
-from cyreneAI.application.bot_orchestrator import ApplicationBotRequest
+from cyreneAI.application.bot.dispatcher import BotDispatcher
+from cyreneAI.application.bot.orchestrator import ApplicationBotRequest
 from cyreneAI.application.runtime import CyreneAIRuntime
 from cyreneAI.core.bot.registry import BotChannelRegistry
 from cyreneAI.core.bot.session_manager import BotSessionManager

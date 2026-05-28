@@ -4,7 +4,7 @@ from typing import Any
 
 from pydantic import Field
 
-from cyreneAI.application.chat_orchestrator import (
+from cyreneAI.application.chat.orchestrator import (
     ApplicationChatRequest,
     ApplicationChatResult,
     ChatOrchestrator,

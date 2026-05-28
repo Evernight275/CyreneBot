@@ -5,7 +5,7 @@ from datetime import timedelta
 
 import pytest
 
-from cyreneAI.application.chat_orchestrator import (
+from cyreneAI.application.chat.orchestrator import (
     ApplicationChatRequest,
     ChatOrchestrator,
 )

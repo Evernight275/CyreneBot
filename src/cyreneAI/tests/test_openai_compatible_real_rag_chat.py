@@ -10,11 +10,11 @@ from datetime import timedelta
 import pytest
 from dotenv import load_dotenv
 
-from cyreneAI.application.indexing_orchestrator import (
+from cyreneAI.application.knowledge.indexing_orchestrator import (
     ApplicationIndexingRequest,
     IndexingOrchestrator,
 )
-from cyreneAI.application.rag_chat_orchestrator import (
+from cyreneAI.application.chat.rag_orchestrator import (
     ApplicationRAGChatRequest,
     RAGChatOrchestrator,
 )

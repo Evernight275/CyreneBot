@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from cyreneAI.application.channel_webhook_handler import (
+from cyreneAI.application.channels.webhook_handler import (
     ApplicationChannelWebhookRequest,
     ChannelWebhookHandler,
 )

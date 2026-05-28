@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from datetime import timedelta
 
-from cyreneAI.application.channel_event_processor import (
+from cyreneAI.application.channels.event_processor import (
     ApplicationChannelEventsRequest,
     ChannelEventProcessor,
 )

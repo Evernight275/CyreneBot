@@ -6,7 +6,7 @@ from datetime import timedelta
 import pytest
 from pydantic import ValidationError
 
-from cyreneAI.application.indexing_orchestrator import (
+from cyreneAI.application.knowledge.indexing_orchestrator import (
     ApplicationIndexingRequest,
     ChunkStrategy,
     IndexingOrchestrator,

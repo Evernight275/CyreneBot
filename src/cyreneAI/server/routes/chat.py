@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from cyreneAI.application.chat_orchestrator import (
+from cyreneAI.application.chat.orchestrator import (
     ApplicationChatRequest,
     ChatOrchestrator,
 )

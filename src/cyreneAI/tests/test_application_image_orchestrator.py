@@ -5,7 +5,7 @@ from datetime import timedelta
 
 import pytest
 
-from cyreneAI.application.image_orchestrator import (
+from cyreneAI.application.generation.image_orchestrator import (
     ApplicationImageGenerationRequest,
     ImageGenerationOrchestrator,
 )

@@ -5,7 +5,7 @@ from datetime import timedelta
 
 import pytest
 
-from cyreneAI.application.retrieval_orchestrator import (
+from cyreneAI.application.knowledge.retrieval_orchestrator import (
     ApplicationRetrievalRequest,
     RetrievalOrchestrator,
 )

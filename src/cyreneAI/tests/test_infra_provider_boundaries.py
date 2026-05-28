@@ -20,6 +20,17 @@ EXTERNAL_SDK_IMPORT_ROOTS = {
     "openai",
 }
 
+APPLICATION_TOP_LEVEL_NAMES = {
+    "__init__.py",
+    "bootstrap.py",
+    "bot",
+    "channels",
+    "chat",
+    "generation",
+    "knowledge",
+    "runtime.py",
+}
+
 
 def _python_files(root: Path) -> list[Path]:
     return [
@@ -174,3 +185,13 @@ def test_application_does_not_import_provider_catalog_or_provider_instances() ->
                 violations.append((_relative(path), module))
 
     assert violations == []
+
+
+def test_application_top_level_is_grouped_by_use_case_area() -> None:
+    invalid_paths = [
+        path
+        for path in APPLICATION_DIR.iterdir()
+        if path.name != "__pycache__" and path.name not in APPLICATION_TOP_LEVEL_NAMES
+    ]
+
+    assert invalid_paths == []

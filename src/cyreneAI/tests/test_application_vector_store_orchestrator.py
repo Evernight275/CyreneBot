@@ -5,7 +5,7 @@ import asyncio
 import pytest
 
 from cyreneAI.application.runtime import CyreneAIRuntime
-from cyreneAI.application.vector_store_orchestrator import (
+from cyreneAI.application.knowledge.vector_store_orchestrator import (
     ApplicationVectorSearchRequest,
     ApplicationVectorUpsertRequest,
     VectorStoreOrchestrator,

@@ -5,12 +5,12 @@ from typing import Any
 
 from pydantic import Field
 
-from cyreneAI.application.chat_orchestrator import (
+from cyreneAI.application.chat.orchestrator import (
     ApplicationChatRequest,
     ApplicationChatResult,
     ChatOrchestrator,
 )
-from cyreneAI.application.retrieval_orchestrator import (
+from cyreneAI.application.knowledge.retrieval_orchestrator import (
     ApplicationRetrievalRequest,
     ApplicationRetrievalResult,
     RetrievalOrchestrator,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pydantic import Field
 
-from cyreneAI.application.bot_orchestrator import (
+from cyreneAI.application.bot.orchestrator import (
     ApplicationBotRequest,
     ApplicationBotResult,
     BotOrchestrator,
