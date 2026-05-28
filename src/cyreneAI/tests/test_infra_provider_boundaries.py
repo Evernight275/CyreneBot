@@ -31,6 +31,10 @@ APPLICATION_TOP_LEVEL_NAMES = {
     "runtime.py",
 }
 
+APPLICATION_ALLOWED_PUBLIC_DATACLASSES = {
+    ("application/runtime.py", "CyreneAIRuntime"),
+}
+
 
 def _python_files(root: Path) -> list[Path]:
     return [
@@ -65,6 +69,12 @@ def _base_name(node: ast.expr) -> str | None:
     if isinstance(node, ast.Attribute):
         return node.attr
     return None
+
+
+def _decorator_name(node: ast.expr) -> str | None:
+    if isinstance(node, ast.Call):
+        return _decorator_name(node.func)
+    return _base_name(node)
 
 
 def test_infra_provider_catalog_only_contains_info_files() -> None:
@@ -223,6 +233,29 @@ def test_application_does_not_define_core_schema_classes() -> None:
                 continue
             if any(_base_name(base) == "CyreneAISchema" for base in node.bases):
                 violations.append((_relative(path), node.name))
+
+    assert violations == []
+
+
+def test_application_does_not_define_public_dataclass_dtos() -> None:
+    violations = []
+
+    for path in _python_files(APPLICATION_DIR):
+        relative_path = _relative(path)
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ClassDef):
+                continue
+            if not any(
+                _decorator_name(decorator) == "dataclass"
+                for decorator in node.decorator_list
+            ):
+                continue
+            if node.name.startswith("_"):
+                continue
+            if (relative_path, node.name) in APPLICATION_ALLOWED_PUBLIC_DATACLASSES:
+                continue
+            violations.append((relative_path, node.name))
 
     assert violations == []
 

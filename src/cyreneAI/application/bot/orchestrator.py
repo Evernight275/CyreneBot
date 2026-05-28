@@ -107,7 +107,7 @@ def _command_event_to_result(request: ApplicationBotRequest) -> ApplicationBotRe
         metadata={
             "bot_event_id": request.event.event_id,
             "command": command.name,
-            "command_args": command.args,
+            "command_args": list(command.args),
         },
     )
     return ApplicationBotResult(
@@ -117,7 +117,7 @@ def _command_event_to_result(request: ApplicationBotRequest) -> ApplicationBotRe
             "bot_event_id": request.event.event_id,
             "bot_channel_id": request.event.channel_id,
             "command": command.name,
-            "command_args": command.args,
+            "command_args": list(command.args),
         },
     )
 

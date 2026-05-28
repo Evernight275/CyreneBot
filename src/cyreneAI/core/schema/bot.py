@@ -132,3 +132,15 @@ class BotAction(BotBase):
     thread_id: str | None = None
     message: BotMessage | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class BotCommand(BotBase):
+    """
+    标准 bot 命令解析结果。
+    """
+
+    raw_text: str
+    name: str
+    target: str | None = None
+    args: tuple[str, ...] = ()
+    args_text: str = Field(default="")

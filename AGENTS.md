@@ -89,6 +89,7 @@ cyreneAI.bootstrap
 - 注册 provider adapter
 - 处理 provider 专属协议差异
 - 定义继承 `CyreneAISchema` 的 schema 类
+- 定义公开 `@dataclass` DTO
 
 `infra/provider_catalog` 严禁：
 
@@ -141,6 +142,9 @@ ApplicationRAGChatRequest
 ```
 
 这些类型只能定义在 `core/schema`，application 只能 import 并使用。
+
+严禁用 `@dataclass` 绕过 schema 边界，在 application 定义公开 DTO。
+application 只允许私有算法 helper dataclass，例如 `_ParagraphSpan`；公开 runtime 容器需要明确白名单。
 
 ## composition root 规则
 
@@ -207,6 +211,7 @@ test_provider_adapter_directories_have_expected_files
 test_infra_does_not_import_application_or_server
 test_application_does_not_import_infra_or_server
 test_application_does_not_define_core_schema_classes
+test_application_does_not_define_public_dataclass_dtos
 test_only_core_schema_defines_cyrene_ai_schema_subclasses
 test_bootstrap_registrations_only_wire_core_catalog_and_adapters
 ```

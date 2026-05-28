@@ -167,7 +167,7 @@ def test_bot_orchestrator_rejects_unsupported_event_type() -> None:
     asyncio.run(run())
 
 
-def test_bot_orchestrator_returns_command_parse_result_without_provider_call() -> None:
+def test_bot_orchestrator_returns_command_result_without_provider_call() -> None:
     async def run() -> None:
         provider = FakeChatProvider(
             ChatResponse(
@@ -176,7 +176,7 @@ def test_bot_orchestrator_returns_command_parse_result_without_provider_call() -
             )
         )
         runtime = await _build_runtime(provider)
-        event = _bot_event('/search "hello world" --limit 3')
+        event = _bot_event('/echo "hello world" --limit 3')
         event = event.model_copy(update={"event_type": BotEventType.COMMAND})
 
         result = await BotOrchestrator(runtime).handle(
@@ -193,18 +193,10 @@ def test_bot_orchestrator_returns_command_parse_result_without_provider_call() -
         action = result.actions[0]
         assert action.action_type == BotActionType.SEND_MESSAGE
         assert action.message is not None
-        assert action.message.content == _content(
-            "\n".join(
-                [
-                    "command: search",
-                    "args: hello world, --limit, 3",
-                    "args_text: hello world --limit 3",
-                ]
-            )
-        )
-        assert action.metadata["command"] == "search"
+        assert action.message.content == _content("hello world --limit 3")
+        assert action.metadata["command"] == "echo"
         assert action.metadata["command_args"] == ["hello world", "--limit", "3"]
-        assert result.metadata["command"] == "search"
+        assert result.metadata["command"] == "echo"
 
     asyncio.run(run())
 
@@ -232,9 +224,11 @@ def test_bot_orchestrator_treats_slash_message_as_command() -> None:
         assert result.actions[0].message.content == _content(
             "\n".join(
                 [
-                    "command: help",
-                    "args: (none)",
-                    "args_text: (empty)",
+                    "Available commands:",
+                    "/start - Start the bot.",
+                    "/help - Show available commands.",
+                    "/ping - Check whether the bot is responsive.",
+                    "/echo <text> - Echo text back.",
                 ]
             )
         )

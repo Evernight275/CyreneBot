@@ -1,23 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import shlex
 
 from cyreneAI.core.errors.bot import BotInputError
-from cyreneAI.core.schema.bot import BotEvent, BotEventType
+from cyreneAI.core.schema.bot import BotEvent, BotEventType, BotCommand
 from cyreneAI.core.schema.message import ContentPartType
-
-
-@dataclass(frozen=True)
-class BotCommand:
-    """
-    标准 bot 命令解析结果。
-    """
-
-    raw_text: str
-    name: str
-    args: list[str] = field(default_factory=list)
-    args_text: str = ""
 
 
 def parse_bot_command(event: BotEvent) -> BotCommand:
@@ -39,11 +26,16 @@ def parse_bot_command(event: BotEvent) -> BotCommand:
     if not parts:
         raise BotInputError("COMMAND event must include command name")
 
-    name, *args = parts
+    name_token, *args = parts
+    name, target = _split_command_target(name_token)
+    if not name:
+        raise BotInputError("COMMAND event must include command name")
+
     return BotCommand(
         raw_text=raw_text,
-        name=name,
-        args=args,
+        name=name.lower(),
+        target=target,
+        args=tuple(args),
         args_text=" ".join(args),
     )
 
@@ -64,17 +56,42 @@ def should_parse_bot_command(event: BotEvent) -> bool:
 
 def render_bot_command_result(command: BotCommand) -> str:
     """
-    渲染命令解析结果，供 channel 直接回复。
+    渲染内置命令结果，供 channel 直接回复。
     """
-    args = ", ".join(command.args) if command.args else "(none)"
-    args_text = command.args_text if command.args_text else "(empty)"
+    if command.name == "start":
+        return "\n".join(
+            [
+                "CyreneAI bot is ready.",
+                "Use /help to see available commands.",
+            ]
+        )
+    if command.name == "help":
+        return "\n".join(
+            [
+                "Available commands:",
+                "/start - Start the bot.",
+                "/help - Show available commands.",
+                "/ping - Check whether the bot is responsive.",
+                "/echo <text> - Echo text back.",
+            ]
+        )
+    if command.name == "ping":
+        return "pong"
+    if command.name == "echo":
+        return command.args_text or "(empty)"
     return "\n".join(
         [
-            f"command: {command.name}",
-            f"args: {args}",
-            f"args_text: {args_text}",
+            f"Unknown command: {command.name}",
+            "Use /help to see available commands.",
         ]
     )
+
+
+def _split_command_target(name_token: str) -> tuple[str, str | None]:
+    name, separator, target = name_token.partition("@")
+    if not separator:
+        return name, None
+    return name, target or None
 
 
 def _event_text(event: BotEvent) -> str:

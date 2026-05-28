@@ -105,6 +105,9 @@ ApplicationVectorSearchResult
 
 application 只能 import 这些 schema 并编排流程，不能在 orchestrator 内定义 schema。
 
+严禁用 `@dataclass` 绕过 schema 边界。application 中的公开 DTO 不允许用 dataclass 定义；
+只允许私有算法 helper dataclass，或明确白名单中的 runtime 容器。
+
 ## application 铁律
 
 application 只负责应用 runtime 容器与业务流程编排。
@@ -129,6 +132,7 @@ application 只负责应用 runtime 容器与业务流程编排。
 - 注册 provider adapter
 - 处理 provider 专属协议差异
 - 定义 `CyreneAISchema` 派生类
+- 定义公开 `@dataclass` DTO
 
 ## composition root 铁律
 
@@ -300,6 +304,7 @@ test_provider_adapter_directories_have_expected_files
 test_infra_does_not_import_application_or_server
 test_application_does_not_import_infra_or_server
 test_application_does_not_define_core_schema_classes
+test_application_does_not_define_public_dataclass_dtos
 test_only_core_schema_defines_cyrene_ai_schema_subclasses
 test_bootstrap_registrations_only_wire_core_catalog_and_adapters
 ```
