@@ -1,26 +1,13 @@
 from __future__ import annotations
 
-from pydantic import Field
-
 from cyreneAI.application.bot.orchestrator import (
     ApplicationBotRequest,
-    ApplicationBotResult,
     BotOrchestrator,
 )
 from cyreneAI.application.runtime import CyreneAIRuntime
 from cyreneAI.core.errors.bot import BotStateError
-from cyreneAI.core.schema.base import CyreneAISchema
-from cyreneAI.core.schema.bot import BotAction, BotConversationState
-
-
-class ApplicationBotDispatchResult(CyreneAISchema):
-    """
-    应用 bot 派发结果。
-    """
-
-    bot_result: ApplicationBotResult
-    sent_actions: list[BotAction] = Field(default_factory=list)
-    session_state: BotConversationState | None = None
+from cyreneAI.core.schema.application import ApplicationBotDispatchResult
+from cyreneAI.core.schema.bot import BotAction
 
 
 class BotDispatcher:

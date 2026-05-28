@@ -1,65 +1,18 @@
 from __future__ import annotations
 
-from typing import Any
-
-from pydantic import Field
-
 from cyreneAI.application.runtime import CyreneAIRuntime
 from cyreneAI.core.errors.base import StateError
-from cyreneAI.core.schema.base import CyreneAISchema
+from cyreneAI.core.schema.application import (
+    ApplicationVectorRecordResult,
+    ApplicationVectorSearchRequest,
+    ApplicationVectorSearchResult,
+    ApplicationVectorUpsertRequest,
+    ApplicationVectorWriteResult,
+)
 from cyreneAI.core.schema.vector import (
     VectorQuery,
-    VectorRecord,
-    VectorSearchResult,
 )
 from cyreneAI.core.vector.manager import VectorManager
-
-
-class ApplicationVectorUpsertRequest(CyreneAISchema):
-    """
-    应用向量写入请求
-    """
-
-    records: list[VectorRecord] = Field(default_factory=list)
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class ApplicationVectorSearchRequest(CyreneAISchema):
-    """
-    应用向量检索请求
-    """
-
-    vector: list[float] = Field(min_length=1)
-    top_k: int = Field(default=5, ge=1)
-    filters: dict[str, Any] = Field(default_factory=dict)
-    min_score: float | None = None
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class ApplicationVectorSearchResult(CyreneAISchema):
-    """
-    应用向量检索结果
-    """
-
-    result: VectorSearchResult
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class ApplicationVectorRecordResult(CyreneAISchema):
-    """
-    应用向量记录结果
-    """
-
-    record: VectorRecord
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class ApplicationVectorWriteResult(CyreneAISchema):
-    """
-    应用向量写入结果
-    """
-
-    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class VectorStoreOrchestrator:

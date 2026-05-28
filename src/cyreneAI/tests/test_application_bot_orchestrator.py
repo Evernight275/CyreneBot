@@ -167,6 +167,81 @@ def test_bot_orchestrator_rejects_unsupported_event_type() -> None:
     asyncio.run(run())
 
 
+def test_bot_orchestrator_returns_command_parse_result_without_provider_call() -> None:
+    async def run() -> None:
+        provider = FakeChatProvider(
+            ChatResponse(
+                provider_id="provider-1",
+                message=_chat_message(MessageRole.ASSISTANT, "unused"),
+            )
+        )
+        runtime = await _build_runtime(provider)
+        event = _bot_event('/search "hello world" --limit 3')
+        event = event.model_copy(update={"event_type": BotEventType.COMMAND})
+
+        result = await BotOrchestrator(runtime).handle(
+            ApplicationBotRequest(
+                event=event,
+                provider_id="provider-1",
+                model="fake-model",
+            )
+        )
+
+        assert provider.requests == []
+        assert result.chat_result is None
+        assert len(result.actions) == 1
+        action = result.actions[0]
+        assert action.action_type == BotActionType.SEND_MESSAGE
+        assert action.message is not None
+        assert action.message.content == _content(
+            "\n".join(
+                [
+                    "command: search",
+                    "args: hello world, --limit, 3",
+                    "args_text: hello world --limit 3",
+                ]
+            )
+        )
+        assert action.metadata["command"] == "search"
+        assert action.metadata["command_args"] == ["hello world", "--limit", "3"]
+        assert result.metadata["command"] == "search"
+
+    asyncio.run(run())
+
+
+def test_bot_orchestrator_treats_slash_message_as_command() -> None:
+    async def run() -> None:
+        provider = FakeChatProvider(
+            ChatResponse(
+                provider_id="provider-1",
+                message=_chat_message(MessageRole.ASSISTANT, "unused"),
+            )
+        )
+        runtime = await _build_runtime(provider)
+
+        result = await BotOrchestrator(runtime).handle(
+            ApplicationBotRequest(
+                event=_bot_event("/help"),
+                provider_id="provider-1",
+                model="fake-model",
+            )
+        )
+
+        assert provider.requests == []
+        assert result.actions[0].message is not None
+        assert result.actions[0].message.content == _content(
+            "\n".join(
+                [
+                    "command: help",
+                    "args: (none)",
+                    "args_text: (empty)",
+                ]
+            )
+        )
+
+    asyncio.run(run())
+
+
 def test_bot_orchestrator_requires_message_content() -> None:
     async def run() -> None:
         provider = FakeChatProvider(

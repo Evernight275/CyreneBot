@@ -4,9 +4,13 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from cyreneAI.application.runtime import CyreneAIRuntime
 from cyreneAI.core.errors.base import CyreneAIError
-from cyreneAI.server.dependencies import get_runtime
+from cyreneAI.server.dependencies import get_runtime, require_admin
 
-router = APIRouter(prefix="/providers", tags=["providers"])
+router = APIRouter(
+    prefix="/providers",
+    tags=["providers"],
+    dependencies=[Depends(require_admin)],
+)
 
 
 @router.get("")

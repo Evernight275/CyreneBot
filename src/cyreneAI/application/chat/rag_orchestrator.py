@@ -1,24 +1,18 @@
 from __future__ import annotations
 
-from enum import StrEnum
 from typing import Any
 
-from pydantic import Field
-
-from cyreneAI.application.chat.orchestrator import (
-    ApplicationChatRequest,
-    ApplicationChatResult,
-    ChatOrchestrator,
-)
-from cyreneAI.application.knowledge.retrieval_orchestrator import (
-    ApplicationRetrievalRequest,
-    ApplicationRetrievalResult,
-    RetrievalOrchestrator,
-)
+from cyreneAI.application.chat.orchestrator import ChatOrchestrator
+from cyreneAI.application.knowledge.retrieval_orchestrator import RetrievalOrchestrator
 from cyreneAI.application.runtime import CyreneAIRuntime
-from cyreneAI.core.schema.base import CyreneAISchema
+from cyreneAI.core.schema.application import (
+    ApplicationChatRequest,
+    ApplicationRAGChatRequest,
+    ApplicationRAGChatResult,
+    ApplicationRetrievalRequest,
+    RAGContextFormat,
+)
 from cyreneAI.core.schema.context import (
-    ContextBudget,
     ContextItem,
     ContextItemSource,
     ContextItemType,
@@ -26,65 +20,7 @@ from cyreneAI.core.schema.context import (
     ContextSegmentRole,
 )
 from cyreneAI.core.schema.message import Message
-from cyreneAI.core.schema.tool import ToolChoice
 from cyreneAI.core.schema.vector import VectorSearchMatch
-
-
-class RAGContextFormat(StrEnum):
-    """
-    RAG 检索上下文格式
-    """
-
-    PLAIN = "plain"
-    NUMBERED = "numbered"
-    SOURCE_TAGGED = "source_tagged"
-    COMPACT = "compact"
-
-
-class ApplicationRAGChatRequest(CyreneAISchema):
-    """
-    应用 RAG 聊天请求
-    """
-
-    session_id: str
-    provider_id: str
-    model: str
-    messages: list[Message]
-
-    retrieval_provider_id: str
-    retrieval_model: str
-    retrieval_query: str | None = None
-    retrieval_dimensions: int | None = Field(default=None, ge=1)
-    retrieval_top_k: int = Field(default=5, ge=1)
-    retrieval_filters: dict[str, Any] = Field(default_factory=dict)
-    retrieval_min_score: float | None = None
-    collection_id: str | None = None
-    retrieval_context_format: RAGContextFormat = RAGContextFormat.PLAIN
-    max_retrieved_content_chars: int | None = Field(default=None, ge=1)
-    include_retrieval_metadata: bool = False
-
-    context_budget: ContextBudget | None = None
-    required_skill_names: list[str] = Field(default_factory=list)
-    max_skills: int | None = None
-
-    temperature: float | None = None
-    max_tokens: int | None = None
-    stream: bool = False
-    tool_choice: ToolChoice | None = None
-    allowed_tool_names: list[str] | None = None
-    max_tool_rounds: int = Field(default=1, ge=0)
-
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class ApplicationRAGChatResult(CyreneAISchema):
-    """
-    应用 RAG 聊天结果
-    """
-
-    chat_result: ApplicationChatResult
-    retrieval_result: ApplicationRetrievalResult
-    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class RAGChatOrchestrator:

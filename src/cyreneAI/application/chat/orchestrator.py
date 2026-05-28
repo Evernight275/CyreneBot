@@ -1,19 +1,16 @@
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import cast
 from uuid import uuid4
-
-from pydantic import Field
 
 from cyreneAI.application.runtime import CyreneAIRuntime
 from cyreneAI.core.context.context_protocol import ContextBuilderProtocol
 from cyreneAI.core.errors.base import StateError, UnsupportedError
 from cyreneAI.core.errors.tool import ToolExecutionError
 from cyreneAI.core.provider.provider_protocol import ChatProviderProtocol
-from cyreneAI.core.schema.base import CyreneAISchema
+from cyreneAI.core.schema.application import ApplicationChatRequest, ApplicationChatResult
 from cyreneAI.core.schema.chat import ChatRequest, ChatResponse
 from cyreneAI.core.schema.context import (
-    ContextBudget,
     ContextBuildRequest,
     ContextBuildResult,
     ContextItem,
@@ -24,48 +21,8 @@ from cyreneAI.core.schema.context import (
     ContextWindow,
 )
 from cyreneAI.core.schema.message import ContentPart, ContentPartType, Message, MessageRole
-from cyreneAI.core.schema.skill import (
-    SkillInstructionBundle,
-    SkillSelectionRequest,
-)
+from cyreneAI.core.schema.skill import SkillInstructionBundle, SkillSelectionRequest
 from cyreneAI.core.schema.tool import ToolChoice, ToolDefinition, ToolResult
-
-
-class ApplicationChatRequest(CyreneAISchema):
-    """
-    应用聊天请求
-    """
-
-    session_id: str
-    provider_id: str
-    model: str
-    messages: list[Message]
-
-    context_budget: ContextBudget | None = None
-    required_skill_names: list[str] = Field(default_factory=list)
-    max_skills: int | None = None
-    additional_context_segments: list[ContextSegment] = Field(default_factory=list)
-
-    temperature: float | None = None
-    max_tokens: int | None = None
-    stream: bool = False
-    tool_choice: ToolChoice | None = None
-    allowed_tool_names: list[str] | None = None
-    max_tool_rounds: int = Field(default=1, ge=0)
-
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class ApplicationChatResult(CyreneAISchema):
-    """
-    应用聊天结果
-    """
-
-    response: ChatResponse
-    context_snapshot: ContextSnapshot
-    skill_bundle: SkillInstructionBundle | None = None
-    tool_results: list[ToolResult] = Field(default_factory=list)
-    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class ChatOrchestrator:

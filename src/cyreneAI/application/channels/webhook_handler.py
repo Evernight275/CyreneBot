@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, cast
-
-from pydantic import Field
+from typing import cast
 
 from cyreneAI.application.bot.dispatcher import (
     ApplicationBotDispatchResult,
@@ -13,33 +11,7 @@ from cyreneAI.application.runtime import CyreneAIRuntime
 from cyreneAI.core.bot.bot_protocol import BotUpdateMapperProtocol
 from cyreneAI.core.errors.base import UnsupportedError
 from cyreneAI.core.errors.bot import BotStateError
-from cyreneAI.core.schema.base import CyreneAISchema
-from cyreneAI.core.schema.context import ContextBudget
-from cyreneAI.core.schema.tool import ToolChoice
-
-
-class ApplicationChannelWebhookRequest(CyreneAISchema):
-    """
-    应用 channel webhook 请求。
-    """
-
-    channel_id: str
-    payload: dict[str, Any]
-    provider_id: str
-    model: str
-
-    context_budget: ContextBudget | None = None
-    required_skill_names: list[str] = Field(default_factory=list)
-    max_skills: int | None = None
-
-    temperature: float | None = None
-    max_tokens: int | None = None
-    stream: bool = False
-    tool_choice: ToolChoice | None = None
-    allowed_tool_names: list[str] | None = None
-    max_tool_rounds: int = Field(default=1, ge=0)
-
-    metadata: dict[str, Any] = Field(default_factory=dict)
+from cyreneAI.core.schema.application import ApplicationChannelWebhookRequest
 
 
 class ChannelWebhookHandler:

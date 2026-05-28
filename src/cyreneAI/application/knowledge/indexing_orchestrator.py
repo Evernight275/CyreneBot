@@ -1,61 +1,21 @@
 from __future__ import annotations
 
-from enum import StrEnum
+from dataclasses import dataclass
 import re
-from typing import Any, cast
-
-from pydantic import Field, model_validator
+from typing import cast
 
 from cyreneAI.application.runtime import CyreneAIRuntime
 from cyreneAI.core.errors.base import StateError, UnsupportedError
 from cyreneAI.core.provider.provider_protocol import EmbeddingProviderProtocol
-from cyreneAI.core.schema.base import CyreneAISchema
+from cyreneAI.core.schema.application import (
+    ApplicationIndexingRequest,
+    ApplicationIndexingResult,
+    ChunkStrategy,
+)
 from cyreneAI.core.schema.document import Document, DocumentChunk
 from cyreneAI.core.schema.embedding import EmbeddingRequest, EmbeddingResponse
 from cyreneAI.core.schema.vector import VectorRecord
 from cyreneAI.core.vector.manager import VectorManager
-
-
-class ChunkStrategy(StrEnum):
-    """
-    文档切块策略
-    """
-
-    CHARACTER = "character"
-    PARAGRAPH = "paragraph"
-
-
-class ApplicationIndexingRequest(CyreneAISchema):
-    """
-    应用索引请求
-    """
-
-    provider_id: str
-    model: str
-    documents: list[Document] = Field(min_length=1)
-    chunk_size: int = Field(default=1000, ge=1)
-    chunk_overlap: int = Field(default=0, ge=0)
-    chunk_strategy: ChunkStrategy = ChunkStrategy.CHARACTER
-    dimensions: int | None = Field(default=None, ge=1)
-    collection_id: str | None = None
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-    @model_validator(mode="after")
-    def validate_chunk_overlap(self) -> "ApplicationIndexingRequest":
-        if self.chunk_overlap >= self.chunk_size:
-            raise ValueError("chunk_overlap must be smaller than chunk_size")
-        return self
-
-
-class ApplicationIndexingResult(CyreneAISchema):
-    """
-    应用索引结果
-    """
-
-    chunks: list[DocumentChunk] = Field(default_factory=list)
-    records: list[VectorRecord] = Field(default_factory=list)
-    embedding_response: EmbeddingResponse
-    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class IndexingOrchestrator:
@@ -249,7 +209,8 @@ def _chunk_documents_by_paragraph(
     return chunks
 
 
-class _ParagraphSpan(CyreneAISchema):
+@dataclass(frozen=True)
+class _ParagraphSpan:
     text: str
     start: int
     end: int

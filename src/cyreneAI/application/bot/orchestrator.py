@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-from typing import Any
-
-from pydantic import Field
-
 from cyreneAI.application.chat.orchestrator import (
     ApplicationChatRequest,
     ApplicationChatResult,
     ChatOrchestrator,
+)
+from cyreneAI.application.bot.command_parser import (
+    parse_bot_command,
+    render_bot_command_result,
+    should_parse_bot_command,
 )
 from cyreneAI.application.runtime import CyreneAIRuntime
 from cyreneAI.core.schema.bot import (
@@ -18,44 +19,8 @@ from cyreneAI.core.schema.bot import (
     BotMessage,
 )
 from cyreneAI.core.errors.bot import BotInputError, BotUnsupportedEventError
-from cyreneAI.core.schema.base import CyreneAISchema
-from cyreneAI.core.schema.context import ContextBudget
+from cyreneAI.core.schema.application import ApplicationBotRequest, ApplicationBotResult
 from cyreneAI.core.schema.message import ContentPart, ContentPartType, Message, MessageRole
-from cyreneAI.core.schema.tool import ToolChoice, ToolResult
-
-
-class ApplicationBotRequest(CyreneAISchema):
-    """
-    应用 bot 请求。
-    """
-
-    event: BotEvent
-    provider_id: str
-    model: str
-
-    context_budget: ContextBudget | None = None
-    required_skill_names: list[str] = Field(default_factory=list)
-    max_skills: int | None = None
-
-    temperature: float | None = None
-    max_tokens: int | None = None
-    stream: bool = False
-    tool_choice: ToolChoice | None = None
-    allowed_tool_names: list[str] | None = None
-    max_tool_rounds: int = Field(default=1, ge=0)
-
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class ApplicationBotResult(CyreneAISchema):
-    """
-    应用 bot 结果。
-    """
-
-    actions: list[BotAction] = Field(default_factory=list)
-    chat_result: ApplicationChatResult | None = None
-    tool_results: list[ToolResult] = Field(default_factory=list)
-    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class BotOrchestrator:
@@ -71,6 +36,9 @@ class BotOrchestrator:
         """
         处理一次标准化 bot 事件。
         """
+        if should_parse_bot_command(request.event):
+            return _command_event_to_result(request)
+
         if request.event.event_type != BotEventType.MESSAGE:
             raise BotUnsupportedEventError(
                 f"Bot event {request.event.event_type} is not supported"
@@ -114,6 +82,44 @@ class BotOrchestrator:
                 "bot_channel_id": request.event.channel_id,
             },
         )
+
+
+def _command_event_to_result(request: ApplicationBotRequest) -> ApplicationBotResult:
+    command = parse_bot_command(request.event)
+    action = BotAction(
+        action_type=BotActionType.SEND_MESSAGE,
+        channel_id=request.event.channel_id,
+        session_id=request.event.session_id,
+        recipient_id=request.event.user_id,
+        thread_id=request.event.thread_id,
+        message=BotMessage(
+            sender_id="bot",
+            content=[
+                ContentPart(
+                    type=ContentPartType.TEXT,
+                    text=render_bot_command_result(command),
+                )
+            ],
+            metadata={
+                "command": command.name,
+            },
+        ),
+        metadata={
+            "bot_event_id": request.event.event_id,
+            "command": command.name,
+            "command_args": command.args,
+        },
+    )
+    return ApplicationBotResult(
+        actions=[action],
+        metadata={
+            **request.metadata,
+            "bot_event_id": request.event.event_id,
+            "bot_channel_id": request.event.channel_id,
+            "command": command.name,
+            "command_args": command.args,
+        },
+    )
 
 
 def _bot_event_to_user_message(event: BotEvent) -> Message:

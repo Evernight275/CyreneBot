@@ -1,42 +1,17 @@
 from __future__ import annotations
 
-from typing import Any, cast
-
-from pydantic import Field
+from typing import cast
 
 from cyreneAI.application.runtime import CyreneAIRuntime
 from cyreneAI.core.errors.base import StateError, UnsupportedError
 from cyreneAI.core.provider.provider_protocol import EmbeddingProviderProtocol
-from cyreneAI.core.schema.base import CyreneAISchema
-from cyreneAI.core.schema.embedding import EmbeddingRequest, EmbeddingResponse
-from cyreneAI.core.schema.vector import VectorQuery, VectorSearchResult
+from cyreneAI.core.schema.application import (
+    ApplicationRetrievalRequest,
+    ApplicationRetrievalResult,
+)
+from cyreneAI.core.schema.embedding import EmbeddingRequest
+from cyreneAI.core.schema.vector import VectorQuery
 from cyreneAI.core.vector.manager import VectorManager
-
-
-class ApplicationRetrievalRequest(CyreneAISchema):
-    """
-    应用检索请求
-    """
-
-    provider_id: str
-    model: str
-    query: str
-    dimensions: int | None = Field(default=None, ge=1)
-    top_k: int = Field(default=5, ge=1)
-    filters: dict[str, Any] = Field(default_factory=dict)
-    min_score: float | None = None
-    collection_id: str | None = None
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class ApplicationRetrievalResult(CyreneAISchema):
-    """
-    应用检索结果
-    """
-
-    embedding_response: EmbeddingResponse
-    search_result: VectorSearchResult
-    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class RetrievalOrchestrator:

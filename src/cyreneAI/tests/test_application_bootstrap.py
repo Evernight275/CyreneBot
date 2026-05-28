@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-from cyreneAI.application.bootstrap import build_cyrene_ai_runtime
+from cyreneAI.bootstrap import build_cyrene_ai_runtime
 from cyreneAI.core.bot.registry import BotChannelRegistry
 from cyreneAI.core.bot.session_manager import BotSessionManager
 from cyreneAI.core.schema.bot import BotChannelDefinition

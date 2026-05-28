@@ -12,11 +12,27 @@
 
 ## 分层原则
 
-依赖方向固定：
+依赖边界固定，按“允许 import 谁”理解：
 
 ```text
-core -> infra
-core/infra -> application
+core
+  只能依赖 Python 标准库与项目无关的轻量基础库。
+
+infra
+  可以依赖 core。
+  可以在 adapter 内依赖外部 SDK。
+  禁止依赖 application、server。
+
+application
+  可以依赖 core。
+  禁止依赖 infra、server、外部 SDK。
+
+cyreneAI.bootstrap
+  是唯一默认 composition root。
+  可以同时依赖 core、infra、application。
+
+server
+  可以依赖 cyreneAI.bootstrap、application runtime、server 自身模块。
 ```
 
 实际含义：
@@ -35,7 +51,16 @@ infra/bootstrap
   只负责把 provider info、adapter builder、registry、factory 装配起来。
 
 application
-  只负责应用入口与业务流程编排。
+  只负责应用 runtime 容器与业务流程编排。
+  (
+    不允许schema定义！！！
+    不允许schema定义！！！
+    不允许schema定义！！！
+    哪怕@dataclass也不行，一律滚去core/schema目录
+  )
+
+cyreneAI.bootstrap
+  只负责把 core/application/infra 总装成可运行 runtime。
 ```
 
 ## 严禁越界
@@ -47,6 +72,23 @@ application
 - 读取 `.env`
 - 创建外部 SDK client
 - 写 provider 专属实现规则
+- import `cyreneAI.infra`
+- import `cyreneAI.application`
+- import `cyreneAI.server`
+
+`application` 严禁：
+
+- import `cyreneAI.infra`
+- import `cyreneAI.server`
+- import 外部 SDK，例如 `openai`、`httpx`、`anthropic`、`google`
+- 读取 `.env`
+- 读取环境变量
+- 创建外部 SDK client
+- 创建 database store
+- 创建 filesystem loader
+- 注册 provider adapter
+- 处理 provider 专属协议差异
+- 定义继承 `CyreneAISchema` 的 schema 类
 
 `infra/provider_catalog` 严禁：
 
@@ -65,6 +107,56 @@ application
 - 调用外部 API
 - 做 schema 映射
 - 翻译外部异常
+
+`infra` 整体严禁：
+
+- import `cyreneAI.application`
+- import `cyreneAI.server`
+
+## schema 规则
+
+`core/schema` 是唯一 schema 定义目录。
+
+任何继承 `CyreneAISchema` 的类只能放在：
+
+```text
+src/cyreneAI/core/schema/
+```
+
+严禁在以下目录定义 `CyreneAISchema` 派生类：
+
+```text
+src/cyreneAI/application/
+src/cyreneAI/infra/
+src/cyreneAI/server/
+```
+
+应用层 request/result schema 也属于 core schema，例如：
+
+```text
+ApplicationChatRequest
+ApplicationChatResult
+ApplicationBotRequest
+ApplicationRAGChatRequest
+```
+
+这些类型只能定义在 `core/schema`，application 只能 import 并使用。
+
+## composition root 规则
+
+默认运行时总装只能放在：
+
+```text
+src/cyreneAI/bootstrap.py
+```
+
+`cyreneAI.bootstrap` 可以同时 import application 与 infra，因为它是 composition root。
+
+除 `cyreneAI.bootstrap` 外：
+
+- `application` 不准装配 infra 具体实现
+- `infra` 不准装配 application runtime
+- `server` 不准手写 provider adapter 注册细节，只调用 composition root
 
 ## provider 信息目录规则
 
@@ -105,6 +197,20 @@ OpenAI-compatible 供应商差异只在 infra adapter 内翻译：
 7. 每个 quirk 必须有 mapper 或 instance 单测。
 
 ## 测试要求
+
+边界规则必须由测试守住，至少包括：
+
+```text
+test_core_does_not_import_external_sdks_or_upper_layers
+test_provider_catalog_imports_only_core_schema
+test_provider_adapter_directories_have_expected_files
+test_infra_does_not_import_application_or_server
+test_application_does_not_import_infra_or_server
+test_application_does_not_define_core_schema_classes
+test_bootstrap_registrations_only_wire_core_catalog_and_adapters
+```
+
+若改动分层、schema、provider、bootstrap 或 adapter，必须运行完整边界测试和项目测试。
 
 改动 infra provider/adapter/bootstrap 时，至少运行：
 

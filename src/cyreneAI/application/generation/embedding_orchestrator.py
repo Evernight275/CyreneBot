@@ -1,35 +1,15 @@
 from __future__ import annotations
 
-from typing import Any, cast
-
-from pydantic import Field
+from typing import cast
 
 from cyreneAI.application.runtime import CyreneAIRuntime
 from cyreneAI.core.errors.base import UnsupportedError
 from cyreneAI.core.provider.provider_protocol import EmbeddingProviderProtocol
-from cyreneAI.core.schema.base import CyreneAISchema
-from cyreneAI.core.schema.embedding import EmbeddingRequest, EmbeddingResponse
-
-
-class ApplicationEmbeddingRequest(CyreneAISchema):
-    """
-    应用嵌入请求
-    """
-
-    provider_id: str
-    model: str
-    input: str | list[str]
-    dimensions: int | None = Field(default=None, ge=1)
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class ApplicationEmbeddingResult(CyreneAISchema):
-    """
-    应用嵌入结果
-    """
-
-    response: EmbeddingResponse
-    metadata: dict[str, Any] = Field(default_factory=dict)
+from cyreneAI.core.schema.application import (
+    ApplicationEmbeddingRequest,
+    ApplicationEmbeddingResult,
+)
+from cyreneAI.core.schema.embedding import EmbeddingRequest
 
 
 class EmbeddingOrchestrator:

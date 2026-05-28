@@ -1,41 +1,17 @@
 from __future__ import annotations
 
-from typing import Any, Literal, cast
-
-from pydantic import Field
+from typing import cast
 
 from cyreneAI.application.runtime import CyreneAIRuntime
 from cyreneAI.core.errors.base import UnsupportedError
 from cyreneAI.core.provider.provider_protocol import ImageGenerationProviderProtocol
-from cyreneAI.core.schema.base import CyreneAISchema
+from cyreneAI.core.schema.application import (
+    ApplicationImageGenerationRequest,
+    ApplicationImageGenerationResult,
+)
 from cyreneAI.core.schema.image import (
     ImageGenerationRequest,
-    ImageGenerationResponse,
 )
-
-
-class ApplicationImageGenerationRequest(CyreneAISchema):
-    """
-    应用图片生成请求
-    """
-
-    provider_id: str
-    model: str
-    prompt: str
-    count: int = Field(default=1, ge=1)
-    size: str | None = None
-    quality: str | None = None
-    response_format: Literal["url", "b64_json"] = "b64_json"
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class ApplicationImageGenerationResult(CyreneAISchema):
-    """
-    应用图片生成结果
-    """
-
-    response: ImageGenerationResponse
-    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class ImageGenerationOrchestrator:

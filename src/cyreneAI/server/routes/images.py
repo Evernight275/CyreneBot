@@ -8,10 +8,14 @@ from cyreneAI.application.generation.image_orchestrator import (
 )
 from cyreneAI.application.runtime import CyreneAIRuntime
 from cyreneAI.core.errors.base import CyreneAIError
-from cyreneAI.server.dependencies import get_runtime
+from cyreneAI.server.dependencies import get_runtime, require_admin
 from cyreneAI.server.schemas import ImageGenerationRequestBody
 
-router = APIRouter(prefix="/images", tags=["images"])
+router = APIRouter(
+    prefix="/images",
+    tags=["images"],
+    dependencies=[Depends(require_admin)],
+)
 
 
 @router.post("/generate")

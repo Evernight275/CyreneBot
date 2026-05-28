@@ -6,9 +6,17 @@ from datetime import timedelta
 from fastapi.testclient import TestClient
 
 from cyreneAI.application.runtime import CyreneAIRuntime
+from cyreneAI.core.bot.registry import BotChannelRegistry
 from cyreneAI.core.context.builder import ContextWindowBuilder
 from cyreneAI.core.provider.factory import ProviderFactory
 from cyreneAI.core.provider.manager import ProviderManager
+from cyreneAI.core.schema.bot import (
+    BotAction,
+    BotChannelDefinition,
+    BotEvent,
+    BotEventType,
+    BotMessage,
+)
 from cyreneAI.core.schema.chat import ChatFinishReason, ChatRequest, ChatResponse
 from cyreneAI.core.schema.image import (
     GeneratedImage,
@@ -28,7 +36,7 @@ from cyreneAI.core.schema.provider import (
     ProviderType,
 )
 from cyreneAI.server import create_app
-from cyreneAI.server.config import build_provider_configs_from_env
+from cyreneAI.server.config import ServerSettings, build_provider_configs_from_env
 
 
 class FakeServerProvider:
@@ -83,9 +91,44 @@ class FakeServerProvider:
         pass
 
 
+class FakeServerChannel:
+    def __init__(self) -> None:
+        self.actions: list[BotAction] = []
+
+    def map_update(self, update: dict) -> BotEvent:
+        return BotEvent(
+            event_id=str(update["event_id"]),
+            event_type=BotEventType.MESSAGE,
+            channel_id="fake",
+            session_id="fake:user-1",
+            user_id="user-1",
+            message=BotMessage(
+                sender_id="user-1",
+                content=[
+                    ContentPart(
+                        type=ContentPartType.TEXT,
+                        text=str(update["text"]),
+                    )
+                ],
+            ),
+        )
+
+    async def send(self, action: BotAction) -> None:
+        self.actions.append(action)
+
+
 def _client() -> TestClient:
     async def build_runtime() -> CyreneAIRuntime:
         provider = FakeServerProvider()
+        channel = FakeServerChannel()
+        bot_channel_registry = BotChannelRegistry()
+        bot_channel_registry.register(
+            BotChannelDefinition(
+                channel_id="fake",
+                name="Fake",
+            ),
+            channel,
+        )
         factory = ProviderFactory()
 
         async def build_provider(config: ProviderConfig) -> FakeServerProvider:
@@ -97,9 +140,15 @@ def _client() -> TestClient:
         return CyreneAIRuntime(
             provider_manager=manager,
             context_builder=ContextWindowBuilder(),
+            bot_channel_registry=bot_channel_registry,
         )
 
-    return TestClient(create_app(asyncio.run(build_runtime())))
+    return TestClient(
+        create_app(
+            asyncio.run(build_runtime()),
+            settings=ServerSettings(auth_enabled=False),
+        )
+    )
 
 
 def test_server_health() -> None:
@@ -152,6 +201,25 @@ def test_server_generates_images() -> None:
 
     assert response.status_code == 200
     assert response.json()["response"]["images"][0]["b64_json"] == "aW1hZ2U="
+
+
+def test_server_channel_webhook_sends_bot_reply() -> None:
+    response = _client().post(
+        "/channels/fake/webhook",
+        json={
+            "provider_id": "provider-1",
+            "model": "chat-model",
+            "payload": {
+                "event_id": "event-1",
+                "text": "ping",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    sent_actions = response.json()["sent_actions"]
+    assert len(sent_actions) == 1
+    assert sent_actions[0]["message"]["content"][0]["text"] == "pong"
 
 
 def test_server_builds_provider_configs_from_env(monkeypatch) -> None:

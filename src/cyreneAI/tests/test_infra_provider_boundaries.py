@@ -59,6 +59,14 @@ def _imports_root(module: str, roots: set[str]) -> bool:
     return module.split(".", maxsplit=1)[0] in roots
 
 
+def _base_name(node: ast.expr) -> str | None:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    return None
+
+
 def test_infra_provider_catalog_only_contains_info_files() -> None:
     invalid_paths = []
     for path in PROVIDER_CATALOG_DIR.iterdir():
@@ -147,6 +155,24 @@ def test_provider_adapters_do_not_import_application_or_server() -> None:
     assert violations == []
 
 
+def test_infra_does_not_import_application_or_server() -> None:
+    violations = []
+    forbidden_prefixes = {
+        "cyreneAI.application",
+        "cyreneAI.server",
+    }
+
+    for path in _python_files(INFRA_DIR):
+        for module in _imported_modules(path):
+            if any(
+                module == prefix or module.startswith(f"{prefix}.")
+                for prefix in forbidden_prefixes
+            ):
+                violations.append((_relative(path), module))
+
+    assert violations == []
+
+
 def test_bootstrap_registrations_only_wire_core_catalog_and_adapters() -> None:
     allowed_roots = {
         "cyreneAI.core",
@@ -169,11 +195,11 @@ def test_bootstrap_registrations_only_wire_core_catalog_and_adapters() -> None:
     assert violations == []
 
 
-def test_application_does_not_import_provider_catalog_or_provider_instances() -> None:
+def test_application_does_not_import_infra_or_server() -> None:
     violations = []
     forbidden_prefixes = {
-        "cyreneAI.infra.provider_catalog",
-        "cyreneAI.infra.adapters.providers",
+        "cyreneAI.infra",
+        "cyreneAI.server",
     }
 
     for path in _python_files(APPLICATION_DIR):
@@ -183,6 +209,20 @@ def test_application_does_not_import_provider_catalog_or_provider_instances() ->
                 for prefix in forbidden_prefixes
             ):
                 violations.append((_relative(path), module))
+
+    assert violations == []
+
+
+def test_application_does_not_define_core_schema_classes() -> None:
+    violations = []
+
+    for path in _python_files(APPLICATION_DIR):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ClassDef):
+                continue
+            if any(_base_name(base) == "CyreneAISchema" for base in node.bases):
+                violations.append((_relative(path), node.name))
 
     assert violations == []
 

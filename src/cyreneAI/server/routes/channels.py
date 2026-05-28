@@ -2,37 +2,35 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from cyreneAI.application.chat.orchestrator import (
-    ApplicationChatRequest,
-    ChatOrchestrator,
+from cyreneAI.application.channels.webhook_handler import (
+    ApplicationChannelWebhookRequest,
+    ChannelWebhookHandler,
 )
 from cyreneAI.application.runtime import CyreneAIRuntime
 from cyreneAI.core.errors.base import CyreneAIError
 from cyreneAI.server.dependencies import get_runtime, require_admin
-from cyreneAI.server.schemas import ChatRequestBody
+from cyreneAI.server.schemas import ChannelWebhookRequestBody
 
 router = APIRouter(
-    prefix="/chat",
-    tags=["chat"],
+    prefix="/channels",
+    tags=["channels"],
     dependencies=[Depends(require_admin)],
 )
 
 
-@router.post("")
-async def chat(
-    body: ChatRequestBody,
+@router.post("/{channel_id}/webhook")
+async def handle_channel_webhook(
+    channel_id: str,
+    body: ChannelWebhookRequestBody,
     runtime: CyreneAIRuntime = Depends(get_runtime),
 ) -> dict:
     try:
-        result = await ChatOrchestrator(runtime).chat(
-            ApplicationChatRequest(
-                session_id=body.metadata.get("session_id", "http"),
+        result = await ChannelWebhookHandler(runtime).handle(
+            ApplicationChannelWebhookRequest(
+                channel_id=channel_id,
+                payload=body.payload.copy(),
                 provider_id=body.provider_id,
                 model=body.model,
-                messages=[
-                    message.to_core_message()
-                    for message in body.messages
-                ],
                 temperature=body.temperature,
                 max_tokens=body.max_tokens,
                 metadata=body.metadata.copy(),

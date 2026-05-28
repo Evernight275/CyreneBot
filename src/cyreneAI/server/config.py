@@ -5,7 +5,37 @@ from datetime import timedelta
 
 from dotenv import load_dotenv
 
+from cyreneAI.core.schema.base import CyreneAISchema
 from cyreneAI.core.schema.provider import ProviderConfig, ProviderType
+
+
+class ServerSettings(CyreneAISchema):
+    """
+    Server runtime settings.
+    """
+
+    admin_username: str | None = None
+    admin_password: str | None = None
+    auth_enabled: bool = True
+    session_secret: str | None = None
+    session_cookie_name: str = "cyrene_admin_session"
+    session_ttl_seconds: int = 12 * 60 * 60
+
+
+def build_server_settings_from_env() -> ServerSettings:
+    load_dotenv()
+
+    return ServerSettings(
+        admin_username=os.getenv("CYRENEAI_ADMIN_USERNAME"),
+        admin_password=os.getenv("CYRENEAI_ADMIN_PASSWORD"),
+        auth_enabled=_env_bool("CYRENEAI_AUTH_ENABLED", default=True),
+        session_secret=os.getenv("CYRENEAI_SESSION_SECRET"),
+        session_cookie_name=os.getenv(
+            "CYRENEAI_SESSION_COOKIE_NAME",
+            "cyrene_admin_session",
+        ),
+        session_ttl_seconds=int(os.getenv("CYRENEAI_SESSION_TTL_SECONDS", "43200")),
+    )
 
 
 def build_provider_configs_from_env() -> list[ProviderConfig]:
@@ -73,3 +103,10 @@ def build_provider_configs_from_env() -> list[ProviderConfig]:
         )
 
     return configs
+
+
+def _env_bool(name: str, *, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}

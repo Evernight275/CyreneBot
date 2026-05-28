@@ -57,3 +57,12 @@ class ImageGenerationRequestBody(CyreneAISchema):
     quality: str | None = None
     response_format: Literal["url", "b64_json"] = "b64_json"
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ChannelWebhookRequestBody(CyreneAISchema):
+    provider_id: str
+    model: str
+    payload: dict[str, Any]
+    temperature: float | None = None
+    max_tokens: int | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)

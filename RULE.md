@@ -19,7 +19,7 @@
 
 ```text
 core
-  定义规则
+  定义规则、schema、protocol、通用错误
 
 infra/provider_catalog
   声明身份
@@ -28,13 +28,133 @@ infra/adapters
   连接外部世界
 
 infra/bootstrap
-  装配组件
+  装配 provider info、adapter builder、registry、factory
 
 application
-  编排应用
+  编排应用 runtime 与业务流程
+
+cyreneAI.bootstrap
+  总装 core/application/infra，生成可运行 runtime
 ```
 
 不允许为了方便跨层写代码。
+
+## 依赖铁律
+
+按“允许 import 谁”判定：
+
+```text
+core
+  禁止 import infra/application/server。
+
+infra
+  可以 import core。
+  adapter 内可以 import 外部 SDK。
+  禁止 import application/server。
+
+application
+  可以 import core。
+  禁止 import infra/server/外部 SDK。
+
+cyreneAI.bootstrap
+  是唯一默认 composition root。
+  可以同时 import core/application/infra。
+
+server
+  可以调用 cyreneAI.bootstrap。
+```
+
+出现以下任意行为，该 PR 直接拒收：
+
+- application import `cyreneAI.infra`
+- application import `cyreneAI.server`
+- infra import `cyreneAI.application`
+- infra import `cyreneAI.server`
+- core import `cyreneAI.infra`
+- core import `cyreneAI.application`
+- core import `cyreneAI.server`
+
+## schema 铁律
+
+`core/schema` 是唯一 schema 定义目录。
+
+任何继承 `CyreneAISchema` 的类只能放在：
+
+```text
+src/cyreneAI/core/schema/
+```
+
+严禁在以下目录定义 `CyreneAISchema` 派生类：
+
+```text
+src/cyreneAI/application/
+src/cyreneAI/infra/
+src/cyreneAI/server/
+```
+
+应用层 request/result schema 也必须放在 `core/schema`，例如：
+
+```text
+ApplicationChatRequest
+ApplicationChatResult
+ApplicationBotRequest
+ApplicationBotDispatchResult
+ApplicationRAGChatRequest
+ApplicationVectorSearchResult
+```
+
+application 只能 import 这些 schema 并编排流程，不能在 orchestrator 内定义 schema。
+
+## application 铁律
+
+application 只负责应用 runtime 容器与业务流程编排。
+
+允许：
+
+- import core schema/protocol/manager/error
+- 调用 provider manager
+- 调用 context/skill/tool/vector manager
+- 编排 chat、RAG、bot、channel、indexing、retrieval 流程
+
+禁止：
+
+- import infra
+- import server
+- import 外部 SDK
+- 读取 `.env`
+- 读取环境变量
+- 创建外部 SDK client
+- 创建 sqlite/database store
+- 创建 filesystem loader
+- 注册 provider adapter
+- 处理 provider 专属协议差异
+- 定义 `CyreneAISchema` 派生类
+
+## composition root 铁律
+
+默认运行时总装只能放在：
+
+```text
+src/cyreneAI/bootstrap.py
+```
+
+`cyreneAI.bootstrap` 是唯一允许同时 import application 与 infra 的默认 composition root。
+
+允许：
+
+- 注册默认 provider
+- 注册默认 bot channel
+- 创建 sqlite context/vector store
+- 创建 filesystem skill loader
+- 调用 application bootstrap 生成 runtime
+
+禁止：
+
+- 写 provider 请求/响应 mapper
+- 写 provider quirk
+- 发真实请求
+- 读取用户输入
+- 承担业务流程编排
 
 ## provider catalog 目录铁律
 
@@ -133,20 +253,23 @@ instance 是 adapter 的运行对象。
 - 注册 registry
 - 读取 `.env`
 
-## bootstrap 规则
+## infra/bootstrap 规则
 
-bootstrap 只负责装配。
+`infra/bootstrap` 只负责 provider/channel 注册装配，不负责应用 runtime 总装。
 
 允许：
 
 - 把 `ProviderInfo` 注册到 `ProviderRegistry`
 - 把 adapter builder 注册到 `ProviderFactory`
+- 把 channel adapter 注册到 channel registry
 
 禁止：
 
 - 发请求
 - 创建业务流程
 - 读取用户输入
+- import application
+- 创建 `CyreneAIRuntime`
 
 ## ProviderConfig 规则
 
@@ -167,6 +290,20 @@ bootstrap 只负责装配。
 provider 专属配置要求应在 adapter builder 或 instance 中处理。
 
 ## 验收标准
+
+边界测试必须存在并通过：
+
+```text
+test_core_does_not_import_external_sdks_or_upper_layers
+test_provider_catalog_imports_only_core_schema
+test_provider_adapter_directories_have_expected_files
+test_infra_does_not_import_application_or_server
+test_application_does_not_import_infra_or_server
+test_application_does_not_define_core_schema_classes
+test_bootstrap_registrations_only_wire_core_catalog_and_adapters
+```
+
+任何分层、schema、provider、bootstrap、adapter 相关改动，必须跑完整测试。
 
 基础验证：
 
