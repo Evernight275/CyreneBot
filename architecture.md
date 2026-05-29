@@ -68,162 +68,281 @@ server
 
 `cyreneAI.adapters` 是面向使用方的公共适配层。它可以放本地文件加载、轻量 factory、稳定 adapter 导出；不允许放 provider 的 `builder.py`、`instance.py`、`mapper.py`、`errors.py` 这类内部实现文件，也不放 provider 实现目录。provider 仍通过 `provider_catalog`、`infra/adapters/providers` 和 `infra/bootstrap/registrations` 治理。
 
-## 架构图
+## 真实运行架构
+
+单张“分层图”很容易把系统画平。CyreneBot 实际上有三条主线：模块边界、启动装配、请求运行时。
+
+### 模块边界
+
+这张图表达 import/依赖边界，不表达单次请求的调用顺序：
 
 ```mermaid
-flowchart LR
-  %% =====================
-  %% Default Composition Root
-  %% =====================
-  subgraph ROOT["cyreneAI.bootstrap：默认总装"]
-    direction TB
-    root_boot["build_cyrene_ai_runtime\n装配默认 infra"]
+flowchart TB
+  subgraph USERS["使用方"]
+    app_user["业务代码"]
+    http_user["HTTP / Telegram 客户端"]
+    plugin_user["插件项目"]
   end
 
-  %% =====================
-  %% Application Layer
-  %% =====================
-  subgraph APP["application：运行时内核"]
-    direction TB
-    app_boot["bootstrap\n装配 runtime"]
-    app_runtime["runtime\n持有 managers"]
-    app_chat["chat_orchestrator\n请求生命周期"]
-    app_embed["embedding_orchestrator\n文本嵌入"]
-    app_index["indexing_orchestrator\n文档切块与索引"]
-    app_retrieve["retrieval_orchestrator\n语义检索"]
-    app_rag["rag_chat_orchestrator\nRAG 编排"]
+  subgraph PUBLIC["公共入口"]
+    public_adapters["cyreneAI.adapters\n轻量 loader / factory / facade"]
+    plugin_api["cyreneAI.plugin_api\n插件注册 API"]
+    server_api["cyreneAI.server\nFastAPI routes / app"]
+    root["cyreneAI.bootstrap\n默认 composition root"]
   end
 
-  %% =====================
-  %% Infra Layer
-  %% =====================
-  subgraph INFRA["infra：驱动与外部适配"]
-    direction TB
-
-    subgraph INFRA_BOOT["bootstrap"]
-      provider_regs["provider registrations"]
-    end
-
-    subgraph INFRA_ADAPTERS["adapters"]
-      provider_adapters["provider adapters\nOpenAI / Anthropic / Google"]
-      tool_adapters["tool adapters\npython / http / subprocess"]
-      skill_adapters["skill adapters\nfilesystem"]
-      vector_adapters["vector stores\nmemory / SQLite"]
-    end
-
-    subgraph INFRA_DB["database"]
-      sqlite["sqlite builder"]
-      sqlalchemy["sqlalchemy store"]
-    end
-
-    catalog["provider_catalog"]
+  subgraph APP["application\n用例编排层"]
+    app_boot["application.bootstrap\n创建 CyreneAIRuntime"]
+    runtime["CyreneAIRuntime\n持有 managers / registries / stores"]
+    app_chat["chat"]
+    app_generation["generation\nembedding / image"]
+    app_knowledge["knowledge\nindexing / retrieval / vector"]
+    app_bot["bot / channels"]
+    app_plugins["plugins\nhost / outbox / tasks"]
   end
 
-  %% =====================
-  %% Core Layer
-  %% =====================
-  subgraph CORE["core：协议、规则、schema"]
-    direction TB
-
-    subgraph CORE_RUNTIME["runtime primitives"]
-      provider_core["provider\nfactory / registry / manager"]
-      context_core["context\nbuilder / manager / policy"]
-      tool_core["tool\nregistry / manager / protocol"]
-      skill_core["skill\nregistry / selector / manager"]
-      vector_core["vector\nmanager / protocol"]
-    end
-
-    subgraph CORE_BASE["base contracts"]
-      schemas["schema\nchat / message / tool / skill / context / provider / document / embedding / vector"]
-      errors["errors\nbase / context / provider / tool / skill / vector"]
-    end
+  subgraph CORE["core\n稳定契约和规则"]
+    schemas["schema"]
+    provider_core["provider\nfactory / manager / registry / protocol"]
+    context_core["context\nbuilder / manager / policy / protocol"]
+    tool_core["tool\nregistry / manager / protocol"]
+    skill_core["skill\nregistry / manager / protocol"]
+    vector_core["vector\nmanager / protocol"]
+    bot_core["bot\nchannel / session / polling protocol"]
+    plugin_core["plugin\nregistry / manager / protocol"]
+    errors["errors"]
   end
 
-  %% =====================
-  %% Main Dependency Flow
-  %% =====================
-  app_boot --> app_runtime
-  app_runtime --> app_chat
-  app_runtime --> app_embed
-  app_runtime --> app_index
-  app_runtime --> app_retrieve
-  app_runtime --> app_rag
+  subgraph INFRA["infra\n外部系统实现"]
+    catalog["provider_catalog\n*_info.py"]
+    provider_regs["infra.bootstrap.registrations\n注册 provider builder"]
+    provider_adapters["provider adapters\nopenai_compatible / openai_responses / anthropic / google_genai"]
+    channel_adapters["channel adapters\ntelegram / memory"]
+    vector_adapters["vector stores\nmemory / sqlite"]
+    skill_adapters["skill loaders\nfilesystem"]
+    plugin_adapters["plugin adapters\nfilesystem / sqlite"]
+    tool_adapters["tool executors\npython / http / subprocess"]
+    database["database\nsqlite / sqlalchemy"]
+  end
 
-  root_boot --> app_boot
-  root_boot --> provider_regs
-  root_boot --> skill_adapters
-  root_boot --> sqlite
-  root_boot --> vector_adapters
+  app_user --> public_adapters
+  app_user --> root
+  http_user --> server_api
+  plugin_user --> plugin_api
+
+  server_api --> root
+  server_api --> runtime
+  public_adapters --> schemas
+  public_adapters --> vector_adapters
+  public_adapters --> skill_adapters
+  plugin_api --> schemas
+  plugin_api --> plugin_core
+
+  root --> app_boot
+  root --> provider_regs
+  root --> channel_adapters
+  root --> vector_adapters
+  root --> skill_adapters
+  root --> plugin_adapters
+  root --> database
+
+  app_boot --> runtime
+  app_boot --> provider_core
+  app_boot --> context_core
+  app_boot --> tool_core
+  app_boot --> vector_core
+  app_boot --> plugin_core
+  app_boot --> bot_core
+
+  runtime --> app_chat
+  runtime --> app_generation
+  runtime --> app_knowledge
+  runtime --> app_bot
+  runtime --> app_plugins
 
   app_chat --> provider_core
   app_chat --> context_core
-  app_chat --> skill_core
   app_chat --> tool_core
+  app_chat --> skill_core
+  app_generation --> provider_core
+  app_knowledge --> provider_core
+  app_knowledge --> vector_core
+  app_bot --> bot_core
+  app_bot --> plugin_core
+  app_plugins --> plugin_core
+  app_plugins --> tool_core
+  app_plugins --> skill_core
 
-  app_embed --> provider_core
-  app_index --> provider_core
-  app_index --> vector_core
-  app_retrieve --> provider_core
-  app_retrieve --> vector_core
-  app_rag --> app_chat
-  app_rag --> app_retrieve
-
-  provider_regs --> provider_adapters
   provider_regs --> catalog
-
+  provider_regs --> provider_adapters
+  provider_regs --> provider_core
   provider_adapters --> provider_core
   provider_adapters --> schemas
   provider_adapters --> errors
-
-  tool_adapters --> tool_core
-  tool_adapters --> schemas
-  tool_adapters --> errors
-
-  skill_adapters --> skill_core
-  skill_adapters --> schemas
-  skill_adapters --> errors
-
+  channel_adapters --> bot_core
   vector_adapters --> vector_core
-  vector_adapters --> schemas
-  vector_adapters --> errors
+  skill_adapters --> skill_core
+  plugin_adapters --> plugin_core
+  tool_adapters --> tool_core
+  database --> context_core
 
-  sqlite --> sqlalchemy
-  sqlalchemy --> context_core
-  sqlalchemy --> schemas
-  sqlalchemy --> errors
-
-  provider_core --> schemas
-  provider_core --> errors
-
-  context_core --> schemas
-  context_core --> errors
-
-  tool_core --> schemas
-  tool_core --> errors
-
-  skill_core --> schemas
-  skill_core --> errors
-
-  vector_core --> schemas
-  vector_core --> errors
-
-  catalog --> schemas
-
-  %% =====================
-  %% Styling
-  %% =====================
+  classDef public fill:#f5ecff,stroke:#7b45c6,color:#111;
   classDef app fill:#e8f1ff,stroke:#3267c8,color:#111;
-  classDef root fill:#f5ecff,stroke:#7b45c6,color:#111;
-  classDef infra fill:#fff4e6,stroke:#d18419,color:#111;
   classDef core fill:#eef9f0,stroke:#2f8f46,color:#111;
-  classDef base fill:#f7f7f7,stroke:#777,color:#111;
+  classDef infra fill:#fff4e6,stroke:#d18419,color:#111;
+  classDef user fill:#f7f7f7,stroke:#777,color:#111;
 
-  class root_boot root;
-  class app_boot,app_runtime,app_chat app;
-  class app_boot,app_runtime,app_chat,app_embed,app_index,app_retrieve,app_rag app;
-  class provider_regs,provider_adapters,tool_adapters,skill_adapters,vector_adapters,sqlite,sqlalchemy,catalog infra;
-  class provider_core,context_core,tool_core,skill_core,vector_core core;
-  class schemas,errors base;
+  class app_user,http_user,plugin_user user;
+  class public_adapters,plugin_api,server_api,root public;
+  class app_boot,runtime,app_chat,app_generation,app_knowledge,app_bot,app_plugins app;
+  class schemas,provider_core,context_core,tool_core,skill_core,vector_core,bot_core,plugin_core,errors core;
+  class catalog,provider_regs,provider_adapters,channel_adapters,vector_adapters,skill_adapters,plugin_adapters,tool_adapters,database infra;
+```
+
+### 启动装配
+
+这张图表达 `server/main.py` 和 `cyreneAI.bootstrap` 如何把默认运行时组装出来：
+
+```mermaid
+sequenceDiagram
+  participant Main as "server/main.py"
+  participant Env as "server/config.py"
+  participant Root as "cyreneAI.bootstrap"
+  participant Infra as "infra adapters"
+  participant Reg as "infra bootstrap registrations"
+  participant AppBoot as "application.bootstrap"
+  participant Runtime as "CyreneAIRuntime"
+
+  Main->>Env: "读取 provider / context / plugin / telegram 配置"
+  Main->>Infra: "按插件路径创建 FileSystemPluginAssets / FileSystemPluginLoader"
+  Main->>Root: "build_cyrene_ai_runtime(...)"
+
+  Root->>Reg: "register_default_providers(...)"
+  Reg->>Infra: "绑定 provider info 和 adapter builder"
+  Root->>Infra: "按参数创建 SQLite context/vector/plugin/task/polling store"
+  Root->>Infra: "按参数加载 filesystem skills"
+  Root->>Infra: "按参数注册 memory / telegram channel"
+  Root->>AppBoot: "传入 core managers、registries、stores、loaders"
+
+  AppBoot->>Runtime: "创建 ProviderManager / ToolManager / VectorManager / PluginManager"
+  AppBoot->>Runtime: "创建 PluginHost / PluginOutbox / PluginTaskScheduler"
+  AppBoot->>Runtime: "注册内置 bot command plugins"
+  AppBoot->>Runtime: "加载外部 plugins"
+  Runtime-->>Root: "返回 runtime"
+  Root-->>Main: "返回 runtime"
+  Main->>Main: "create_app(runtime, settings, telegram config)"
+```
+
+### 请求运行时
+
+这张图表达 runtime 内部的真实调用关系：routes 不直接调用 SDK，orchestrator 只找 runtime 里的 manager/protocol，具体外部实现落到 infra adapter。
+
+```mermaid
+flowchart LR
+  subgraph API["server routes"]
+    chat_route["/chat"]
+    image_route["/images/generate"]
+    provider_route["/providers"]
+    channel_route["/channels/{id}/webhook"]
+    telegram_route["/telegram/webhook 或 polling"]
+  end
+
+  subgraph RUNTIME["CyreneAIRuntime"]
+    provider_manager["provider_manager"]
+    context_builder["context_builder"]
+    context_manager["context_manager"]
+    vector_manager["vector_manager"]
+    skill_manager["skill_manager"]
+    tool_manager["tool_manager"]
+    plugin_manager["plugin_manager"]
+    plugin_host["plugin_host"]
+    plugin_outbox["plugin_outbox"]
+    plugin_tasks["plugin_task_scheduler"]
+    plugin_storage_runtime["plugin_storage / plugin_assets"]
+    channel_registry["bot_channel_registry"]
+    session_manager["bot_session_manager"]
+    polling_store["bot_polling_state_store"]
+  end
+
+  subgraph ORCH["application orchestrators"]
+    chat_orch["ChatOrchestrator"]
+    image_orch["ImageGenerationOrchestrator"]
+    embed_orch["EmbeddingOrchestrator"]
+    index_orch["IndexingOrchestrator"]
+    retrieve_orch["RetrievalOrchestrator"]
+    rag_orch["RAGChatOrchestrator"]
+    webhook_handler["ChannelWebhookHandler"]
+    event_processor["ChannelEventProcessor"]
+    bot_orch["BotOrchestrator"]
+    bot_dispatcher["BotDispatcher"]
+  end
+
+  subgraph INFRA_RUNTIME["infra instances"]
+    provider_instance["provider instance\nSDK client / mapper / errors"]
+    vector_store["vector store\nmemory / sqlite"]
+    context_store["context store\nsqlite / sqlalchemy"]
+    channel_instance["bot channel\ntelegram / memory"]
+    plugin_persistence["plugin storage / assets / task store"]
+    tool_executor["tool executor"]
+  end
+
+  chat_route --> chat_orch
+  image_route --> image_orch
+  provider_route --> provider_manager
+  channel_route --> webhook_handler
+  telegram_route --> webhook_handler
+  telegram_route --> event_processor
+
+  rag_orch --> retrieve_orch
+  rag_orch --> chat_orch
+  index_orch --> embed_orch
+  index_orch --> vector_manager
+  retrieve_orch --> provider_manager
+  retrieve_orch --> vector_manager
+
+  chat_orch --> provider_manager
+  chat_orch --> context_builder
+  chat_orch --> context_manager
+  chat_orch --> skill_manager
+  chat_orch --> tool_manager
+
+  image_orch --> provider_manager
+  embed_orch --> provider_manager
+
+  webhook_handler --> channel_registry
+  webhook_handler --> event_processor
+  event_processor --> bot_orch
+  bot_orch --> plugin_manager
+  bot_orch --> bot_dispatcher
+  bot_dispatcher --> chat_orch
+  bot_dispatcher --> channel_registry
+  bot_dispatcher --> session_manager
+
+  plugin_host --> plugin_manager
+  plugin_host --> skill_manager
+  plugin_host --> tool_manager
+  plugin_host --> plugin_storage_runtime
+  plugin_host --> plugin_tasks
+  plugin_outbox --> channel_registry
+  plugin_outbox --> session_manager
+
+  provider_manager --> provider_instance
+  vector_manager --> vector_store
+  context_manager --> context_store
+  channel_registry --> channel_instance
+  plugin_storage_runtime --> plugin_persistence
+  plugin_tasks --> plugin_persistence
+  tool_manager --> tool_executor
+
+  classDef api fill:#f5ecff,stroke:#7b45c6,color:#111;
+  classDef runtime fill:#e8f1ff,stroke:#3267c8,color:#111;
+  classDef orch fill:#eef9f0,stroke:#2f8f46,color:#111;
+  classDef infra fill:#fff4e6,stroke:#d18419,color:#111;
+
+  class chat_route,image_route,provider_route,channel_route,telegram_route api;
+  class provider_manager,context_builder,context_manager,vector_manager,skill_manager,tool_manager,plugin_manager,plugin_host,plugin_outbox,plugin_tasks,plugin_storage_runtime,channel_registry,session_manager,polling_store runtime;
+  class chat_orch,image_orch,embed_orch,index_orch,retrieve_orch,rag_orch,webhook_handler,event_processor,bot_orch,bot_dispatcher orch;
+  class provider_instance,vector_store,context_store,channel_instance,plugin_persistence,tool_executor infra;
 ```
 
 ## RAG 主路径

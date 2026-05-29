@@ -111,9 +111,10 @@ def build_plugin_paths_from_env() -> list[str]:
     raw = _env_str("CYRENEAI_PLUGIN_PATH")
     if raw is None:
         return []
+    separator = ";" if ";" in raw else os.pathsep
     return [
         part.strip()
-        for part in raw.split(os.pathsep)
+        for part in raw.split(separator)
         if part.strip()
     ]
 
