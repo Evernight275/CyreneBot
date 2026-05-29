@@ -63,6 +63,9 @@ class PluginTestCommandResult:
     def texts(self) -> list[str]:
         return _action_texts(self.result.actions)
 
+    def has_text(self, text: str) -> bool:
+        return text in self.texts
+
 
 class PluginTestEventResult:
     """
@@ -92,6 +95,9 @@ class PluginTestEventResult:
     @property
     def texts(self) -> list[str]:
         return _action_texts(self.actions)
+
+    def has_text(self, text: str) -> bool:
+        return text in self.texts
 
 
 class PluginTestTaskResult:
@@ -168,6 +174,14 @@ class PluginTestClient:
     @property
     def tasks(self) -> list[PluginTaskDefinition]:
         return [entry.definition for entry in self._context.tasks]
+
+    @property
+    def sent_messages(self) -> list[dict[str, Any]]:
+        return list(self.messages.sent)
+
+    @property
+    def scheduled_tasks(self) -> list[dict[str, Any]]:
+        return list(self.scheduler.scheduled)
 
     async def command(
         self,

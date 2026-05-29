@@ -10,6 +10,8 @@ from cyreneAI.core.schema.bot import (
 )
 from cyreneAI.core.schema.message import ContentPart, ContentPartType
 from cyreneAI.core.schema.plugin import (
+    PluginCommandArgumentDefinition,
+    PluginCommandArgumentKind,
     PluginCapability,
     PluginCommandDefinition,
     PluginCommandRequest,
@@ -64,7 +66,7 @@ class BuiltinBotCommandExecutor:
                 ]
             )
         elif command.name == "help":
-            text = self._render_help()
+            text = self._render_help(is_admin=request.is_admin)
         elif command.name == "ping":
             text = "pong"
         elif command.name == "echo":
@@ -88,13 +90,16 @@ class BuiltinBotCommandExecutor:
             },
         )
 
-    def _render_help(self) -> str:
+    def _render_help(self, *, is_admin: bool = False) -> str:
         lines = ["Available commands:"]
         for command in self._registry.list_commands():
             if not command.enabled:
                 continue
-            usage = command.usage or f"/{command.name}"
-            lines.append(f"{usage} - {command.description}")
+            if command.admin_required and not is_admin:
+                continue
+            usage = _render_command_usage(command)
+            admin_suffix = " [admin]" if command.admin_required else ""
+            lines.append(f"{usage} - {command.description}{admin_suffix}")
         return "\n".join(lines)
 
     def _render_status(self) -> str:
@@ -189,6 +194,42 @@ def _send_text_action(
             "command_args": list(request.command.args),
         },
     )
+
+
+def _render_command_usage(command: PluginCommandDefinition) -> str:
+    if command.usage:
+        return command.usage
+    parts = [f"/{command.name}"]
+    for argument in command.arguments:
+        parts.append(_render_argument_usage(argument))
+    return " ".join(parts)
+
+
+def _render_argument_usage(argument: PluginCommandArgumentDefinition) -> str:
+    type_suffix = "" if argument.type == "str" else f":{argument.type}"
+    if argument.kind == PluginCommandArgumentKind.OPTION:
+        names = [f"--{argument.name.replace('_', '-')}", *argument.aliases]
+        display = "|".join(names)
+        if argument.required:
+            return f"<{display}{type_suffix}>"
+        if argument.default is not None:
+            return f"[{display}{type_suffix}={_format_default(argument.default)}]"
+        return f"[{display}{type_suffix}]"
+    if argument.kind == PluginCommandArgumentKind.FLAG:
+        names = [f"--{argument.name.replace('_', '-')}", *argument.aliases]
+        return f"[{'|'.join(names)}]"
+    rest_suffix = "..." if argument.kind == PluginCommandArgumentKind.REST else ""
+    if argument.required:
+        return f"<{argument.name}{type_suffix}{rest_suffix}>"
+    if argument.default is not None:
+        return f"[{argument.name}{type_suffix}{rest_suffix}={_format_default(argument.default)}]"
+    return f"[{argument.name}{type_suffix}{rest_suffix}]"
+
+
+def _format_default(value: object) -> str:
+    if isinstance(value, bool):
+        return str(value).lower()
+    return str(value)
 
 
 def _render_unknown_command(command_name: str) -> str:

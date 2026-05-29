@@ -448,7 +448,7 @@ uv run pytest src\cyreneAI\tests
 
 ```text
 compileall 通过
-521 passed, 7 skipped
+537 passed, 6 skipped
 ```
 
 ## 扩展落点

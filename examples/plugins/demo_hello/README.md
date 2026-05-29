@@ -33,6 +33,18 @@ async def hello(name="world"):
     return f"Hello, {name}!"
 ```
 
+When the command name matches the function name, the path can be inferred:
+
+```python
+@router.command
+async def hello(name="world"):
+    """Say hello."""
+    return f"Hello, {name}!"
+```
+
+Function underscores become command spaces, so `hello_world` registers
+`/hello world`.
+
 Command handlers can return plain text. The host turns `return "..."` into a
 standard bot text reply.
 
@@ -75,24 +87,27 @@ async def say(message: Rest[str]):
 
 `/say hello world` passes `"hello world"` as `message`.
 
-Use `Option[T]` and `Flag` for named CLI-style controls:
+Use `Option[T]`, `Flag`, and `Choice[...]` for named CLI-style controls and
+constrained values:
 
 ```python
 from typing import Annotated
 
-from cyreneAI.api import Arg, Flag, Option, Rest
+from cyreneAI.api import Arg, Choice, Flag, Option, Rest
 
 @router.command("/search")
 async def search(
     query: Rest[str],
-    limit: Annotated[Option[int], Arg(aliases=["-l"])] = 10,
+    limit: Annotated[Option[int], Arg(alias="-l")] = 10,
+    mode: Option[Choice["fast", "safe"]] = "safe",
     verbose: Flag = False,
 ):
-    return f"{query} limit={limit} verbose={verbose}"
+    return f"{query} limit={limit} mode={mode} verbose={verbose}"
 ```
 
 `/search hello world --limit 5 --verbose` passes `"hello world"` as `query`,
-`5` as `limit`, and `True` as `verbose`.
+`5` as `limit`, `"safe"` as `mode`, and `True` as `verbose`. Use
+`--mode fast` to switch to the other declared choice.
 
 The command signature is also used to generate usage and command arguments. For
 the `repeat` command above, the route exposes:
@@ -175,6 +190,7 @@ async def test_hello_command():
     result = await client.command("/hello Cyrene")
 
     assert result.texts == ["Hello, Cyrene!"]
+    assert result.has_text("Hello, Cyrene!")
 ```
 
 The same test client can dispatch events and run declared tasks:
@@ -184,6 +200,52 @@ result = await client.event("message", text="hello", session_id="s1")
 task_result = await client.task("cleanup", payload={"target": "cache"})
 ```
 
+Events and tasks can also infer their route names from the function:
+
+```python
+@router.event
+async def on_message(event):
+    return None
+
+
+@router.task
+async def cleanup_cache(request):
+    return None
+```
+
 The test client provides fake `storage`, `assets`, `messages`, and task
 `scheduler` dependencies by default. Override any dependency with
-`PluginTestClient(plugin, dependencies={...})`.
+`PluginTestClient(plugin, dependencies={...})`. Sent messages and scheduled tasks
+are available through `client.sent_messages` and `client.scheduled_tasks`.
+
+Pytest fixtures keep plugin tests compact:
+
+```python
+import pytest
+
+from cyreneAI.api import PluginTestClient
+
+
+@pytest.fixture
+def client():
+    return PluginTestClient(plugin)
+
+
+async def test_hello(client):
+    result = await client.command("/hello Cyrene")
+
+    assert result.has_text("Hello, Cyrene!")
+```
+
+Fake host dependencies can be injected directly:
+
+```python
+class FakeLLM:
+    async def chat(self, prompt: str) -> str:
+        return f"fake: {prompt}"
+
+
+@pytest.fixture
+def client():
+    return PluginTestClient(plugin, dependencies={"llm": FakeLLM()})
+```

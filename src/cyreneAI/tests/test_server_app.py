@@ -213,6 +213,7 @@ def _plugin_client() -> TestClient:
                         PluginCommandArgumentDefinition(
                             name="name",
                             kind=PluginCommandArgumentKind.POSITIONAL,
+                            choices=["Cyrene", "world"],
                         )
                     ],
                 )
@@ -512,16 +513,41 @@ def test_server_lists_plugins_commands_events_tasks_and_statuses() -> None:
     events = client.get("/plugins/events")
     tasks = client.get("/plugins/tasks")
     statuses = client.get("/plugins/statuses")
+    plugin_detail = client.get("/plugins/demo.hello")
+    plugin_commands = client.get("/plugins/demo.hello/commands")
+    plugin_events = client.get("/plugins/demo.hello/events")
+    plugin_tasks = client.get("/plugins/demo.hello/tasks")
+    plugin_status = client.get("/plugins/demo.hello/status")
 
     assert plugins.status_code == 200
     assert plugins.json()["plugins"][0]["plugin_id"] == "demo.hello"
     assert commands.json()["commands"][0]["name"] == "hello"
     assert commands.json()["commands"][0]["arguments"][0]["name"] == "name"
     assert commands.json()["commands"][0]["arguments"][0]["kind"] == "positional"
+    assert commands.json()["commands"][0]["arguments"][0]["choices"] == [
+        "Cyrene",
+        "world",
+    ]
     assert events.json()["events"][0]["event_type"] == "message"
     assert tasks.json()["tasks"][0]["name"] == "follow_up"
     assert statuses.json()["statuses"][0]["plugin_id"] == "demo.hello"
     assert statuses.json()["statuses"][1]["status"] == "disabled"
+    assert plugin_detail.status_code == 200
+    assert plugin_detail.json()["plugin_id"] == "demo.hello"
+    assert plugin_commands.status_code == 200
+    assert plugin_commands.json()["commands"][0]["name"] == "hello"
+    assert plugin_events.status_code == 200
+    assert plugin_events.json()["events"][0]["event_type"] == "message"
+    assert plugin_tasks.status_code == 200
+    assert plugin_tasks.json()["tasks"][0]["name"] == "follow_up"
+    assert plugin_status.status_code == 200
+    assert plugin_status.json()["plugin_id"] == "demo.hello"
+
+
+def test_server_returns_404_for_missing_plugin_detail() -> None:
+    response = _plugin_client().get("/plugins/missing.plugin")
+
+    assert response.status_code == 404
 
 
 def test_server_lists_plugin_runtime_capabilities() -> None:

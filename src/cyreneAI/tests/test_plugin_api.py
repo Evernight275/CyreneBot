@@ -24,7 +24,17 @@ from cyreneAI.core.schema.plugin import (
 )
 from typing import Annotated
 
-from cyreneAI.api import Arg, CyreneBot, CyreneRouter, Depends, Flag, Option, Rest, text
+from cyreneAI.api import (
+    Arg,
+    Choice,
+    CyreneBot,
+    CyreneRouter,
+    Depends,
+    Flag,
+    Option,
+    Rest,
+    text,
+)
 
 
 def _event(text_value: str = "/hello") -> BotEvent:
@@ -80,6 +90,35 @@ def test_cyrene_bot_command_decorator_records_local_route() -> None:
     assert routes[0].admin_required is True
 
 
+def test_cyrene_bot_command_decorator_can_infer_path_from_function_name() -> None:
+    plugin = CyreneBot()
+
+    @plugin.command
+    async def hello_world(name="Cyrene"):
+        """Say hello."""
+        return f"Hello, {name}!"
+
+    routes = plugin.routes
+
+    assert len(routes) == 1
+    assert routes[0].name == "hello world"
+    assert routes[0].description == "Say hello."
+    assert routes[0].usage == "/hello world [name=Cyrene]"
+
+
+def test_cyrene_bot_command_decorator_can_infer_path_with_parentheses() -> None:
+    plugin = CyreneBot()
+
+    @plugin.command()
+    async def repeat(word, count=1):
+        return " ".join([word] * count)
+
+    route = plugin.routes[0]
+
+    assert route.name == "repeat"
+    assert route.usage == "/repeat <word> [count:int=1]"
+
+
 def test_cyrene_bot_command_decorator_records_argument_schema_and_usage() -> None:
     plugin = CyreneBot()
 
@@ -97,6 +136,7 @@ def test_cyrene_bot_command_decorator_records_argument_schema_and_usage() -> Non
             "kind": "positional",
             "required": True,
             "aliases": [],
+            "choices": [],
             "description": "",
         },
         {
@@ -106,6 +146,7 @@ def test_cyrene_bot_command_decorator_records_argument_schema_and_usage() -> Non
             "required": False,
             "default": 1,
             "aliases": [],
+            "choices": [],
             "description": "",
         },
         {
@@ -115,6 +156,7 @@ def test_cyrene_bot_command_decorator_records_argument_schema_and_usage() -> Non
             "required": False,
             "default": False,
             "aliases": [],
+            "choices": [],
             "description": "",
         },
     ]
@@ -150,6 +192,7 @@ def test_cyrene_bot_command_decorator_records_rest_argument_schema() -> None:
             "kind": "rest",
             "required": True,
             "aliases": [],
+            "choices": [],
             "description": "",
         }
     ]
@@ -176,6 +219,7 @@ def test_cyrene_bot_command_decorator_records_option_and_flag_schema() -> None:
             "kind": "rest",
             "required": True,
             "aliases": [],
+            "choices": [],
             "description": "",
         },
         {
@@ -185,6 +229,7 @@ def test_cyrene_bot_command_decorator_records_option_and_flag_schema() -> None:
             "required": False,
             "default": 10,
             "aliases": ["-l"],
+            "choices": [],
             "description": "Max rows",
         },
         {
@@ -194,9 +239,34 @@ def test_cyrene_bot_command_decorator_records_option_and_flag_schema() -> None:
             "required": False,
             "default": False,
             "aliases": [],
+            "choices": [],
             "description": "",
         },
     ]
+
+
+def test_cyrene_bot_command_decorator_records_choice_schema_and_alias() -> None:
+    plugin = CyreneBot()
+
+    @plugin.command("/run")
+    async def run(
+        mode: Annotated[Choice["fast", "safe"], Arg(alias="-m")] = "safe",
+    ):
+        return mode
+
+    route = plugin.routes[0]
+
+    assert route.usage == "/run [mode:fast|safe=safe]"
+    assert route.arguments[0].model_dump(exclude_none=True) == {
+        "name": "mode",
+        "type": "str",
+        "kind": "positional",
+        "required": False,
+        "default": "safe",
+        "aliases": ["-m"],
+        "choices": ["fast", "safe"],
+        "description": "",
+    }
 
 
 def test_cyrene_bot_can_include_router_routes() -> None:
@@ -236,6 +306,21 @@ def test_cyrene_bot_task_decorator_records_local_task() -> None:
     assert tasks[0].run_on_start is True
 
 
+def test_cyrene_bot_task_decorator_can_infer_name_from_function_name() -> None:
+    plugin = CyreneBot()
+
+    @plugin.task
+    async def daily_greeting(request):
+        """Generate greetings."""
+        return PluginTaskResult(metadata={"task": request.task.name})
+
+    tasks = plugin.tasks
+
+    assert len(tasks) == 1
+    assert tasks[0].name == "daily greeting"
+    assert tasks[0].description == "Generate greetings."
+
+
 def test_cyrene_bot_event_decorator_records_local_event() -> None:
     plugin = CyreneBot()
 
@@ -250,6 +335,21 @@ def test_cyrene_bot_event_decorator_records_local_event() -> None:
     assert events[0].event_type == PluginEventType.MESSAGE
     assert events[0].description == "Observe messages."
     assert events[0].enabled is True
+
+
+def test_cyrene_bot_event_decorator_can_infer_type_from_function_name() -> None:
+    plugin = CyreneBot()
+
+    @plugin.event
+    async def on_message(event):
+        """Observe messages."""
+        return PluginEventResult(metadata={"text": event.text})
+
+    events = plugin.events
+
+    assert len(events) == 1
+    assert events[0].event_type == PluginEventType.MESSAGE
+    assert events[0].description == "Observe messages."
 
 
 def test_cyrene_router_can_include_child_router() -> None:
@@ -1412,6 +1512,256 @@ def test_cyrene_bot_command_executor_binds_options_and_flags() -> None:
 
         assert alias_result.actions[0].message is not None
         assert alias_result.actions[0].message.content[0].text == "hello:7:False"
+
+        false_result = await context.executor.execute(
+            PluginCommandRequest(
+                command=BotCommand(
+                    raw_text="/search hello --verbose=false",
+                    name="search",
+                    args=("hello", "--verbose=false"),
+                    args_text="hello --verbose=false",
+                ),
+                event=_event("/search hello --verbose=false"),
+            )
+        )
+
+        assert false_result.actions[0].message is not None
+        assert false_result.actions[0].message.content[0].text == "hello:10:False"
+
+    asyncio.run(run())
+
+
+def test_cyrene_bot_command_executor_binds_and_validates_choice_arguments() -> None:
+    async def run() -> None:
+        plugin = CyreneBot(
+            PluginManifest(
+                plugin_id="demo.choice",
+                name="Choice",
+                description="Choice argument plugin.",
+                entrypoint="main.py",
+                capabilities=["bot_command"],
+            )
+        )
+
+        @plugin.command("/run")
+        async def run_mode(
+            mode: Option[Choice["fast", "safe"]] = "safe",
+            limit: Option[int] = 10,
+        ):
+            return f"{mode}:{limit}"
+
+        class Context:
+            runtime = object()
+            manifest = plugin.manifest
+
+            def register_command(self, definition, executor):
+                self.executor = executor
+
+            def register_task(self, definition, executor):
+                raise AssertionError
+
+            def register_tool(self, definition, executor):
+                raise AssertionError
+
+            def register_skill(self):
+                raise AssertionError
+
+        context = Context()
+        plugin.setup(context)
+        result = await context.executor.execute(
+            PluginCommandRequest(
+                command=BotCommand(
+                    raw_text="/run --mode fast --limit 5",
+                    name="run",
+                    args=("--mode", "fast", "--limit", "5"),
+                    args_text="--mode fast --limit 5",
+                ),
+                event=_event("/run --mode fast --limit 5"),
+            )
+        )
+
+        assert result.actions[0].message is not None
+        assert result.actions[0].message.content[0].text == "fast:5"
+
+        with pytest.raises(PluginInputError) as exc_info:
+            await context.executor.execute(
+                PluginCommandRequest(
+                    command=BotCommand(
+                        raw_text="/run --mode risky",
+                        name="run",
+                        args=("--mode", "risky"),
+                        args_text="--mode risky",
+                    ),
+                    event=_event("/run --mode risky"),
+                )
+            )
+
+        assert "必须是 'fast', 'safe'" in str(exc_info.value)
+        assert "用法: /run [--mode:fast|safe=safe] [--limit:int=10]" in str(
+            exc_info.value
+        )
+
+    asyncio.run(run())
+
+
+def test_cyrene_bot_command_executor_reports_unknown_option_with_usage() -> None:
+    async def run() -> None:
+        plugin = CyreneBot(
+            PluginManifest(
+                plugin_id="demo.unknown_option",
+                name="Unknown Option",
+                description="Option argument plugin.",
+                entrypoint="main.py",
+                capabilities=["bot_command"],
+            )
+        )
+
+        @plugin.command("/search")
+        async def search(query: Rest[str], limit: Option[int] = 10):
+            return query
+
+        class Context:
+            runtime = object()
+            manifest = plugin.manifest
+
+            def register_command(self, definition, executor):
+                self.executor = executor
+
+            def register_task(self, definition, executor):
+                raise AssertionError
+
+            def register_tool(self, definition, executor):
+                raise AssertionError
+
+            def register_skill(self):
+                raise AssertionError
+
+        context = Context()
+        plugin.setup(context)
+
+        with pytest.raises(PluginInputError) as exc_info:
+            await context.executor.execute(
+                PluginCommandRequest(
+                    command=BotCommand(
+                        raw_text="/search hello --limt 5",
+                        name="search",
+                        args=("hello", "--limt", "5"),
+                        args_text="hello --limt 5",
+                    ),
+                    event=_event("/search hello --limt 5"),
+                )
+            )
+
+        assert "未知参数 --limt" in str(exc_info.value)
+        assert "用法: /search <query...> [--limit:int=10]" in str(exc_info.value)
+
+    asyncio.run(run())
+
+
+def test_cyrene_bot_command_executor_reports_missing_option_value_with_usage() -> None:
+    async def run() -> None:
+        plugin = CyreneBot(
+            PluginManifest(
+                plugin_id="demo.missing_option_value",
+                name="Missing Option Value",
+                description="Option argument plugin.",
+                entrypoint="main.py",
+                capabilities=["bot_command"],
+            )
+        )
+
+        @plugin.command("/search")
+        async def search(query: Rest[str], limit: Option[int] = 10, verbose: Flag = False):
+            return query
+
+        class Context:
+            runtime = object()
+            manifest = plugin.manifest
+
+            def register_command(self, definition, executor):
+                self.executor = executor
+
+            def register_task(self, definition, executor):
+                raise AssertionError
+
+            def register_tool(self, definition, executor):
+                raise AssertionError
+
+            def register_skill(self):
+                raise AssertionError
+
+        context = Context()
+        plugin.setup(context)
+
+        with pytest.raises(PluginInputError) as exc_info:
+            await context.executor.execute(
+                PluginCommandRequest(
+                    command=BotCommand(
+                        raw_text="/search hello --limit --verbose",
+                        name="search",
+                        args=("hello", "--limit", "--verbose"),
+                        args_text="hello --limit --verbose",
+                    ),
+                    event=_event("/search hello --limit --verbose"),
+                )
+            )
+
+        assert "参数 limit 缺少值" in str(exc_info.value)
+        assert "用法: /search <query...> [--limit:int=10] [--verbose]" in str(exc_info.value)
+
+    asyncio.run(run())
+
+
+def test_cyrene_bot_command_executor_reports_duplicate_option_with_usage() -> None:
+    async def run() -> None:
+        plugin = CyreneBot(
+            PluginManifest(
+                plugin_id="demo.duplicate_option",
+                name="Duplicate Option",
+                description="Option argument plugin.",
+                entrypoint="main.py",
+                capabilities=["bot_command"],
+            )
+        )
+
+        @plugin.command("/search")
+        async def search(query: Rest[str], limit: Option[int] = 10):
+            return query
+
+        class Context:
+            runtime = object()
+            manifest = plugin.manifest
+
+            def register_command(self, definition, executor):
+                self.executor = executor
+
+            def register_task(self, definition, executor):
+                raise AssertionError
+
+            def register_tool(self, definition, executor):
+                raise AssertionError
+
+            def register_skill(self):
+                raise AssertionError
+
+        context = Context()
+        plugin.setup(context)
+
+        with pytest.raises(PluginInputError) as exc_info:
+            await context.executor.execute(
+                PluginCommandRequest(
+                    command=BotCommand(
+                        raw_text="/search hello --limit 1 --limit 2",
+                        name="search",
+                        args=("hello", "--limit", "1", "--limit", "2"),
+                        args_text="hello --limit 1 --limit 2",
+                    ),
+                    event=_event("/search hello --limit 1 --limit 2"),
+                )
+            )
+
+        assert "参数 limit 重复" in str(exc_info.value)
+        assert "用法: /search <query...> [--limit:int=10]" in str(exc_info.value)
 
     asyncio.run(run())
 

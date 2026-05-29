@@ -76,6 +76,7 @@ def test_plugin_command_argument_definition_schema() -> None:
     assert argument.required is True
     assert argument.default is None
     assert argument.aliases == []
+    assert argument.choices == []
     assert argument.description == ""
 
 

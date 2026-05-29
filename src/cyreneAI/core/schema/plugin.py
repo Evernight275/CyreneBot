@@ -125,6 +125,7 @@ class PluginCommandArgumentDefinition(PluginBase):
     required: bool = True
     default: Any | None = None
     aliases: list[str] = Field(default_factory=list)
+    choices: list[Any] = Field(default_factory=list)
     description: str = ""
 
 

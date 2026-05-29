@@ -473,13 +473,12 @@ def test_bot_orchestrator_treats_slash_message_as_command() -> None:
                 [
                     "Available commands:",
                     "/start - Start the bot.",
-                    "/help - Show available commands.",
-                    "/ping - Check whether the bot is responsive.",
-                    "/echo <text> - Echo text back.",
-                    "/status - Show runtime status.",
-                ]
+                        "/help - Show available commands.",
+                        "/ping - Check whether the bot is responsive.",
+                        "/echo <text> - Echo text back.",
+                    ]
+                )
             )
-        )
 
     asyncio.run(run())
 

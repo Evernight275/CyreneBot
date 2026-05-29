@@ -162,7 +162,7 @@ class CyreneRouter:
 
     def command(
         self,
-        path: str,
+        path: str | PluginCommandHandler | None = None,
         *,
         description: str | None = None,
         usage: str | None = None,
@@ -174,11 +174,27 @@ class CyreneRouter:
         """
         注册 bot 命令 handler。
         """
-        command_name = _join_command_paths(self._prefix, path)
-        if not command_name:
-            raise PluginConfigurationError("插件命令 path 必须包含命令名")
+        if callable(path):
+            return self.command(
+                None,
+                description=description,
+                usage=usage,
+                aliases=aliases,
+                admin_required=admin_required,
+                enabled=enabled,
+                metadata=metadata,
+            )(path)
+
+        command_path = path
 
         def decorator(handler: PluginCommandHandler) -> PluginCommandHandler:
+            command_name = _join_command_paths(
+                self._prefix,
+                command_path or _handler_command_path(handler),
+            )
+            if not command_name:
+                raise PluginConfigurationError("插件命令 path 必须包含命令名")
+
             handler_signature = signature(handler)
             type_hints = _handler_type_hints(handler)
             command_arguments = _command_arguments_metadata(
@@ -222,7 +238,7 @@ class CyreneRouter:
 
     def task(
         self,
-        name: str,
+        name: str | PluginTaskHandler | None = None,
         *,
         description: str | None = None,
         interval_seconds: float | None = None,
@@ -234,11 +250,27 @@ class CyreneRouter:
         """
         注册受管后台任务 handler。
         """
-        task_name = _join_command_paths(self._prefix, name)
-        if not task_name:
-            raise PluginConfigurationError("插件任务 name 必须包含任务名")
+        if callable(name):
+            return self.task(
+                None,
+                description=description,
+                interval_seconds=interval_seconds,
+                daily_at=daily_at,
+                run_on_start=run_on_start,
+                enabled=enabled,
+                metadata=metadata,
+            )(name)
+
+        task_path = name
 
         def decorator(handler: PluginTaskHandler) -> PluginTaskHandler:
+            task_name = _join_command_paths(
+                self._prefix,
+                task_path or _handler_command_path(handler),
+            )
+            if not task_name:
+                raise PluginConfigurationError("插件任务 name 必须包含任务名")
+
             task_description = description
             if task_description is None:
                 task_description = _handler_description(handler)
@@ -263,7 +295,7 @@ class CyreneRouter:
 
     def event(
         self,
-        event_type: str | PluginEventType,
+        event_type: str | PluginEventType | PluginEventHandler | None = None,
         *,
         description: str | None = None,
         enabled: bool = True,
@@ -272,9 +304,20 @@ class CyreneRouter:
         """
         注册插件事件 handler。
         """
-        normalized_event_type = _normalize_event_type(event_type)
+        if callable(event_type):
+            return self.event(
+                None,
+                description=description,
+                enabled=enabled,
+                metadata=metadata,
+            )(event_type)
+
+        configured_event_type = event_type
 
         def decorator(handler: PluginEventHandler) -> PluginEventHandler:
+            normalized_event_type = _normalize_event_type(
+                configured_event_type or _handler_event_type(handler)
+            )
             event_description = description
             if event_description is None:
                 event_description = _handler_description(handler)
@@ -377,6 +420,17 @@ def _join_command_paths(prefix: str, path: str) -> str:
         if part
     ]
     return " ".join(parts)
+
+
+def _handler_command_path(handler: Callable[..., Any]) -> str:
+    return str(getattr(handler, "__name__", "")).strip("_").replace("_", " ")
+
+
+def _handler_event_type(handler: Callable[..., Any]) -> str:
+    name = str(getattr(handler, "__name__", "")).strip("_").lower()
+    if name.startswith("on_"):
+        name = name.removeprefix("on_")
+    return name
 
 
 def _normalize_event_type(value: str | PluginEventType) -> PluginEventType:

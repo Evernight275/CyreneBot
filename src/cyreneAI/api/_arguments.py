@@ -32,6 +32,15 @@ class _FlagMarker:
     """
 
 
+class _ChoiceMarker:
+    """
+    标记命令参数只接受一组固定取值。
+    """
+
+    def __init__(self, choices: tuple[Any, ...]) -> None:
+        self.choices = choices
+
+
 _REST_MARKER = _RestMarker()
 _OPTION_MARKER = _OptionMarker()
 _FLAG_MARKER = _FlagMarker()
@@ -45,10 +54,11 @@ class Arg:
     def __init__(
         self,
         *,
+        alias: str | None = None,
         aliases: list[str] | tuple[str, ...] = (),
         description: str = "",
     ) -> None:
-        self.aliases = tuple(aliases)
+        self.aliases = _dedupe_aliases(alias, aliases)
         self.description = description
 
 
@@ -68,6 +78,19 @@ class Option:
 
     def __class_getitem__(cls, item: Any) -> Any:
         return Annotated[item, _OPTION_MARKER]
+
+
+class Choice:
+    """
+    声明命令参数只接受一组固定取值。
+    """
+
+    def __class_getitem__(cls, item: Any) -> Any:
+        choices = item if isinstance(item, tuple) else (item,)
+        if not choices:
+            raise TypeError("Choice[...] requires at least one value")
+        base_type = _choice_base_type(choices)
+        return Annotated[base_type, _ChoiceMarker(tuple(choices))]
 
 
 Flag: TypeAlias = Annotated[bool, _FLAG_MARKER]
@@ -93,7 +116,7 @@ def _usage_from_arguments(
 
 def _usage_argument(argument: PluginCommandArgumentDefinition) -> str:
     name = argument.name
-    argument_type = argument.type
+    argument_type = _usage_argument_type(argument)
     type_suffix = "" if argument_type == "str" else f":{argument_type}"
     if argument.kind == PluginCommandArgumentKind.OPTION:
         option_name = _option_token(name)
@@ -162,6 +185,7 @@ def _command_arguments_metadata(
             kind=argument_kind,
             required=parameter.default is _empty,
             aliases=list(metadata.aliases),
+            choices=list(metadata.choices),
             description=metadata.description,
         )
         if parameter.default is not _empty:
@@ -391,7 +415,7 @@ def _resolve_command_argument(
 
     raw_value = parsed_command_args.positionals[command_arg_index]
     try:
-        return _parse_command_argument(raw_value, argument_type)
+        value = _parse_command_argument(raw_value, argument_type)
     except ValueError as exc:
         raise PluginInputError(
             _format_command_input_error(
@@ -400,6 +424,8 @@ def _resolve_command_argument(
                 usage,
             )
         ) from exc
+    _validate_command_argument_choice(parameter, request, value, usage, type_hints)
+    return value
 
 
 def _resolve_rest_command_argument(
@@ -463,7 +489,7 @@ def _resolve_named_command_argument(
 
     raw_value = parsed_command_args.options[parameter.name]
     try:
-        return _parse_command_argument(raw_value, argument_type)
+        value = _parse_command_argument(raw_value, argument_type)
     except ValueError as exc:
         raise PluginInputError(
             _format_command_input_error(
@@ -472,6 +498,8 @@ def _resolve_named_command_argument(
                 usage,
             )
         ) from exc
+    _validate_command_argument_choice(parameter, request, value, usage, type_hints)
+    return value
 
 
 def _parse_command_arguments(
@@ -507,6 +535,13 @@ def _parse_command_arguments(
         option_token, separator, inline_value = raw_arg.partition("=")
         parameter = option_names.get(option_token)
         if parameter is None:
+            if option_names and _looks_like_option_token(option_token):
+                raise PluginInputError(
+                    _format_command_input_error(
+                        f"插件命令 {request.command.name} 未知参数 {option_token}",
+                        usage,
+                    )
+                )
             positionals.append(raw_arg)
             index += 1
             continue
@@ -538,6 +573,13 @@ def _parse_command_arguments(
 
         value_index = index + 1
         if value_index >= len(raw_args):
+            raise PluginInputError(
+                _format_command_input_error(
+                    f"插件命令 {request.command.name} 参数 {parameter.name} 缺少值",
+                    usage,
+                )
+            )
+        if _looks_like_option_token(raw_args[value_index]):
             raise PluginInputError(
                 _format_command_input_error(
                     f"插件命令 {request.command.name} 参数 {parameter.name} 缺少值",
@@ -586,6 +628,26 @@ def _parse_bool_argument(raw_value: str) -> bool:
     if normalized in {"0", "false", "f", "no", "n", "off"}:
         return False
     raise ValueError(f"invalid bool value: {raw_value}")
+
+
+def _validate_command_argument_choice(
+    parameter: Parameter,
+    request: PluginCommandRequest,
+    value: Any,
+    usage: str | None,
+    type_hints: dict[str, Any] | None,
+) -> None:
+    choices = _command_argument_metadata(parameter, type_hints).choices
+    if not choices or value in choices:
+        return
+    expected = ", ".join(repr(choice) for choice in choices)
+    raise PluginInputError(
+        _format_command_input_error(
+            f"插件命令 {request.command.name} 参数 {parameter.name} "
+            f"必须是 {expected}，收到 {value!r}",
+            usage,
+        )
+    )
 
 
 def _is_command_argument_value(
@@ -689,12 +751,18 @@ def _annotation_metadata(annotation: Any) -> "_CommandArgumentMetadata":
             result.is_flag = True
             result.base_type = bool
         for item in metadata:
+            if isinstance(item, _ChoiceMarker):
+                result.choices = item.choices
+                result.base_type = _choice_base_type(item.choices)
+        for item in metadata:
             if isinstance(item, Arg):
                 result.aliases = item.aliases
                 result.description = item.description
         if result.is_rest and result.base_type is not str:
             result.invalid_marker = True
         if result.is_flag and result.base_type is not bool:
+            result.invalid_marker = True
+        if result.choices and result.base_type not in {str, int, float, bool}:
             result.invalid_marker = True
         return result
     if isinstance(annotation, str):
@@ -770,6 +838,47 @@ def _option_token(name: str) -> str:
     return f"--{name.replace('_', '-')}"
 
 
+def _usage_argument_type(argument: PluginCommandArgumentDefinition) -> str:
+    if not argument.choices:
+        return argument.type
+    return "|".join(str(choice) for choice in argument.choices)
+
+
+def _dedupe_aliases(
+    alias: str | None,
+    aliases: list[str] | tuple[str, ...],
+) -> tuple[str, ...]:
+    values = [item for item in (alias, *aliases) if item]
+    return tuple(dict.fromkeys(values))
+
+
+def _choice_base_type(choices: tuple[Any, ...]) -> type:
+    first_type = type(choices[0])
+    if first_type is bool:
+        return bool
+    if first_type in {str, int, float} and all(
+        type(choice) is first_type for choice in choices
+    ):
+        return first_type
+    return str
+
+
+def _looks_like_option_token(value: str) -> bool:
+    if value.startswith("--") and len(value) > 2:
+        return True
+    if not value.startswith("-") or len(value) <= 1:
+        return False
+    return not _looks_like_number(value)
+
+
+def _looks_like_number(value: str) -> bool:
+    try:
+        float(value)
+    except ValueError:
+        return False
+    return True
+
+
 class _CommandArgumentMetadata:
     def __init__(self) -> None:
         self.is_rest = False
@@ -778,6 +887,7 @@ class _CommandArgumentMetadata:
         self.invalid_marker = False
         self.base_type: type | None = None
         self.aliases: tuple[str, ...] = ()
+        self.choices: tuple[Any, ...] = ()
         self.description = ""
 
 

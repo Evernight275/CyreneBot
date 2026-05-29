@@ -19,6 +19,7 @@ from cyreneAI.core.schema.plugin import (
     PluginEventRequest,
     PluginEventResult,
     PluginEventType,
+    PluginTaskDefinition,
 )
 
 
@@ -64,6 +65,12 @@ def _definition(*, admin_required: bool = False) -> PluginDefinition:
                 description="Observe messages.",
             )
         ],
+        tasks=[
+            PluginTaskDefinition(
+                name="cleanup",
+                description="Clean up plugin state.",
+            )
+        ],
     )
 
 
@@ -83,6 +90,12 @@ def test_plugin_manager_lists_plugins_and_commands() -> None:
     assert manager.list_plugins() == [definition]
     assert manager.list_commands() == definition.commands
     assert manager.list_events() == definition.events
+    assert manager.list_tasks() == definition.tasks
+    assert manager.get_plugin(definition.plugin_id) == definition
+    assert manager.list_plugin_commands(definition.plugin_id) == definition.commands
+    assert manager.list_plugin_events(definition.plugin_id) == definition.events
+    assert manager.list_plugin_tasks(definition.plugin_id) == definition.tasks
+    assert manager.get_plugin_status(definition.plugin_id).plugin_id == definition.plugin_id
 
 
 async def _run_execute_command() -> None:

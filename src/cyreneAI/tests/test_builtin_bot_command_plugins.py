@@ -83,9 +83,30 @@ def test_builtin_help_command_lists_registered_commands() -> None:
                 "/help - Show available commands.",
                 "/ping - Check whether the bot is responsive.",
                 "/echo <text> - Echo text back.",
-                "/status - Show runtime status.",
             ]
         )
+
+        await runtime.close()
+
+    asyncio.run(run())
+
+
+def test_builtin_help_command_lists_admin_commands_for_admin() -> None:
+    async def run() -> None:
+        runtime = await build_cyrene_ai_runtime()
+        assert runtime.plugin_manager is not None
+
+        result = await runtime.plugin_manager.execute_command(
+            PluginCommandRequest(
+                command=BotCommand(raw_text="/help", name="help"),
+                event=_event("/help"),
+                is_admin=True,
+            )
+        )
+
+        assert result.actions[0].message is not None
+        text = result.actions[0].message.content[0].text
+        assert "/status - Show runtime status. [admin]" in text
 
         await runtime.close()
 

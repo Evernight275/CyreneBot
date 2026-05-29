@@ -7,6 +7,7 @@ import pytest
 
 from cyreneAI.api import (
     Arg,
+    Choice,
     CyreneBot,
     CyreneRouter,
     Depends,
@@ -32,6 +33,22 @@ def test_plugin_test_client_executes_command_without_full_runtime() -> None:
 
         assert result.texts == ["Hello, Cyrene!"]
         assert result.handled is True
+
+    asyncio.run(run())
+
+
+def test_plugin_test_client_executes_inferred_command_name() -> None:
+    async def run() -> None:
+        plugin = CyreneBot()
+
+        @plugin.command
+        async def hello(name):
+            return f"Hello, {name}!"
+
+        client = PluginTestClient(plugin)
+        result = await client.command("/hello Cyrene")
+
+        assert result.texts == ["Hello, Cyrene!"]
 
     asyncio.run(run())
 
@@ -122,6 +139,24 @@ def test_plugin_test_client_binds_options_and_flags() -> None:
         result = await client.command('/search "hello world" -l 5 --verbose')
 
         assert result.texts == ["hello world:5:True"]
+        assert result.has_text("hello world:5:True")
+
+    asyncio.run(run())
+
+
+def test_plugin_test_client_binds_choice_arguments() -> None:
+    async def run() -> None:
+        plugin = CyreneBot()
+
+        @plugin.command("/run")
+        async def run_mode(mode: Choice["fast", "safe"] = "safe"):
+            return mode
+
+        client = PluginTestClient(plugin)
+
+        result = await client.command("/run fast")
+
+        assert result.texts == ["fast"]
 
     asyncio.run(run())
 
@@ -154,8 +189,8 @@ def test_plugin_test_client_provides_default_fake_dependencies() -> None:
 
         assert result.texts == ["test-task-1"]
         assert await client.storage.get("name") == "Cyrene"
-        assert client.messages.sent[0]["text"] == "stored"
-        assert client.scheduler.scheduled[0]["payload"] == {"name": "Cyrene"}
+        assert client.sent_messages[0]["text"] == "stored"
+        assert client.scheduled_tasks[0]["payload"] == {"name": "Cyrene"}
 
     asyncio.run(run())
 
@@ -278,6 +313,22 @@ def test_plugin_test_client_dispatches_events_without_full_runtime() -> None:
     asyncio.run(run())
 
 
+def test_plugin_test_client_dispatches_inferred_event_type() -> None:
+    async def run() -> None:
+        plugin = CyreneBot()
+
+        @plugin.event
+        async def on_message(event):
+            return PluginEventResult(metadata={"seen": event.text})
+
+        client = PluginTestClient(plugin)
+        result = await client.event("message", text="hello", session_id="s1")
+
+        assert result.metadata == [{"seen": "hello"}]
+
+    asyncio.run(run())
+
+
 def test_plugin_test_client_runs_tasks_without_full_runtime() -> None:
     async def run() -> None:
         plugin = CyreneBot()
@@ -305,5 +356,21 @@ def test_plugin_test_client_runs_tasks_without_full_runtime() -> None:
             "payload": {"target": "cache"},
             "metadata": {"source": "test"},
         }
+
+    asyncio.run(run())
+
+
+def test_plugin_test_client_runs_inferred_task_name() -> None:
+    async def run() -> None:
+        plugin = CyreneBot()
+
+        @plugin.task
+        async def cleanup_cache(request):
+            return PluginTaskResult(metadata={"task": request.task.name})
+
+        client = PluginTestClient(plugin)
+        result = await client.task("cleanup cache")
+
+        assert result.metadata == {"task": "cleanup cache"}
 
     asyncio.run(run())

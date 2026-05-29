@@ -40,6 +40,49 @@ class PluginManager:
         """
         return self._registry.list_definitions()
 
+    def get_plugin(self, plugin_id: str) -> PluginDefinition:
+        """
+        获取单个插件定义。
+        """
+        return self._registry.get_definition(plugin_id)
+
+    def list_plugin_commands(self, plugin_id: str) -> list[PluginCommandDefinition]:
+        """
+        列出单个插件的已启用命令。
+        """
+        definition = self.get_plugin(plugin_id)
+        if not definition.enabled:
+            return []
+        return [command for command in definition.commands if command.enabled]
+
+    def list_plugin_events(self, plugin_id: str) -> list[PluginEventDefinition]:
+        """
+        列出单个插件的已启用事件订阅。
+        """
+        definition = self.get_plugin(plugin_id)
+        if not definition.enabled:
+            return []
+        return [event for event in definition.events if event.enabled]
+
+    def list_plugin_tasks(self, plugin_id: str) -> list[PluginTaskDefinition]:
+        """
+        列出单个插件的已启用任务。
+        """
+        definition = self.get_plugin(plugin_id)
+        if not definition.enabled:
+            return []
+        return [task for task in definition.tasks if task.enabled]
+
+    def get_plugin_status(self, plugin_id: str) -> PluginStatusReport:
+        """
+        获取单个插件生命周期状态。
+        """
+        self.get_plugin(plugin_id)
+        for status in self.list_statuses():
+            if status.plugin_id == plugin_id:
+                return status
+        raise PluginExecutionError(f"插件 {plugin_id} 状态不存在")
+
     def list_commands(self) -> list[PluginCommandDefinition]:
         """
         列出插件命令。
