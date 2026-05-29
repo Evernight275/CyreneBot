@@ -141,7 +141,11 @@ class BotOrchestrator:
                     command=command,
                     event=request.event,
                     is_admin=is_admin,
-                    metadata=request.metadata,
+                    metadata={
+                        **request.metadata,
+                        "provider_id": request.provider_id,
+                        "model": request.model,
+                    },
                 )
             )
         except PluginNotFoundError:

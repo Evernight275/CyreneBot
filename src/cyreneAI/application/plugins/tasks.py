@@ -208,7 +208,7 @@ class ApplicationPluginTaskScheduler:
             raise
         except Exception:
             logger.exception(
-                "Plugin task loop failed: plugin_id=%s task=%s",
+                "Plugin declared task failed: plugin_id=%s task=%s status=failed",
                 plugin_id,
                 definition.name,
             )
@@ -248,7 +248,7 @@ class ApplicationPluginTaskScheduler:
                     last_error=str(exc),
                 )
             logger.exception(
-                "Plugin one-shot task failed: task_id=%s plugin_id=%s task=%s",
+                "Plugin one-shot task failed: task_id=%s plugin_id=%s task=%s status=failed",
                 task_record.task_id,
                 task_record.plugin_id,
                 task_record.task_name,
@@ -283,7 +283,7 @@ class ApplicationPluginTaskScheduler:
             raise
         except Exception:
             logger.exception(
-                "Failed to restore plugin tasks: plugin_id=%s task=%s",
+                "Failed to restore plugin tasks: plugin_id=%s task=%s status=failed",
                 plugin_id,
                 task_name,
             )

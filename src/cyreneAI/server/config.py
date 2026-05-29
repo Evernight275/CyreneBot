@@ -131,6 +131,19 @@ def build_plugin_task_database_path_from_env() -> str | None:
     return _env_str("CYRENEAI_PLUGIN_TASK_DATABASE_PATH")
 
 
+def build_disabled_plugin_ids_from_env() -> list[str]:
+    load_dotenv()
+
+    raw = _env_str("CYRENEAI_DISABLED_PLUGINS")
+    if raw is None:
+        return []
+    return [
+        part.strip()
+        for part in raw.replace(";", ",").split(",")
+        if part.strip()
+    ]
+
+
 def build_provider_configs_from_env() -> list[ProviderConfig]:
     load_dotenv()
 

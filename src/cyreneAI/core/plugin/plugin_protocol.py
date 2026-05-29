@@ -4,7 +4,6 @@ from collections.abc import Awaitable, Callable
 from typing import Any, Protocol
 
 from cyreneAI.core.schema.application import (
-    ApplicationChatRequest,
     ApplicationChatResult,
     ApplicationImageGenerationRequest,
     ApplicationImageGenerationResult,
@@ -22,6 +21,7 @@ from cyreneAI.core.schema.plugin import (
     PluginMessageReceipt,
     PluginPermission,
     PluginScheduledTask,
+    PluginStatusReport,
     PluginTaskDefinition,
     PluginTaskRequest,
     PluginTaskResult,
@@ -69,6 +69,46 @@ class PluginEventExecutorProtocol(Protocol):
         ...
 
 
+class PluginLLMNamespaceProtocol(Protocol):
+    """
+    单个插件的受控 LLM 命名空间。
+    """
+
+    async def chat(
+        self,
+        prompt: str,
+        *,
+        provider_id: str | None = None,
+        model: str | None = None,
+        system: str | None = None,
+        session_id: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> str:
+        """
+        以最小文本输入调用 LLM，并返回首段文本回复。
+        """
+        ...
+
+    async def result(
+        self,
+        prompt: str,
+        *,
+        provider_id: str | None = None,
+        model: str | None = None,
+        system: str | None = None,
+        session_id: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> ApplicationChatResult:
+        """
+        调用 LLM 并返回完整 application chat 结果。
+        """
+        ...
+
+
 class PluginRuntimeContextProtocol(Protocol):
     """
     第三方插件运行时上下文协议。
@@ -77,12 +117,6 @@ class PluginRuntimeContextProtocol(Protocol):
     def require_permission(self, permission: PluginPermission) -> None:
         """
         要求插件具备指定权限。
-        """
-        ...
-
-    async def chat(self, request: ApplicationChatRequest) -> ApplicationChatResult:
-        """
-        调用应用聊天能力。
         """
         ...
 
@@ -104,6 +138,13 @@ class PluginRuntimeContextProtocol(Protocol):
     async def list_provider_models(self, provider_id: str) -> list[ProviderModel]:
         """
         列出 provider 模型。
+        """
+        ...
+
+    @property
+    def llm(self) -> PluginLLMNamespaceProtocol:
+        """
+        当前插件的受控 LLM 命名空间。
         """
         ...
 
@@ -546,6 +587,24 @@ class PluginRegistryProtocol(Protocol):
     def list_events(self) -> list[PluginEventDefinition]:
         """
         列出已启用事件订阅定义。
+        """
+        ...
+
+    def list_tasks(self) -> list[PluginTaskDefinition]:
+        """
+        列出已启用任务定义。
+        """
+        ...
+
+    def record_status(self, status: PluginStatusReport) -> None:
+        """
+        记录插件生命周期状态。
+        """
+        ...
+
+    def list_statuses(self) -> list[PluginStatusReport]:
+        """
+        列出插件生命周期状态。
         """
         ...
 

@@ -7,6 +7,7 @@ from cyreneAI.server.app import create_app
 from cyreneAI.server.config import (
     build_bot_polling_state_database_path_from_env,
     build_context_database_path_from_env,
+    build_disabled_plugin_ids_from_env,
     build_plugin_paths_from_env,
     build_plugin_storage_path_from_env,
     build_plugin_task_database_path_from_env,
@@ -38,6 +39,8 @@ def _build_app():
                 bot_polling_state_database_path=build_bot_polling_state_database_path_from_env(),
                 plugin_storage_path=build_plugin_storage_path_from_env(),
                 plugin_task_database_path=build_plugin_task_database_path_from_env(),
+                disabled_plugin_ids=build_disabled_plugin_ids_from_env(),
+                plugin_fail_fast=False,
                 plugin_assets=plugin_assets,
                 plugin_loaders=[
                     FileSystemPluginLoader(path, plugin_assets=plugin_assets)

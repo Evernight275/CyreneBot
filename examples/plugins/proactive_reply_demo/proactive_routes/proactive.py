@@ -1,6 +1,6 @@
 import time
 
-from cyreneAI.plugin_api import CyreneRouter, Depends, text
+from cyreneAI.api import CyreneRouter, Depends, text
 
 
 router = CyreneRouter()

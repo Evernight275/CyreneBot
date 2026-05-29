@@ -15,6 +15,9 @@ from cyreneAI.core.schema.plugin import (
     PluginEventRequest,
     PluginEventResult,
     PluginEventType,
+    PluginLifecycleStatus,
+    PluginStatusReport,
+    PluginTaskDefinition,
 )
 
 
@@ -36,6 +39,7 @@ def _definition(
     enabled: bool = True,
     command_enabled: bool = True,
     events: list[PluginEventDefinition] | None = None,
+    tasks: list[PluginTaskDefinition] | None = None,
 ) -> PluginDefinition:
     return PluginDefinition(
         plugin_id=plugin_id,
@@ -51,6 +55,7 @@ def _definition(
             )
         ],
         events=events or [],
+        tasks=tasks or [],
     )
 
 
@@ -66,6 +71,7 @@ def test_plugin_registry_registers_and_lists_plugins() -> None:
     assert registry.get_executor("builtin.help") is executor
     assert registry.list_definitions() == [definition]
     assert registry.list_commands() == definition.commands
+    assert registry.list_statuses()[0].status == PluginLifecycleStatus.ENABLED
 
 
 def test_plugin_registry_resolves_command_and_alias() -> None:
@@ -181,3 +187,24 @@ def test_plugin_registry_lists_and_resolves_events() -> None:
     assert registry.resolve_events(event) == [
         (definition, definition.events[0], event_executor)
     ]
+
+
+def test_plugin_registry_lists_tasks_and_records_status() -> None:
+    registry = PluginRegistry()
+    definition = _definition(
+        tasks=[PluginTaskDefinition(name="follow_up")]
+    )
+
+    registry.register(definition, _FakePluginExecutor())
+    registry.record_status(
+        PluginStatusReport(
+            plugin_id=definition.plugin_id,
+            status=PluginLifecycleStatus.FAILED,
+            reason="setup_failed",
+            error="boom",
+        )
+    )
+
+    assert registry.list_tasks() == definition.tasks
+    assert registry.list_statuses()[0].status == PluginLifecycleStatus.FAILED
+    assert registry.list_statuses()[0].reason == "setup_failed"

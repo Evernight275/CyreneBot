@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
-from inspect import Parameter, Signature, isawaitable, signature
-from typing import Any
+from collections.abc import AsyncGenerator, Awaitable, Callable, Generator
+from inspect import Parameter, Signature, isasyncgen, isawaitable, isgenerator, signature
+from typing import Any, Literal, TypeAlias, overload
 
 from cyreneAI.core.errors.plugin import (
     PluginConfigurationError,
@@ -10,9 +10,22 @@ from cyreneAI.core.errors.plugin import (
     PluginExecutionError,
     PluginInputError,
 )
-from cyreneAI.core.plugin.plugin_protocol import PluginSetupContextProtocol
+from cyreneAI.core.plugin.plugin_protocol import (
+    PluginAssetsNamespaceProtocol,
+    PluginLLMNamespaceProtocol,
+    PluginOutboxNamespaceProtocol,
+    PluginRuntimeContextProtocol,
+    PluginSetupContextProtocol,
+    PluginStorageNamespaceProtocol,
+    PluginTaskNamespaceProtocol,
+)
+from cyreneAI.core.schema.application import (
+    ApplicationImageGenerationRequest,
+    ApplicationImageGenerationResult,
+)
 from cyreneAI.core.schema.bot import BotAction, BotActionType, BotMessage
 from cyreneAI.core.schema.message import ContentPart, ContentPartType
+from cyreneAI.core.schema.provider import ProviderInfo, ProviderModel
 from cyreneAI.core.schema.plugin import (
     PluginCommandDefinition,
     PluginCommandRequest,
@@ -29,10 +42,23 @@ from cyreneAI.core.schema.plugin import (
 )
 
 
-PluginCommandHandler = Callable[
-    ...,
-    PluginCommandResult | Awaitable[PluginCommandResult],
+PluginCommandHandlerResult: TypeAlias = str | PluginCommandResult
+PluginCommandGenerator: TypeAlias = Generator[
+    PluginCommandHandlerResult,
+    None,
+    Any,
 ]
+PluginCommandAsyncGenerator: TypeAlias = AsyncGenerator[
+    PluginCommandHandlerResult,
+    None,
+]
+PluginCommandHandlerReturn: TypeAlias = (
+    PluginCommandHandlerResult
+    | PluginCommandGenerator
+    | PluginCommandAsyncGenerator
+    | Awaitable[PluginCommandHandlerResult]
+)
+PluginCommandHandler: TypeAlias = Callable[..., PluginCommandHandlerReturn]
 PluginTaskHandler = Callable[
     ...,
     PluginTaskResult | None | Awaitable[PluginTaskResult | None],
@@ -55,7 +81,62 @@ class PluginDependency:
         self.name = normalized_name
 
 
-def Depends(name: str) -> PluginDependency:
+@overload
+def Depends(
+    name: Literal["ctx", "context", "runtime"],
+) -> PluginRuntimeContextProtocol: ...
+
+
+@overload
+def Depends(name: Literal["llm"]) -> PluginLLMNamespaceProtocol: ...
+
+
+@overload
+def Depends(
+    name: Literal["image", "generate_image"],
+) -> Callable[
+    [ApplicationImageGenerationRequest],
+    Awaitable[ApplicationImageGenerationResult],
+]: ...
+
+
+@overload
+def Depends(
+    name: Literal["providers", "list_providers"],
+) -> Callable[[], list[ProviderInfo]]: ...
+
+
+@overload
+def Depends(
+    name: Literal["provider_models", "list_provider_models"],
+) -> Callable[[str], Awaitable[list[ProviderModel]]]: ...
+
+
+@overload
+def Depends(name: Literal["storage"]) -> PluginStorageNamespaceProtocol: ...
+
+
+@overload
+def Depends(name: Literal["assets"]) -> PluginAssetsNamespaceProtocol: ...
+
+
+@overload
+def Depends(
+    name: Literal["task", "tasks", "scheduler"],
+) -> PluginTaskNamespaceProtocol: ...
+
+
+@overload
+def Depends(
+    name: Literal["message", "messages", "outbox"],
+) -> PluginOutboxNamespaceProtocol: ...
+
+
+@overload
+def Depends(name: str) -> Any: ...
+
+
+def Depends(name: str) -> Any:
     """
     声明插件 handler 需要宿主注入的受控能力。
     """
@@ -411,11 +492,7 @@ class _CommandHandlerExecutor:
                 cause=exc,
             ) from exc
 
-        if not isinstance(result, PluginCommandResult):
-            raise PluginExecutionError(
-                f"插件命令 {request.command.name} 必须返回 PluginCommandResult"
-            )
-        return result
+        return await _coerce_command_handler_result(request, result)
 
 
 class _TaskHandlerExecutor:
@@ -534,6 +611,61 @@ def text(
     return PluginCommandResult(
         actions=[action],
         metadata=metadata or {},
+    )
+
+
+async def _coerce_command_handler_result(
+    request: PluginCommandRequest,
+    result: Any,
+) -> PluginCommandResult:
+    if isinstance(result, str):
+        return text(request, result)
+    if isinstance(result, PluginCommandResult):
+        return result
+    if isasyncgen(result):
+        partials: list[PluginCommandResult] = []
+        async for item in result:
+            partials.append(_coerce_command_result_item(request, item))
+        return _merge_command_results(partials)
+    if isgenerator(result):
+        return _merge_command_results(
+            [
+                _coerce_command_result_item(request, item)
+                for item in result
+            ]
+        )
+    raise PluginExecutionError(
+        f"插件命令 {request.command.name} 必须返回 str、PluginCommandResult，或 yield 它们"
+    )
+
+
+def _coerce_command_result_item(
+    request: PluginCommandRequest,
+    item: Any,
+) -> PluginCommandResult:
+    if isinstance(item, str):
+        return text(request, item)
+    if isinstance(item, PluginCommandResult):
+        return item
+    raise PluginExecutionError(
+        f"插件命令 {request.command.name} yield 项必须是 str 或 PluginCommandResult"
+    )
+
+
+def _merge_command_results(
+    results: list[PluginCommandResult],
+) -> PluginCommandResult:
+    actions: list[BotAction] = []
+    metadata: dict[str, Any] = {}
+    handled = True
+    for result in results:
+        handled = handled and result.handled
+        actions.extend(result.actions)
+        metadata.update(result.metadata)
+    return PluginCommandResult(
+        handled=handled,
+        actions=actions,
+        metadata=metadata,
     )
 
 
@@ -728,7 +860,7 @@ def _resolve_handler_parameter(
     slot_index: int,
 ) -> Any:
     if isinstance(parameter.default, PluginDependency):
-        return _resolve_dependency(parameter.default, runtime_context)
+        return _resolve_dependency(parameter.default, runtime_context, request)
 
     if parameter.name == "request":
         return request
@@ -750,12 +882,16 @@ def _resolve_handler_parameter(
 def _resolve_dependency(
     dependency: PluginDependency,
     runtime_context: Any,
+    request: PluginCommandRequest | PluginTaskRequest | PluginEventRequest | None = None,
 ) -> Any:
     if dependency.name in {"ctx", "context", "runtime"}:
         return runtime_context
-    if dependency.name == "chat":
-        runtime_context.require_permission(PluginPermission.CHAT)
-        return runtime_context.chat
+    if dependency.name == "llm":
+        runtime_context.require_permission(PluginPermission.LLM)
+        llm_for_request = getattr(runtime_context, "llm_for_request", None)
+        if llm_for_request is not None and request is not None:
+            return llm_for_request(request)
+        return runtime_context.llm
     if dependency.name in {"image", "generate_image"}:
         runtime_context.require_permission(PluginPermission.IMAGE)
         return runtime_context.generate_image

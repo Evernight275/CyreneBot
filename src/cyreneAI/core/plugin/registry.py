@@ -9,6 +9,9 @@ from cyreneAI.core.schema.plugin import (
     PluginDefinition,
     PluginEvent,
     PluginEventDefinition,
+    PluginLifecycleStatus,
+    PluginStatusReport,
+    PluginTaskDefinition,
 )
 
 
@@ -22,6 +25,7 @@ class PluginRegistry:
         self._executors: dict[str, PluginExecutorProtocol] = {}
         self._event_executors: dict[str, PluginEventExecutorProtocol] = {}
         self._command_to_plugin: dict[str, str] = {}
+        self._statuses: dict[str, PluginStatusReport] = {}
 
     def register(
         self,
@@ -41,6 +45,7 @@ class PluginRegistry:
                 raise ConflictError(f"该插件命令 {command_name} 已注册")
 
         self._definitions[definition.plugin_id] = definition
+        self.record_status(_status_from_definition(definition))
         if executor is not None:
             self._executors[definition.plugin_id] = executor
         if event_executor is not None:
@@ -61,6 +66,7 @@ class PluginRegistry:
         self._definitions.pop(plugin_id, None)
         self._executors.pop(plugin_id, None)
         self._event_executors.pop(plugin_id, None)
+        self._statuses.pop(plugin_id, None)
 
     def get_definition(self, plugin_id: str) -> PluginDefinition:
         """
@@ -114,6 +120,32 @@ class PluginRegistry:
                 continue
             events.extend(event for event in definition.events if event.enabled)
         return events
+
+    def list_tasks(self) -> list[PluginTaskDefinition]:
+        """
+        列出已启用插件任务。
+        """
+        tasks: list[PluginTaskDefinition] = []
+        for definition in self._definitions.values():
+            if not definition.enabled:
+                continue
+            tasks.extend(task for task in definition.tasks if task.enabled)
+        return tasks
+
+    def record_status(self, status: PluginStatusReport) -> None:
+        """
+        记录插件生命周期状态。
+        """
+        self._statuses[status.plugin_id] = status
+
+    def list_statuses(self) -> list[PluginStatusReport]:
+        """
+        列出插件生命周期状态。
+        """
+        statuses = dict(self._statuses)
+        for plugin_id, definition in self._definitions.items():
+            statuses.setdefault(plugin_id, _status_from_definition(definition))
+        return list(statuses.values())
 
     def resolve_command(
         self,
@@ -187,3 +219,17 @@ def _find_command_definition(
 
 def _normalize_command_name(name: str) -> str:
     return name.strip().lower().removeprefix("/")
+
+
+def _status_from_definition(definition: PluginDefinition) -> PluginStatusReport:
+    return PluginStatusReport(
+        plugin_id=definition.plugin_id,
+        status=(
+            PluginLifecycleStatus.ENABLED
+            if definition.enabled
+            else PluginLifecycleStatus.DISABLED
+        ),
+        enabled=definition.enabled,
+        name=definition.name,
+        version=definition.version,
+    )

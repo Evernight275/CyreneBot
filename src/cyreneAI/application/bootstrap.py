@@ -51,6 +51,8 @@ async def build_cyrene_ai_runtime(
     plugin_assets: PluginAssetsProtocol | None = None,
     plugin_task_scheduler: PluginTaskSchedulerProtocol | None = None,
     plugin_task_store: PluginTaskStoreProtocol | None = None,
+    disabled_plugin_ids: list[str] | None = None,
+    plugin_fail_fast: bool = True,
     register_builtin_plugins: bool = True,
     tool_registry: ToolRegistryProtocol | None = None,
     vector_store: VectorStoreProtocol | None = None,
@@ -108,6 +110,8 @@ async def build_cyrene_ai_runtime(
         runtime=runtime,
         registry=runtime_plugin_registry,
         skill_registry=skill_registry,
+        disabled_plugin_ids=set(disabled_plugin_ids or []),
+        fail_fast=plugin_fail_fast,
     )
     runtime.plugin_host = runtime_plugin_host
 

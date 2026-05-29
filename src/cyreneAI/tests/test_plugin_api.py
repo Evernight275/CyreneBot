@@ -21,7 +21,7 @@ from cyreneAI.core.schema.plugin import (
     PluginTaskRequest,
     PluginTaskResult,
 )
-from cyreneAI.plugin_api import CyreneBot, CyreneRouter, Depends, text
+from cyreneAI.api import CyreneBot, CyreneRouter, Depends, text
 
 
 def _event(text_value: str = "/hello") -> BotEvent:
@@ -196,7 +196,149 @@ def test_text_helper_builds_standard_bot_action() -> None:
     assert action.message.content[0].text == "Hello!"
 
 
-def test_cyrene_bot_command_executor_requires_standard_result() -> None:
+def test_cyrene_bot_command_executor_accepts_string_reply() -> None:
+    async def run() -> None:
+        plugin = CyreneBot(
+            PluginManifest(
+                plugin_id="demo.string_reply",
+                name="String Reply",
+                description="String reply plugin.",
+                entrypoint="main.py",
+                capabilities=["bot_command"],
+            )
+        )
+
+        @plugin.command("/hello")
+        async def hello(request, ctx):
+            return "hello"
+
+        class Context:
+            runtime = object()
+            manifest = plugin.manifest
+
+            def register_command(self, definition, executor):
+                self.executor = executor
+
+            def register_tool(self, definition, executor):
+                raise AssertionError
+
+            def register_skill(self, definition):
+                raise AssertionError
+
+        context = Context()
+        plugin.setup(context)
+
+        result = await context.executor.execute(
+            PluginCommandRequest(
+                command=BotCommand(raw_text="/hello", name="hello"),
+                event=_event("/hello"),
+            )
+        )
+
+        assert result.actions[0].message is not None
+        assert result.actions[0].message.content[0].text == "hello"
+
+    asyncio.run(run())
+
+
+def test_cyrene_bot_command_executor_accepts_async_yielded_string_replies() -> None:
+    async def run() -> None:
+        plugin = CyreneBot(
+            PluginManifest(
+                plugin_id="demo.yield_reply",
+                name="Yield Reply",
+                description="Yield reply plugin.",
+                entrypoint="main.py",
+                capabilities=["bot_command"],
+            )
+        )
+
+        @plugin.command("/hello")
+        async def hello(request, ctx):
+            yield "hello"
+            yield "world"
+
+        class Context:
+            runtime = object()
+            manifest = plugin.manifest
+
+            def register_command(self, definition, executor):
+                self.executor = executor
+
+            def register_tool(self, definition, executor):
+                raise AssertionError
+
+            def register_skill(self, definition):
+                raise AssertionError
+
+        context = Context()
+        plugin.setup(context)
+
+        result = await context.executor.execute(
+            PluginCommandRequest(
+                command=BotCommand(raw_text="/hello", name="hello"),
+                event=_event("/hello"),
+            )
+        )
+
+        assert len(result.actions) == 2
+        assert result.actions[0].message is not None
+        assert result.actions[0].message.content[0].text == "hello"
+        assert result.actions[1].message is not None
+        assert result.actions[1].message.content[0].text == "world"
+
+    asyncio.run(run())
+
+
+def test_cyrene_bot_command_executor_accepts_sync_yielded_results() -> None:
+    async def run() -> None:
+        plugin = CyreneBot(
+            PluginManifest(
+                plugin_id="demo.sync_yield_reply",
+                name="Sync Yield Reply",
+                description="Sync yield reply plugin.",
+                entrypoint="main.py",
+                capabilities=["bot_command"],
+            )
+        )
+
+        @plugin.command("/hello")
+        def hello(request, ctx):
+            yield text(request, "hello")
+            yield PluginCommandResult(metadata={"done": True})
+
+        class Context:
+            runtime = object()
+            manifest = plugin.manifest
+
+            def register_command(self, definition, executor):
+                self.executor = executor
+
+            def register_tool(self, definition, executor):
+                raise AssertionError
+
+            def register_skill(self, definition):
+                raise AssertionError
+
+        context = Context()
+        plugin.setup(context)
+
+        result = await context.executor.execute(
+            PluginCommandRequest(
+                command=BotCommand(raw_text="/hello", name="hello"),
+                event=_event("/hello"),
+            )
+        )
+
+        assert len(result.actions) == 1
+        assert result.actions[0].message is not None
+        assert result.actions[0].message.content[0].text == "hello"
+        assert result.metadata == {"done": True}
+
+    asyncio.run(run())
+
+
+def test_cyrene_bot_command_executor_rejects_non_string_shortcut_result() -> None:
     async def run() -> None:
         plugin = CyreneBot(
             PluginManifest(
@@ -210,7 +352,7 @@ def test_cyrene_bot_command_executor_requires_standard_result() -> None:
 
         @plugin.command("/bad")
         async def bad(request, ctx):
-            return "bad"
+            return {"bad": True}
 
         class Context:
             runtime = object()
@@ -545,6 +687,45 @@ def test_cyrene_bot_command_executor_rejects_unknown_dependency() -> None:
         @plugin.command("/unknown")
         async def unknown(request, dep=Depends("missing")):
             return PluginCommandResult(metadata={"dep": dep})
+
+        class Context:
+            runtime = object()
+            manifest = plugin.manifest
+
+            def register_command(self, definition, executor):
+                self.executor = executor
+
+            def register_task(self, definition, executor):
+                raise AssertionError
+
+            def register_tool(self, definition, executor):
+                raise AssertionError
+
+            def register_skill(self, definition):
+                raise AssertionError
+
+        with pytest.raises(PluginConfigurationError):
+            plugin.setup(Context())
+
+    asyncio.run(run())
+
+
+def test_cyrene_bot_command_executor_rejects_chat_dependency_name() -> None:
+    async def run() -> None:
+        plugin = CyreneBot(
+            PluginManifest(
+                plugin_id="demo.chat",
+                name="Chat",
+                description="Chat dependency plugin.",
+                entrypoint="main.py",
+                capabilities=["bot_command"],
+                permissions=["llm"],
+            )
+        )
+
+        @plugin.command("/chat")
+        async def chat(request, chat=Depends("chat")):
+            return await chat(request.command.args_text)
 
         class Context:
             runtime = object()

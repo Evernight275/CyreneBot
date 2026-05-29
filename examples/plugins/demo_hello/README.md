@@ -13,7 +13,7 @@ demo_hello/
 `plugin.json` declares the plugin project metadata. `main.py` declares local bot routes.
 
 ```python
-from cyreneAI.plugin_api import CyreneBot
+from cyreneAI.api import CyreneBot
 from routers.basic import router as basic_router
 
 plugin = CyreneBot()
@@ -23,7 +23,7 @@ plugin.include_router(basic_router)
 Routers hold commands:
 
 ```python
-from cyreneAI.plugin_api import CyreneRouter, text
+from cyreneAI.api import CyreneRouter, text
 
 router = CyreneRouter()
 
@@ -37,7 +37,7 @@ async def hello(request, ctx):
 Complex plugins can split routes with prefixes:
 
 ```python
-from cyreneAI.plugin_api import CyreneRouter, Depends
+from cyreneAI.api import CyreneRouter, Depends
 
 admin_router = CyreneRouter(prefix="/sf", admin_required=True)
 
@@ -49,7 +49,7 @@ async def ban(request, store=Depends("storage")):
 Handlers can declare host-managed dependencies when they need runtime abilities:
 
 ```python
-from cyreneAI.plugin_api import CyreneBot, Depends, text
+from cyreneAI.api import CyreneBot, Depends, text
 
 plugin = CyreneBot()
 

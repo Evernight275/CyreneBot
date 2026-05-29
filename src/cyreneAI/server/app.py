@@ -9,7 +9,15 @@ from fastapi import FastAPI
 from cyreneAI.application.runtime import CyreneAIRuntime
 from cyreneAI.server.channel_polling import ChannelPollingRunner
 from cyreneAI.server.config import ServerSettings, build_server_settings_from_env
-from cyreneAI.server.routes import auth, channels, chat, health, images, providers
+from cyreneAI.server.routes import (
+    auth,
+    channels,
+    chat,
+    health,
+    images,
+    plugins,
+    providers,
+)
 from cyreneAI.server.routes import telegram
 
 
@@ -57,6 +65,7 @@ def create_app(
     app.include_router(providers.router)
     app.include_router(chat.router)
     app.include_router(images.router)
+    app.include_router(plugins.router)
     app.include_router(channels.router)
     app.include_router(telegram.router)
     return app
@@ -70,6 +79,7 @@ def _log_plugin_startup_state(runtime: CyreneAIRuntime) -> None:
 
     plugins = plugin_manager.list_plugins()
     commands = plugin_manager.list_commands()
+    statuses = plugin_manager.list_statuses()
     plugin_items = [
         f"{plugin.plugin_id}@{plugin.version}"
         for plugin in plugins
@@ -90,6 +100,16 @@ def _log_plugin_startup_state(runtime: CyreneAIRuntime) -> None:
         "CyreneBot commands loaded: count=%s commands=%s",
         len(command_items),
         ", ".join(command_items) or "(none)",
+    )
+    status_items = [
+        f"{status.plugin_id}:{status.status}"
+        + (f" reason={status.reason}" if status.reason else "")
+        for status in statuses
+    ]
+    logger.info(
+        "CyreneBot plugin statuses: count=%s statuses=%s",
+        len(status_items),
+        ", ".join(status_items) or "(none)",
     )
 
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from cyreneAI.application.chat.orchestrator import ChatOrchestrator
 from cyreneAI.application.generation.image_orchestrator import ImageGenerationOrchestrator
 from cyreneAI.application.runtime import CyreneAIRuntime
@@ -14,6 +16,7 @@ from cyreneAI.core.plugin.plugin_protocol import (
     PluginExecutorProtocol,
     PluginAssetsNamespaceProtocol,
     PluginEventExecutorProtocol,
+    PluginLLMNamespaceProtocol,
     PluginLoaderProtocol,
     PluginModuleProtocol,
     PluginOutboxNamespaceProtocol,
@@ -29,6 +32,7 @@ from cyreneAI.core.schema.application import (
     ApplicationImageGenerationRequest,
     ApplicationImageGenerationResult,
 )
+from cyreneAI.core.schema.message import ContentPart, ContentPartType, Message, MessageRole
 from cyreneAI.core.schema.plugin import (
     PluginCapability,
     PluginCommandDefinition,
@@ -38,8 +42,10 @@ from cyreneAI.core.schema.plugin import (
     PluginEventDefinition,
     PluginEventRequest,
     PluginEventResult,
+    PluginLifecycleStatus,
     PluginManifest,
     PluginPermission,
+    PluginStatusReport,
     PluginTaskDefinition,
 )
 from cyreneAI.core.schema.provider import ProviderInfo, ProviderModel
@@ -47,6 +53,9 @@ from cyreneAI.core.schema.skill import SkillDefinition
 from cyreneAI.core.schema.tool import ToolDefinition
 from cyreneAI.core.skill.skill_protocol import SkillRegistryProtocol
 from cyreneAI.core.tool.tool_protocol import ToolExecutorProtocol
+
+
+logger = logging.getLogger(__name__)
 
 
 class PluginHost:
@@ -60,10 +69,14 @@ class PluginHost:
         runtime: CyreneAIRuntime,
         registry: PluginRegistryProtocol,
         skill_registry: SkillRegistryProtocol | None = None,
+        disabled_plugin_ids: set[str] | None = None,
+        fail_fast: bool = True,
     ) -> None:
         self._runtime = runtime
         self._registry = registry
         self._skill_registry = skill_registry
+        self._disabled_plugin_ids = set(disabled_plugin_ids or set())
+        self._fail_fast = fail_fast
 
     def load(self, loader: PluginLoaderProtocol) -> list[PluginDefinition]:
         """
@@ -71,14 +84,45 @@ class PluginHost:
         """
         try:
             modules = loader.load()
-        except PluginError:
+        except PluginError as exc:
+            status = PluginStatusReport(
+                plugin_id=_loader_status_id(loader),
+                status=PluginLifecycleStatus.FAILED,
+                reason="loader_failed",
+                error=str(exc),
+            )
+            self._registry.record_status(status)
+            logger.exception(
+                "Plugin loader failed: loader=%s",
+                loader.__class__.__name__,
+            )
+            if not self._fail_fast:
+                return []
             raise
         except Exception as exc:
+            status = PluginStatusReport(
+                plugin_id=_loader_status_id(loader),
+                status=PluginLifecycleStatus.FAILED,
+                reason="loader_failed",
+                error=str(exc),
+            )
+            self._registry.record_status(status)
+            logger.exception(
+                "Plugin loader failed: loader=%s",
+                loader.__class__.__name__,
+            )
+            if not self._fail_fast:
+                return []
             raise PluginConfigurationError("插件加载失败", cause=exc) from exc
 
         definitions: list[PluginDefinition] = []
         for module in modules:
-            definition = self.register(module)
+            try:
+                definition = self.register(module)
+            except PluginError:
+                if self._fail_fast:
+                    raise
+                definition = None
             if definition is not None:
                 definitions.append(definition)
         return definitions
@@ -88,8 +132,29 @@ class PluginHost:
         注册一个插件入口模块。
         """
         manifest = module.manifest
-        if not manifest.enabled:
-            return None
+        if not manifest.enabled or manifest.plugin_id in self._disabled_plugin_ids:
+            reason = (
+                "disabled_by_config"
+                if manifest.plugin_id in self._disabled_plugin_ids
+                else "disabled_by_manifest"
+            )
+            definition = manifest.to_definition().model_copy(
+                update={"enabled": False}
+            )
+            self._registry.register(definition)
+            self._registry.record_status(
+                _status_from_manifest(
+                    manifest,
+                    status=PluginLifecycleStatus.DISABLED,
+                    reason=reason,
+                )
+            )
+            logger.info(
+                "Plugin disabled: plugin_id=%s reason=%s",
+                manifest.plugin_id,
+                reason,
+            )
+            return definition
 
         runtime_context = ApplicationPluginRuntimeContext(
             runtime=self._runtime,
@@ -104,10 +169,41 @@ class PluginHost:
         )
 
         try:
+            self._registry.record_status(
+                _status_from_manifest(
+                    manifest,
+                    status=PluginLifecycleStatus.LOADED,
+                    reason="setup_started",
+                )
+            )
             module.setup(setup_context)
-        except PluginError:
+        except PluginError as exc:
+            self._registry.record_status(
+                _status_from_manifest(
+                    manifest,
+                    status=PluginLifecycleStatus.FAILED,
+                    reason="setup_failed",
+                    error=str(exc),
+                )
+            )
+            logger.exception(
+                "Plugin setup failed: plugin_id=%s",
+                manifest.plugin_id,
+            )
             raise
         except Exception as exc:
+            self._registry.record_status(
+                _status_from_manifest(
+                    manifest,
+                    status=PluginLifecycleStatus.FAILED,
+                    reason="setup_failed",
+                    error=str(exc),
+                )
+            )
+            logger.exception(
+                "Plugin setup failed: plugin_id=%s",
+                manifest.plugin_id,
+            )
             raise PluginConfigurationError(
                 f"插件 {manifest.plugin_id} setup 失败",
                 cause=exc,
@@ -145,10 +241,6 @@ class ApplicationPluginRuntimeContext:
         if permission not in self._permissions:
             raise PluginAuthorizationError(f"插件缺少权限: {permission}")
 
-    async def chat(self, request: ApplicationChatRequest) -> ApplicationChatResult:
-        self.require_permission(PluginPermission.CHAT)
-        return await self._chat_orchestrator.chat(request)
-
     async def generate_image(
         self,
         request: ApplicationImageGenerationRequest,
@@ -163,6 +255,28 @@ class ApplicationPluginRuntimeContext:
     async def list_provider_models(self, provider_id: str) -> list[ProviderModel]:
         self.require_permission(PluginPermission.PROVIDER_READ)
         return await self._runtime.provider_manager.list_models(provider_id)
+
+    @property
+    def llm(self) -> PluginLLMNamespaceProtocol:
+        self.require_permission(PluginPermission.LLM)
+        return ApplicationPluginLLMNamespace(
+            chat_orchestrator=self._chat_orchestrator,
+            plugin_id=self._plugin_id,
+        )
+
+    def llm_for_request(
+        self,
+        request: PluginCommandRequest | PluginTaskRequest | PluginEventRequest,
+    ) -> PluginLLMNamespaceProtocol:
+        self.require_permission(PluginPermission.LLM)
+        return ApplicationPluginLLMNamespace(
+            chat_orchestrator=self._chat_orchestrator,
+            plugin_id=self._plugin_id,
+            default_provider_id=_request_metadata_str(request, "provider_id"),
+            default_model=_request_metadata_str(request, "model"),
+            default_session_id=_request_session_id(request),
+            default_metadata=dict(request.metadata),
+        )
 
     @property
     def storage(self) -> PluginStorageNamespaceProtocol:
@@ -200,6 +314,94 @@ class ApplicationPluginRuntimeContext:
     @property
     def outbox(self) -> PluginOutboxNamespaceProtocol:
         return self.messages
+
+
+class ApplicationPluginLLMNamespace:
+    """
+    application 暴露给插件的受控 LLM 命名空间。
+    """
+
+    def __init__(
+        self,
+        *,
+        chat_orchestrator: ChatOrchestrator,
+        plugin_id: str,
+        default_provider_id: str | None = None,
+        default_model: str | None = None,
+        default_session_id: str | None = None,
+        default_metadata: dict[str, object] | None = None,
+    ) -> None:
+        self._chat_orchestrator = chat_orchestrator
+        self._plugin_id = plugin_id
+        self._default_provider_id = default_provider_id
+        self._default_model = default_model
+        self._default_session_id = default_session_id
+        self._default_metadata = default_metadata or {}
+
+    async def chat(
+        self,
+        prompt: str,
+        *,
+        provider_id: str | None = None,
+        model: str | None = None,
+        system: str | None = None,
+        session_id: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        metadata: dict[str, object] | None = None,
+    ) -> str:
+        result = await self.result(
+            prompt,
+            provider_id=provider_id,
+            model=model,
+            system=system,
+            session_id=session_id,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            metadata=metadata,
+        )
+        return _chat_result_text(result)
+
+    async def result(
+        self,
+        prompt: str,
+        *,
+        provider_id: str | None = None,
+        model: str | None = None,
+        system: str | None = None,
+        session_id: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        metadata: dict[str, object] | None = None,
+    ) -> ApplicationChatResult:
+        resolved_provider_id = provider_id or self._default_provider_id
+        resolved_model = model or self._default_model
+        if not resolved_provider_id or not resolved_model:
+            raise PluginConfigurationError(
+                "llm.chat requires provider_id and model when no bot defaults are available"
+            )
+
+        messages: list[Message] = []
+        if system:
+            messages.append(_text_message(MessageRole.SYSTEM, system))
+        messages.append(_text_message(MessageRole.USER, prompt))
+        return await self._chat_orchestrator.chat(
+            ApplicationChatRequest(
+                session_id=session_id
+                or self._default_session_id
+                or f"plugin:{self._plugin_id}",
+                provider_id=resolved_provider_id,
+                model=resolved_model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                metadata={
+                    **self._default_metadata,
+                    **(metadata or {}),
+                    "plugin_id": self._plugin_id,
+                },
+            )
+        )
 
 
 class ApplicationPluginSetupContext:
@@ -417,3 +619,68 @@ def _normalize_task_name(name: str) -> str:
 
 def _normalize_event_type(event_type: object) -> str:
     return str(event_type).strip().lower()
+
+
+def _text_message(role: MessageRole, text: str) -> Message:
+    return Message(
+        role=role,
+        content=[
+            ContentPart(
+                type=ContentPartType.TEXT,
+                text=text,
+            )
+        ],
+    )
+
+
+def _chat_result_text(result: ApplicationChatResult) -> str:
+    message = result.response.message
+    if message is None or not message.content:
+        return ""
+    return "".join(
+        part.text or ""
+        for part in message.content
+        if part.type == ContentPartType.TEXT
+    )
+
+
+def _request_metadata_str(
+    request: PluginCommandRequest | PluginTaskRequest | PluginEventRequest,
+    key: str,
+) -> str | None:
+    value = request.metadata.get(key)
+    if isinstance(value, str) and value:
+        return value
+    return None
+
+
+def _request_session_id(
+    request: PluginCommandRequest | PluginTaskRequest | PluginEventRequest,
+) -> str | None:
+    if isinstance(request, PluginCommandRequest) and request.event is not None:
+        return request.event.session_id
+    if isinstance(request, PluginEventRequest):
+        return request.event.session_id
+    return _request_metadata_str(request, "session_id")
+
+
+def _status_from_manifest(
+    manifest: PluginManifest,
+    *,
+    status: PluginLifecycleStatus,
+    reason: str | None = None,
+    error: str | None = None,
+) -> PluginStatusReport:
+    return PluginStatusReport(
+        plugin_id=manifest.plugin_id,
+        status=status,
+        enabled=status == PluginLifecycleStatus.ENABLED,
+        name=manifest.name,
+        version=manifest.version,
+        reason=reason,
+        error=error,
+    )
+
+
+def _loader_status_id(loader: PluginLoaderProtocol) -> str:
+    return f"loader:{loader.__class__.__module__}.{loader.__class__.__name__}"

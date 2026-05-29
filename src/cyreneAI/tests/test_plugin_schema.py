@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from cyreneAI.core.schema.bot import BotCommand
 from cyreneAI.core.schema.plugin import (
+    PluginLifecycleStatus,
     PluginCapability,
     PluginCommandDefinition,
     PluginCommandRequest,
@@ -15,6 +16,10 @@ from cyreneAI.core.schema.plugin import (
     PluginManifest,
     PluginMessageReceipt,
     PluginPermission,
+    PluginRuntimeCapabilityStatus,
+    PluginRuntimeDependencyInfo,
+    PluginRuntimePermissionInfo,
+    PluginStatusReport,
     PluginTaskDefinition,
     PluginTaskRequest,
     PluginTaskResult,
@@ -170,7 +175,7 @@ def test_plugin_manifest_converts_to_definition() -> None:
         repository="https://example.com/repo.git",
         keywords=["demo", "hello"],
         capabilities=[PluginCapability.BOT_COMMAND],
-        permissions=[PluginPermission.CHAT, PluginPermission.MESSAGE_SEND],
+        permissions=[PluginPermission.LLM, PluginPermission.MESSAGE_SEND],
         commands=[command],
         tasks=[task],
         events=[event],
@@ -189,10 +194,44 @@ def test_plugin_manifest_converts_to_definition() -> None:
     assert definition.keywords == ["demo", "hello"]
     assert definition.capabilities == [PluginCapability.BOT_COMMAND]
     assert definition.permissions == [
-        PluginPermission.CHAT,
+        PluginPermission.LLM,
         PluginPermission.MESSAGE_SEND,
     ]
     assert definition.commands == [command]
     assert definition.tasks == [task]
     assert definition.events == [event]
     assert definition.metadata == {"source": "test"}
+
+
+def test_plugin_runtime_permission_info_schema() -> None:
+    info = PluginRuntimePermissionInfo(
+        permission=PluginPermission.TOOL,
+        status=PluginRuntimeCapabilityStatus.SUPPORTED,
+        setup_apis=["register_tool"],
+        description="Register tools.",
+    )
+    dependency = PluginRuntimeDependencyInfo(
+        name="storage",
+        status=PluginRuntimeCapabilityStatus.SUPPORTED,
+        permission=PluginPermission.STORAGE,
+    )
+
+    assert info.permission == PluginPermission.TOOL
+    assert info.dependencies == []
+    assert info.setup_apis == ["register_tool"]
+    assert dependency.permission == PluginPermission.STORAGE
+
+
+def test_plugin_status_report_defaults() -> None:
+    status = PluginStatusReport(
+        plugin_id="demo.hello",
+        status=PluginLifecycleStatus.FAILED,
+        reason="setup_failed",
+        error="boom",
+    )
+
+    assert status.enabled is False
+    assert status.name is None
+    assert status.version is None
+    assert status.reason == "setup_failed"
+    assert status.error == "boom"

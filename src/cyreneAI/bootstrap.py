@@ -71,6 +71,8 @@ async def build_cyrene_ai_runtime(
     plugin_task_scheduler: PluginTaskSchedulerProtocol | None = None,
     plugin_task_store: PluginTaskStoreProtocol | None = None,
     plugin_task_database_path: str | Path | None = None,
+    disabled_plugin_ids: list[str] | None = None,
+    plugin_fail_fast: bool = True,
     register_builtin_plugins: bool = True,
 ) -> CyreneAIRuntime:
     """
@@ -182,6 +184,8 @@ async def build_cyrene_ai_runtime(
         plugin_assets=plugin_assets,
         plugin_task_scheduler=plugin_task_scheduler,
         plugin_task_store=runtime_plugin_task_store,
+        disabled_plugin_ids=disabled_plugin_ids,
+        plugin_fail_fast=plugin_fail_fast,
         register_builtin_plugins=register_builtin_plugins,
         tool_registry=tool_registry,
         vector_store=runtime_vector_store,

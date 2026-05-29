@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from cyreneAI.core.errors.base import CyreneAIError
 from cyreneAI.core.errors.plugin import (
     PluginAuthorizationError,
@@ -16,7 +18,12 @@ from cyreneAI.core.schema.plugin import (
     PluginEventDefinition,
     PluginEventRequest,
     PluginEventResult,
+    PluginStatusReport,
+    PluginTaskDefinition,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class PluginManager:
@@ -45,6 +52,18 @@ class PluginManager:
         """
         return self._registry.list_events()
 
+    def list_tasks(self) -> list[PluginTaskDefinition]:
+        """
+        列出插件任务。
+        """
+        return self._registry.list_tasks()
+
+    def list_statuses(self) -> list[PluginStatusReport]:
+        """
+        列出插件生命周期状态。
+        """
+        return self._registry.list_statuses()
+
     async def execute_command(
         self,
         request: PluginCommandRequest,
@@ -65,6 +84,10 @@ class PluginManager:
         except CyreneAIError:
             raise
         except Exception as exc:
+            logger.exception(
+                "Plugin command failed: command=%s",
+                command.name,
+            )
             raise PluginExecutionError(
                 f"插件命令 {command.name} 执行失败",
                 cause=exc,
@@ -80,7 +103,11 @@ class PluginManager:
         将窄事件分发给已订阅的插件。
         """
         results: list[PluginEventResult] = []
-        for _, event_definition, executor in self._registry.resolve_events(event):
+        for (
+            plugin_definition,
+            event_definition,
+            executor,
+        ) in self._registry.resolve_events(event):
             try:
                 results.append(
                     await executor.execute(
@@ -96,6 +123,12 @@ class PluginManager:
             except CyreneAIError:
                 raise
             except Exception as exc:
+                logger.exception(
+                    "Plugin event failed: plugin_id=%s event_type=%s plugin_event_id=%s",
+                    plugin_definition.plugin_id,
+                    event_definition.event_type,
+                    event.event_id,
+                )
                 raise PluginExecutionError(
                     f"插件事件 {event_definition.event_type} 执行失败",
                     cause=exc,

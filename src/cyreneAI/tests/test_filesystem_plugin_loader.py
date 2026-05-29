@@ -57,7 +57,7 @@ def _write_hello_plugin(path) -> None:
     (path / "main.py").write_text(
         dedent(
             '''
-            from cyreneAI.plugin_api import CyreneBot, text
+            from cyreneAI.api import CyreneBot, text
 
             plugin = CyreneBot()
 

@@ -41,6 +41,7 @@ class PluginPermission(StrEnum):
     第三方插件可申请的运行时权限。
     """
 
+    LLM = "llm"
     CHAT = "chat"
     IMAGE = "image"
     PROVIDER_READ = "provider_read"
@@ -55,6 +56,27 @@ class PluginPermission(StrEnum):
     MESSAGE_SEND = "message_send"
     MESSAGE_SEND_UNLIMITED = "message_send_unlimited"
     NETWORK = "network"
+
+
+class PluginRuntimeCapabilityStatus(StrEnum):
+    """
+    插件运行时权限或依赖的宿主支持状态。
+    """
+
+    SUPPORTED = "supported"
+    RESERVED = "reserved"
+    NOT_IMPLEMENTED = "not_implemented"
+
+
+class PluginLifecycleStatus(StrEnum):
+    """
+    插件在宿主内的加载生命周期状态。
+    """
+
+    LOADED = "loaded"
+    ENABLED = "enabled"
+    DISABLED = "disabled"
+    FAILED = "failed"
 
 
 class PluginTaskStatus(StrEnum):
@@ -142,6 +164,43 @@ class PluginDefinition(PluginBase):
     enabled: bool = True
     builtin: bool = False
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class PluginRuntimePermissionInfo(PluginBase):
+    """
+    插件权限与宿主运行时能力的对应说明。
+    """
+
+    permission: PluginPermission
+    status: PluginRuntimeCapabilityStatus
+    dependencies: list[str] = Field(default_factory=list)
+    setup_apis: list[str] = Field(default_factory=list)
+    description: str = ""
+
+
+class PluginRuntimeDependencyInfo(PluginBase):
+    """
+    Depends(...) 可注入依赖与权限的对应说明。
+    """
+
+    name: str
+    status: PluginRuntimeCapabilityStatus
+    permission: PluginPermission | None = None
+    description: str = ""
+
+
+class PluginStatusReport(PluginBase):
+    """
+    插件运行时状态报告。
+    """
+
+    plugin_id: str
+    status: PluginLifecycleStatus
+    enabled: bool = False
+    name: str | None = None
+    version: str | None = None
+    reason: str | None = None
+    error: str | None = None
 
 
 class PluginManifest(PluginBase):

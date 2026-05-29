@@ -1,4 +1,4 @@
-from cyreneAI.plugin_api import CyreneBot
+from cyreneAI.api import CyreneBot
 
 from proactive_routes.proactive import router as proactive_router
 

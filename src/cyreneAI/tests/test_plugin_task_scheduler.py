@@ -11,7 +11,7 @@ from cyreneAI.core.schema.plugin import (
     PluginManifest,
     PluginPermission,
 )
-from cyreneAI.plugin_api import CyreneBot, Depends
+from cyreneAI.api import CyreneBot, Depends
 
 
 class _FakePluginLoader:

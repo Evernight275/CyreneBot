@@ -1,4 +1,4 @@
-from cyreneAI.plugin_api import CyreneBot
+from cyreneAI.api import CyreneBot
 
 from routers.basic import router as basic_router
 

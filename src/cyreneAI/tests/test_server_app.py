@@ -35,6 +35,11 @@ from cyreneAI.core.schema.message import (
 from cyreneAI.core.schema.plugin import (
     PluginCommandDefinition,
     PluginDefinition,
+    PluginEventDefinition,
+    PluginEventType,
+    PluginLifecycleStatus,
+    PluginStatusReport,
+    PluginTaskDefinition,
 )
 from cyreneAI.core.schema.provider import (
     ProviderConfig,
@@ -48,6 +53,7 @@ from cyreneAI.server.config import (
     ServerSettings,
     build_bot_polling_state_database_path_from_env,
     build_context_database_path_from_env,
+    build_disabled_plugin_ids_from_env,
     build_plugin_paths_from_env,
     build_plugin_storage_path_from_env,
     build_plugin_task_database_path_from_env,
@@ -184,6 +190,55 @@ def _client(
             telegram_provider_id=telegram_provider_id,
             telegram_model=telegram_model,
             telegram_polling_enabled=telegram_polling_enabled,
+        )
+    )
+
+
+def _plugin_client() -> TestClient:
+    registry = PluginRegistry()
+    registry.register(
+        PluginDefinition(
+            plugin_id="demo.hello",
+            name="Demo Hello",
+            description="Demo plugin.",
+            version="0.1.0",
+            commands=[
+                PluginCommandDefinition(
+                    name="hello",
+                    description="Say hello.",
+                    usage="/hello",
+                )
+            ],
+            events=[
+                PluginEventDefinition(
+                    event_type=PluginEventType.MESSAGE,
+                    description="Observe messages.",
+                )
+            ],
+            tasks=[
+                PluginTaskDefinition(
+                    name="follow_up",
+                    description="Follow up later.",
+                )
+            ],
+        )
+    )
+    registry.record_status(
+        PluginStatusReport(
+            plugin_id="demo.disabled",
+            status=PluginLifecycleStatus.DISABLED,
+            reason="disabled_by_config",
+        )
+    )
+    runtime = CyreneAIRuntime(
+        provider_manager=ProviderManager(ProviderFactory()),
+        context_builder=ContextWindowBuilder(),
+        plugin_manager=PluginManager(registry),
+    )
+    return TestClient(
+        create_app(
+            runtime,
+            settings=ServerSettings(auth_enabled=False),
         )
     )
 
@@ -426,6 +481,60 @@ def test_server_builds_plugin_task_database_path_from_env(monkeypatch) -> None:
     )
 
     assert build_plugin_task_database_path_from_env() == "data/plugin_tasks.db"
+
+
+def test_server_builds_disabled_plugin_ids_from_env(monkeypatch) -> None:
+    monkeypatch.setenv(
+        "CYRENEAI_DISABLED_PLUGINS",
+        "demo.hello;demo.status, demo.extra",
+    )
+
+    assert build_disabled_plugin_ids_from_env() == [
+        "demo.hello",
+        "demo.status",
+        "demo.extra",
+    ]
+
+
+def test_server_lists_plugins_commands_events_tasks_and_statuses() -> None:
+    client = _plugin_client()
+
+    plugins = client.get("/plugins")
+    commands = client.get("/plugins/commands")
+    events = client.get("/plugins/events")
+    tasks = client.get("/plugins/tasks")
+    statuses = client.get("/plugins/statuses")
+
+    assert plugins.status_code == 200
+    assert plugins.json()["plugins"][0]["plugin_id"] == "demo.hello"
+    assert commands.json()["commands"][0]["name"] == "hello"
+    assert events.json()["events"][0]["event_type"] == "message"
+    assert tasks.json()["tasks"][0]["name"] == "follow_up"
+    assert statuses.json()["statuses"][0]["plugin_id"] == "demo.hello"
+    assert statuses.json()["statuses"][1]["status"] == "disabled"
+
+
+def test_server_lists_plugin_runtime_capabilities() -> None:
+    response = _plugin_client().get("/plugins/runtime-capabilities")
+
+    assert response.status_code == 200
+    permissions = {
+        item["permission"]: item
+        for item in response.json()["permissions"]
+    }
+    assert permissions["llm"]["status"] == "supported"
+    assert permissions["llm"]["dependencies"] == ["llm"]
+    assert permissions["chat"]["status"] == "reserved"
+    assert permissions["tool"]["status"] == "supported"
+    assert permissions["tool"]["setup_apis"] == ["register_tool"]
+    assert permissions["rag"]["status"] == "reserved"
+    assert permissions["provider_write"]["status"] == "reserved"
+    dependencies = {
+        item["name"]: item
+        for item in response.json()["dependencies"]
+    }
+    assert dependencies["llm"]["permission"] == "llm"
+    assert dependencies["storage"]["permission"] == "storage"
 
 
 def test_server_logs_loaded_plugins_and_commands(caplog) -> None:
