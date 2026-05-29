@@ -63,14 +63,46 @@ async def repeat(word="hi", count=1, excited=False):
     return " ".join([word] * count) + suffix
 ```
 
-The command signature is also used to generate usage and command metadata. For
+Use `Rest[str]` when one argument should consume the remaining command text:
+
+```python
+from cyreneAI.api import Rest
+
+@router.command("/say")
+async def say(message: Rest[str]):
+    return message
+```
+
+`/say hello world` passes `"hello world"` as `message`.
+
+Use `Option[T]` and `Flag` for named CLI-style controls:
+
+```python
+from typing import Annotated
+
+from cyreneAI.api import Arg, Flag, Option, Rest
+
+@router.command("/search")
+async def search(
+    query: Rest[str],
+    limit: Annotated[Option[int], Arg(aliases=["-l"])] = 10,
+    verbose: Flag = False,
+):
+    return f"{query} limit={limit} verbose={verbose}"
+```
+
+`/search hello world --limit 5 --verbose` passes `"hello world"` as `query`,
+`5` as `limit`, and `True` as `verbose`.
+
+The command signature is also used to generate usage and command arguments. For
 the `repeat` command above, the route exposes:
 
 ```text
 /repeat [word=hi] [count:int=1] [excited:bool=false]
 ```
 
-and stores an `arguments` list in command metadata for management APIs and tests.
+and stores an `arguments` list on the command definition for management APIs and
+tests.
 
 Handlers can also yield multiple replies:
 
@@ -151,3 +183,7 @@ The same test client can dispatch events and run declared tasks:
 result = await client.event("message", text="hello", session_id="s1")
 task_result = await client.task("cleanup", payload={"target": "cache"})
 ```
+
+The test client provides fake `storage`, `assets`, `messages`, and task
+`scheduler` dependencies by default. Override any dependency with
+`PluginTestClient(plugin, dependencies={...})`.

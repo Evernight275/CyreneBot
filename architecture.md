@@ -74,7 +74,7 @@ server
 
 `cyreneAI.adapters` 是面向使用方的公共适配层。它可以放本地文件加载、轻量 factory、稳定 adapter 导出；不允许放 provider 的 `builder.py`、`instance.py`、`mapper.py`、`errors.py` 这类内部实现文件，也不放 provider 实现目录。provider 仍通过 `provider_catalog`、`infra/adapters/providers` 和 `infra/bootstrap/registrations` 治理。
 
-`cyreneAI.api` 是面向插件开发者的 Python API。它负责让插件以普通 Python 代码声明命令、任务、事件、依赖和本地测试；命令 handler 可以用普通函数参数接收命令参数，未标注类型且无默认值的业务参数按文本解析，未标注类型但有默认值的参数会按默认值推断类型，`str`、`int`、`float`、`bool` 注解可以显式控制解析类型，也可以用 `Depends(...)` 声明宿主能力。命令函数签名会生成 usage 和 `metadata["arguments"]` 参数契约，供测试、管理接口和后续文档使用。`api/plugin.py` 只保留兼容 facade，内部实现按依赖、参数、回复、执行器、路由和类型别名拆到私有模块。`cyreneAI.api` 不负责启动 runtime、不负责装配 infra、不负责 HTTP 通信。HTTP 对外通信仍属于 `server`。
+`cyreneAI.api` 是面向插件开发者的 Python API。它负责让插件以普通 Python 代码声明命令、任务、事件、依赖和本地测试；命令 handler 可以用普通函数参数接收命令参数，未标注类型且无默认值的业务参数按文本解析，未标注类型但有默认值的参数会按默认值推断类型，`str`、`int`、`float`、`bool` 注解可以显式控制解析类型，`Rest[str]` 可以显式消费剩余命令文本，`Option[T]` 和 `Flag` 可以声明 `--limit 5`、`--verbose` 这类 CLI 参数，也可以用 `Depends(...)` 声明宿主能力。命令函数签名会生成 usage 和 `PluginCommandDefinition.arguments` 参数契约，供测试、管理接口和后续文档使用。`api/plugin.py` 只保留兼容 facade，内部实现按依赖、参数、回复、执行器、路由和类型别名拆到私有模块。`cyreneAI.api` 不负责启动 runtime、不负责装配 infra、不负责 HTTP 通信。HTTP 对外通信仍属于 `server`。
 
 ## 真实运行架构
 
@@ -448,7 +448,7 @@ uv run pytest src\cyreneAI\tests
 
 ```text
 compileall 通过
-503 passed, 7 skipped
+521 passed, 7 skipped
 ```
 
 ## 扩展落点

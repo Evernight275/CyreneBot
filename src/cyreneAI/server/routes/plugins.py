@@ -8,6 +8,15 @@ from cyreneAI.core.plugin.runtime_capabilities import (
     list_plugin_runtime_permissions,
 )
 from cyreneAI.core.plugin.manager import PluginManager
+from cyreneAI.core.schema.plugin import (
+    PluginCommandDefinition,
+    PluginDefinition,
+    PluginEventDefinition,
+    PluginRuntimeDependencyInfo,
+    PluginRuntimePermissionInfo,
+    PluginStatusReport,
+    PluginTaskDefinition,
+)
 from cyreneAI.server.dependencies import get_runtime, require_admin
 
 
@@ -18,82 +27,60 @@ router = APIRouter(
 )
 
 
-@router.get("")
+@router.get("", response_model=dict[str, list[PluginDefinition]])
 async def list_plugins(
     runtime: CyreneAIRuntime = Depends(get_runtime),
-) -> dict[str, list[dict]]:
+) -> dict[str, list[PluginDefinition]]:
     manager = _get_plugin_manager(runtime)
-    return {
-        "plugins": [
-            plugin.model_dump(mode="json")
-            for plugin in manager.list_plugins()
-        ]
-    }
+    return {"plugins": manager.list_plugins()}
 
 
-@router.get("/commands")
+@router.get("/commands", response_model=dict[str, list[PluginCommandDefinition]])
 async def list_plugin_commands(
     runtime: CyreneAIRuntime = Depends(get_runtime),
-) -> dict[str, list[dict]]:
+) -> dict[str, list[PluginCommandDefinition]]:
     manager = _get_plugin_manager(runtime)
-    return {
-        "commands": [
-            command.model_dump(mode="json")
-            for command in manager.list_commands()
-        ]
-    }
+    return {"commands": manager.list_commands()}
 
 
-@router.get("/events")
+@router.get("/events", response_model=dict[str, list[PluginEventDefinition]])
 async def list_plugin_events(
     runtime: CyreneAIRuntime = Depends(get_runtime),
-) -> dict[str, list[dict]]:
+) -> dict[str, list[PluginEventDefinition]]:
     manager = _get_plugin_manager(runtime)
-    return {
-        "events": [
-            event.model_dump(mode="json")
-            for event in manager.list_events()
-        ]
-    }
+    return {"events": manager.list_events()}
 
 
-@router.get("/tasks")
+@router.get("/tasks", response_model=dict[str, list[PluginTaskDefinition]])
 async def list_plugin_tasks(
     runtime: CyreneAIRuntime = Depends(get_runtime),
-) -> dict[str, list[dict]]:
+) -> dict[str, list[PluginTaskDefinition]]:
     manager = _get_plugin_manager(runtime)
-    return {
-        "tasks": [
-            task.model_dump(mode="json")
-            for task in manager.list_tasks()
-        ]
-    }
+    return {"tasks": manager.list_tasks()}
 
 
-@router.get("/statuses")
+@router.get("/statuses", response_model=dict[str, list[PluginStatusReport]])
 async def list_plugin_statuses(
     runtime: CyreneAIRuntime = Depends(get_runtime),
-) -> dict[str, list[dict]]:
+) -> dict[str, list[PluginStatusReport]]:
     manager = _get_plugin_manager(runtime)
-    return {
-        "statuses": [
-            status.model_dump(mode="json")
-            for status in manager.list_statuses()
-        ]
-    }
+    return {"statuses": manager.list_statuses()}
 
 
-@router.get("/runtime-capabilities")
-async def list_plugin_runtime_capabilities() -> dict[str, list[dict]]:
+@router.get(
+    "/runtime-capabilities",
+    response_model=dict[
+        str,
+        list[PluginRuntimePermissionInfo] | list[PluginRuntimeDependencyInfo],
+    ],
+)
+async def list_plugin_runtime_capabilities() -> dict[
+    str,
+    list[PluginRuntimePermissionInfo] | list[PluginRuntimeDependencyInfo],
+]:
     return {
-        "permissions": [
-            item.model_dump(mode="json")
-            for item in list_plugin_runtime_permissions()
-        ],
-        "dependencies": [
-            item.model_dump(mode="json")
-            for item in list_plugin_runtime_dependencies()
-        ],
+        "permissions": list_plugin_runtime_permissions(),
+        "dependencies": list_plugin_runtime_dependencies(),
     }
 
 

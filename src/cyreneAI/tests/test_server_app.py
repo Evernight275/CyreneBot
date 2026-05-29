@@ -33,6 +33,8 @@ from cyreneAI.core.schema.message import (
     MessageRole,
 )
 from cyreneAI.core.schema.plugin import (
+    PluginCommandArgumentDefinition,
+    PluginCommandArgumentKind,
     PluginCommandDefinition,
     PluginDefinition,
     PluginEventDefinition,
@@ -206,7 +208,13 @@ def _plugin_client() -> TestClient:
                 PluginCommandDefinition(
                     name="hello",
                     description="Say hello.",
-                    usage="/hello",
+                    usage="/hello <name>",
+                    arguments=[
+                        PluginCommandArgumentDefinition(
+                            name="name",
+                            kind=PluginCommandArgumentKind.POSITIONAL,
+                        )
+                    ],
                 )
             ],
             events=[
@@ -508,6 +516,8 @@ def test_server_lists_plugins_commands_events_tasks_and_statuses() -> None:
     assert plugins.status_code == 200
     assert plugins.json()["plugins"][0]["plugin_id"] == "demo.hello"
     assert commands.json()["commands"][0]["name"] == "hello"
+    assert commands.json()["commands"][0]["arguments"][0]["name"] == "name"
+    assert commands.json()["commands"][0]["arguments"][0]["kind"] == "positional"
     assert events.json()["events"][0]["event_type"] == "message"
     assert tasks.json()["tasks"][0]["name"] == "follow_up"
     assert statuses.json()["statuses"][0]["plugin_id"] == "demo.hello"

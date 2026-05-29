@@ -22,7 +22,9 @@ from cyreneAI.core.schema.plugin import (
     PluginTaskRequest,
     PluginTaskResult,
 )
-from cyreneAI.api import CyreneBot, CyreneRouter, Depends, text
+from typing import Annotated
+
+from cyreneAI.api import Arg, CyreneBot, CyreneRouter, Depends, Flag, Option, Rest, text
 
 
 def _event(text_value: str = "/hello") -> BotEvent:
@@ -88,23 +90,32 @@ def test_cyrene_bot_command_decorator_records_argument_schema_and_usage() -> Non
     route = plugin.routes[0]
 
     assert route.usage == "/repeat <word> [count:int=1] [excited:bool=false]"
-    assert route.metadata["arguments"] == [
+    assert [argument.model_dump(exclude_none=True) for argument in route.arguments] == [
         {
             "name": "word",
             "type": "str",
+            "kind": "positional",
             "required": True,
+            "aliases": [],
+            "description": "",
         },
         {
             "name": "count",
             "type": "int",
+            "kind": "positional",
             "required": False,
             "default": 1,
+            "aliases": [],
+            "description": "",
         },
         {
             "name": "excited",
             "type": "bool",
+            "kind": "positional",
             "required": False,
             "default": False,
+            "aliases": [],
+            "description": "",
         },
     ]
 
@@ -119,7 +130,73 @@ def test_cyrene_bot_command_decorator_preserves_explicit_usage() -> None:
     route = plugin.routes[0]
 
     assert route.usage == "/repeat <word> [times]"
-    assert route.metadata["arguments"][0]["name"] == "word"
+    assert route.arguments[0].name == "word"
+
+
+def test_cyrene_bot_command_decorator_records_rest_argument_schema() -> None:
+    plugin = CyreneBot()
+
+    @plugin.command("/say")
+    async def say(message: Rest[str]):
+        return message
+
+    route = plugin.routes[0]
+
+    assert route.usage == "/say <message...>"
+    assert [argument.model_dump(exclude_none=True) for argument in route.arguments] == [
+        {
+            "name": "message",
+            "type": "str",
+            "kind": "rest",
+            "required": True,
+            "aliases": [],
+            "description": "",
+        }
+    ]
+
+
+def test_cyrene_bot_command_decorator_records_option_and_flag_schema() -> None:
+    plugin = CyreneBot()
+
+    @plugin.command("/search")
+    async def search(
+        query: Rest[str],
+        limit: Annotated[Option[int], Arg(aliases=["-l"], description="Max rows")] = 10,
+        verbose: Flag = False,
+    ):
+        return query
+
+    route = plugin.routes[0]
+
+    assert route.usage == "/search <query...> [--limit|-l:int=10] [--verbose]"
+    assert [argument.model_dump(exclude_none=True) for argument in route.arguments] == [
+        {
+            "name": "query",
+            "type": "str",
+            "kind": "rest",
+            "required": True,
+            "aliases": [],
+            "description": "",
+        },
+        {
+            "name": "limit",
+            "type": "int",
+            "kind": "option",
+            "required": False,
+            "default": 10,
+            "aliases": ["-l"],
+            "description": "Max rows",
+        },
+        {
+            "name": "verbose",
+            "type": "bool",
+            "kind": "flag",
+            "required": False,
+            "default": False,
+            "aliases": [],
+            "description": "",
+        },
+    ]
 
 
 def test_cyrene_bot_can_include_router_routes() -> None:
@@ -1214,3 +1291,185 @@ def test_cyrene_bot_command_executor_binds_untyped_required_arguments_as_text() 
         assert result.actions[0].message.content[0].text == "Hello, Cyrene!"
 
     asyncio.run(run())
+
+
+def test_cyrene_bot_command_executor_binds_rest_argument() -> None:
+    async def run() -> None:
+        plugin = CyreneBot(
+            PluginManifest(
+                plugin_id="demo.rest",
+                name="Rest",
+                description="Rest argument plugin.",
+                entrypoint="main.py",
+                capabilities=["bot_command"],
+            )
+        )
+
+        @plugin.command("/say")
+        async def say(message: Rest[str]):
+            return message
+
+        class Context:
+            runtime = object()
+            manifest = plugin.manifest
+
+            def register_command(self, definition, executor):
+                self.executor = executor
+
+            def register_task(self, definition, executor):
+                raise AssertionError
+
+            def register_tool(self, definition, executor):
+                raise AssertionError
+
+            def register_skill(self):
+                raise AssertionError
+
+        context = Context()
+        plugin.setup(context)
+        result = await context.executor.execute(
+            PluginCommandRequest(
+                command=BotCommand(
+                    raw_text="/say hello world",
+                    name="say",
+                    args=("hello", "world"),
+                    args_text="hello world",
+                ),
+                event=_event("/say hello world"),
+            )
+        )
+
+        assert result.actions[0].message is not None
+        assert result.actions[0].message.content[0].text == "hello world"
+
+    asyncio.run(run())
+
+
+def test_cyrene_bot_command_executor_binds_options_and_flags() -> None:
+    async def run() -> None:
+        plugin = CyreneBot(
+            PluginManifest(
+                plugin_id="demo.options",
+                name="Options",
+                description="Option argument plugin.",
+                entrypoint="main.py",
+                capabilities=["bot_command"],
+            )
+        )
+
+        @plugin.command("/search")
+        async def search(
+            query: Rest[str],
+            limit: Annotated[Option[int], Arg(aliases=["-l"])] = 10,
+            verbose: Flag = False,
+        ):
+            return f"{query}:{limit}:{verbose}"
+
+        class Context:
+            runtime = object()
+            manifest = plugin.manifest
+
+            def register_command(self, definition, executor):
+                self.executor = executor
+
+            def register_task(self, definition, executor):
+                raise AssertionError
+
+            def register_tool(self, definition, executor):
+                raise AssertionError
+
+            def register_skill(self):
+                raise AssertionError
+
+        context = Context()
+        plugin.setup(context)
+        result = await context.executor.execute(
+            PluginCommandRequest(
+                command=BotCommand(
+                    raw_text="/search hello world --limit 5 --verbose",
+                    name="search",
+                    args=("hello", "world", "--limit", "5", "--verbose"),
+                    args_text="hello world --limit 5 --verbose",
+                ),
+                event=_event("/search hello world --limit 5 --verbose"),
+            )
+        )
+
+        assert result.actions[0].message is not None
+        assert result.actions[0].message.content[0].text == "hello world:5:True"
+
+        alias_result = await context.executor.execute(
+            PluginCommandRequest(
+                command=BotCommand(
+                    raw_text="/search hello -l 7",
+                    name="search",
+                    args=("hello", "-l", "7"),
+                    args_text="hello -l 7",
+                ),
+                event=_event("/search hello -l 7"),
+            )
+        )
+
+        assert alias_result.actions[0].message is not None
+        assert alias_result.actions[0].message.content[0].text == "hello:7:False"
+
+    asyncio.run(run())
+
+
+def test_cyrene_bot_command_executor_reports_missing_rest_argument_with_usage() -> None:
+    async def run() -> None:
+        plugin = CyreneBot(
+            PluginManifest(
+                plugin_id="demo.rest_missing",
+                name="Rest Missing",
+                description="Rest argument plugin.",
+                entrypoint="main.py",
+                capabilities=["bot_command"],
+            )
+        )
+
+        @plugin.command("/say")
+        async def say(message: Rest[str]):
+            return message
+
+        class Context:
+            runtime = object()
+            manifest = plugin.manifest
+
+            def register_command(self, definition, executor):
+                self.executor = executor
+
+            def register_task(self, definition, executor):
+                raise AssertionError
+
+            def register_tool(self, definition, executor):
+                raise AssertionError
+
+            def register_skill(self):
+                raise AssertionError
+
+        context = Context()
+        plugin.setup(context)
+
+        with pytest.raises(PluginInputError) as exc_info:
+            await context.executor.execute(
+                PluginCommandRequest(
+                    command=BotCommand(raw_text="/say", name="say"),
+                    event=_event("/say"),
+                )
+            )
+
+        assert "缺少参数 message" in str(exc_info.value)
+        assert "用法: /say <message...>" in str(exc_info.value)
+
+    asyncio.run(run())
+
+
+def test_cyrene_bot_command_decorator_rejects_argument_after_rest() -> None:
+    plugin = CyreneBot()
+
+    with pytest.raises(PluginConfigurationError):
+
+        @plugin.command("/say")
+        async def say(message: Rest[str], excited=False):
+            return message

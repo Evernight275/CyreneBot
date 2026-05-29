@@ -5,6 +5,7 @@ from typing import Any
 
 from cyreneAI.api._arguments import (
     _build_handler_arguments,
+    _handler_type_hints,
     _validate_handler_signature,
 )
 from cyreneAI.api._replies import _coerce_command_handler_result
@@ -36,7 +37,12 @@ class _CommandHandlerExecutor:
         self._runtime_context = runtime_context
         self._definition = definition
         self._signature = signature(handler)
-        _validate_handler_signature(self._signature, runtime_context)
+        self._type_hints = _handler_type_hints(handler)
+        _validate_handler_signature(
+            self._signature,
+            runtime_context,
+            type_hints=self._type_hints,
+        )
 
     async def execute(self, request: PluginCommandRequest) -> PluginCommandResult:
         try:
@@ -45,6 +51,7 @@ class _CommandHandlerExecutor:
                 request,
                 self._runtime_context,
                 usage=self._definition.usage,
+                type_hints=self._type_hints,
             )
             result = self._handler(*args, **kwargs)
             if isawaitable(result):
@@ -69,7 +76,13 @@ class _TaskHandlerExecutor:
         self._handler = handler
         self._runtime_context = runtime_context
         self._signature = signature(handler)
-        _validate_handler_signature(self._signature, runtime_context, "插件任务")
+        self._type_hints = _handler_type_hints(handler)
+        _validate_handler_signature(
+            self._signature,
+            runtime_context,
+            "插件任务",
+            type_hints=self._type_hints,
+        )
 
     async def execute(self, request: PluginTaskRequest) -> PluginTaskResult:
         try:
@@ -77,6 +90,7 @@ class _TaskHandlerExecutor:
                 self._signature,
                 request,
                 self._runtime_context,
+                type_hints=self._type_hints,
             )
             result = self._handler(*args, **kwargs)
             if isawaitable(result):
@@ -107,7 +121,13 @@ class _EventHandlerExecutor:
         self._handler = handler
         self._runtime_context = runtime_context
         self._signature = signature(handler)
-        _validate_handler_signature(self._signature, runtime_context, "插件事件")
+        self._type_hints = _handler_type_hints(handler)
+        _validate_handler_signature(
+            self._signature,
+            runtime_context,
+            "插件事件",
+            type_hints=self._type_hints,
+        )
 
     async def execute(self, request: PluginEventRequest) -> PluginEventResult:
         try:
@@ -115,6 +135,7 @@ class _EventHandlerExecutor:
                 self._signature,
                 request,
                 self._runtime_context,
+                type_hints=self._type_hints,
             )
             result = self._handler(*args, **kwargs)
             if isawaitable(result):

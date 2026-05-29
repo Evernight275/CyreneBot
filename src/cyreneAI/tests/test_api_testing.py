@@ -1,10 +1,20 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Annotated
 
 import pytest
 
-from cyreneAI.api import CyreneBot, CyreneRouter, Depends, PluginTestClient
+from cyreneAI.api import (
+    Arg,
+    CyreneBot,
+    CyreneRouter,
+    Depends,
+    Flag,
+    Option,
+    PluginTestClient,
+    Rest,
+)
 from cyreneAI.core.errors.plugin import PluginAuthorizationError
 from cyreneAI.core.schema.plugin import PluginEventResult, PluginTaskResult
 
@@ -74,6 +84,78 @@ def test_plugin_test_client_infers_argument_types_from_defaults() -> None:
         result = await client.command("/repeat yo 2 on")
 
         assert result.texts == ["yo yo!"]
+
+    asyncio.run(run())
+
+
+def test_plugin_test_client_binds_rest_argument() -> None:
+    async def run() -> None:
+        plugin = CyreneBot()
+
+        @plugin.command("/say")
+        async def say(message: Rest[str]):
+            return message
+
+        client = PluginTestClient(plugin)
+
+        result = await client.command('/say "hello world" from test')
+
+        assert result.texts == ["hello world from test"]
+
+    asyncio.run(run())
+
+
+def test_plugin_test_client_binds_options_and_flags() -> None:
+    async def run() -> None:
+        plugin = CyreneBot()
+
+        @plugin.command("/search")
+        async def search(
+            query: Rest[str],
+            limit: Annotated[Option[int], Arg(aliases=["-l"])] = 10,
+            verbose: Flag = False,
+        ):
+            return f"{query}:{limit}:{verbose}"
+
+        client = PluginTestClient(plugin)
+
+        result = await client.command('/search "hello world" -l 5 --verbose')
+
+        assert result.texts == ["hello world:5:True"]
+
+    asyncio.run(run())
+
+
+def test_plugin_test_client_provides_default_fake_dependencies() -> None:
+    async def run() -> None:
+        plugin = CyreneBot()
+
+        @plugin.command("/remember")
+        async def remember(
+            storage=Depends("storage"),
+            assets=Depends("assets"),
+            messages=Depends("messages"),
+            tasks=Depends("tasks"),
+        ):
+            await storage.set("name", "Cyrene")
+            await assets.exists("prompts/hello.txt")
+            await messages.send("session-1", text="stored")
+            task_id = await tasks.schedule_once(
+                "follow_up",
+                delay_seconds=1,
+                payload={"name": await storage.get("name")},
+                key="follow",
+            )
+            return task_id
+
+        client = PluginTestClient(plugin)
+
+        result = await client.command("/remember")
+
+        assert result.texts == ["test-task-1"]
+        assert await client.storage.get("name") == "Cyrene"
+        assert client.messages.sent[0]["text"] == "stored"
+        assert client.scheduler.scheduled[0]["payload"] == {"name": "Cyrene"}
 
     asyncio.run(run())
 

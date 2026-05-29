@@ -7,6 +7,7 @@ from typing import Any
 from cyreneAI.api._arguments import (
     _command_arguments_metadata,
     _handler_description,
+    _handler_type_hints,
     _normalize_command_path,
     _usage_from_arguments,
 )
@@ -179,7 +180,11 @@ class CyreneRouter:
 
         def decorator(handler: PluginCommandHandler) -> PluginCommandHandler:
             handler_signature = signature(handler)
-            command_arguments = _command_arguments_metadata(handler_signature)
+            type_hints = _handler_type_hints(handler)
+            command_arguments = _command_arguments_metadata(
+                handler_signature,
+                type_hints,
+            )
             command_description = description
             if command_description is None:
                 command_description = _handler_description(handler)
@@ -187,7 +192,6 @@ class CyreneRouter:
             route_metadata = {
                 **self._metadata,
                 **(metadata or {}),
-                "arguments": command_arguments,
             }
             definition = PluginCommandDefinition(
                 name=command_name,
@@ -196,6 +200,7 @@ class CyreneRouter:
                     command_name,
                     command_arguments,
                 ),
+                arguments=command_arguments,
                 aliases=[
                     normalized_alias
                     for alias in aliases or []
@@ -405,7 +410,7 @@ def _merge_router_definition(
             "name": name,
             "usage": _usage_from_arguments(
                 name,
-                list(definition.metadata.get("arguments", [])),
+                list(definition.arguments),
             ),
             "aliases": [alias for alias in aliases if alias],
             "admin_required": admin_required or definition.admin_required,

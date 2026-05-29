@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from cyreneAI.api._arguments import Arg, Flag, Option, Rest
 from cyreneAI.api._depends import Depends, PluginDependency
 from cyreneAI.api._replies import text
 from cyreneAI.api._routing import CyreneBot, CyreneRouter
@@ -26,5 +27,9 @@ __all__ = [
     "PluginDependency",
     "PluginEventHandler",
     "PluginTaskHandler",
+    "Arg",
+    "Flag",
+    "Option",
+    "Rest",
     "text",
 ]

@@ -1,15 +1,76 @@
 from __future__ import annotations
 
 from inspect import Parameter, Signature
-from typing import Any
+from typing import Annotated, Any, TypeAlias, get_args, get_origin, get_type_hints
 
 from cyreneAI.api._depends import PluginDependency, _resolve_dependency
 from cyreneAI.core.errors.plugin import PluginConfigurationError, PluginInputError
 from cyreneAI.core.schema.plugin import (
+    PluginCommandArgumentKind,
+    PluginCommandArgumentDefinition,
     PluginCommandRequest,
     PluginEventRequest,
     PluginTaskRequest,
 )
+
+
+class _RestMarker:
+    """
+    标记命令参数吃掉剩余输入。
+    """
+
+
+class _OptionMarker:
+    """
+    标记命令参数从 --name 形式解析。
+    """
+
+
+class _FlagMarker:
+    """
+    标记命令参数从 --name 布尔开关解析。
+    """
+
+
+_REST_MARKER = _RestMarker()
+_OPTION_MARKER = _OptionMarker()
+_FLAG_MARKER = _FlagMarker()
+
+
+class Arg:
+    """
+    补充命令参数展示信息。
+    """
+
+    def __init__(
+        self,
+        *,
+        aliases: list[str] | tuple[str, ...] = (),
+        description: str = "",
+    ) -> None:
+        self.aliases = tuple(aliases)
+        self.description = description
+
+
+class Rest:
+    """
+    声明命令参数吃掉剩余输入，同时让类型检查器看到原始类型。
+    """
+
+    def __class_getitem__(cls, item: Any) -> Any:
+        return Annotated[item, _REST_MARKER]
+
+
+class Option:
+    """
+    声明命令参数从 --name 形式读取。
+    """
+
+    def __class_getitem__(cls, item: Any) -> Any:
+        return Annotated[item, _OPTION_MARKER]
+
+
+Flag: TypeAlias = Annotated[bool, _FLAG_MARKER]
 
 
 def _default_usage(path: str) -> str:
@@ -21,7 +82,7 @@ def _default_usage(path: str) -> str:
 
 def _usage_from_arguments(
     path: str,
-    arguments: list[dict[str, Any]],
+    arguments: list[PluginCommandArgumentDefinition],
 ) -> str:
     base_usage = _default_usage(path)
     parts = [base_usage] if base_usage else []
@@ -30,16 +91,30 @@ def _usage_from_arguments(
     return " ".join(parts)
 
 
-def _usage_argument(argument: dict[str, Any]) -> str:
-    name = str(argument["name"])
-    argument_type = str(argument["type"])
+def _usage_argument(argument: PluginCommandArgumentDefinition) -> str:
+    name = argument.name
+    argument_type = argument.type
     type_suffix = "" if argument_type == "str" else f":{argument_type}"
-    if argument["required"]:
-        return f"<{name}{type_suffix}>"
-    default = _format_usage_default(argument.get("default"))
+    if argument.kind == PluginCommandArgumentKind.OPTION:
+        option_name = _option_token(name)
+        aliases = [option_name, *argument.aliases]
+        option_display = "|".join(aliases)
+        if argument.required:
+            return f"<{option_display}{type_suffix}>"
+        default = _format_usage_default(argument.default)
+        if default is None:
+            return f"[{option_display}{type_suffix}]"
+        return f"[{option_display}{type_suffix}={default}]"
+    if argument.kind == PluginCommandArgumentKind.FLAG:
+        aliases = [_option_token(name), *argument.aliases]
+        return f"[{'|'.join(aliases)}]"
+    rest_suffix = "..." if argument.kind == PluginCommandArgumentKind.REST else ""
+    if argument.required:
+        return f"<{name}{type_suffix}{rest_suffix}>"
+    default = _format_usage_default(argument.default)
     if default is None:
-        return f"[{name}{type_suffix}]"
-    return f"[{name}{type_suffix}={default}]"
+        return f"[{name}{type_suffix}{rest_suffix}]"
+    return f"[{name}{type_suffix}{rest_suffix}={default}]"
 
 
 def _format_usage_default(value: Any) -> str | None:
@@ -59,24 +134,42 @@ def _handler_description(handler: Any) -> str:
 
 def _command_arguments_metadata(
     handler_signature: Signature,
-) -> list[dict[str, Any]]:
-    arguments: list[dict[str, Any]] = []
+    type_hints: dict[str, Any] | None = None,
+) -> list[PluginCommandArgumentDefinition]:
+    arguments: list[PluginCommandArgumentDefinition] = []
+    seen_rest = False
     for parameter in handler_signature.parameters.values():
-        if not _is_command_argument_parameter(parameter):
+        if not _is_command_argument_parameter(parameter, type_hints):
             continue
+        argument_kind = _command_argument_kind_for_parameter(parameter, type_hints)
+        if seen_rest:
+            if argument_kind in {
+                PluginCommandArgumentKind.POSITIONAL,
+                PluginCommandArgumentKind.REST,
+            }:
+                raise PluginConfigurationError(
+                    f"插件命令 handler 的 Rest 参数后不能再声明位置参数: {parameter.name}"
+                )
 
-        argument_type = _command_argument_type_for_parameter(parameter)
+        argument_type = _command_argument_type_for_parameter(parameter, type_hints)
         if argument_type is None:
             continue
 
-        item: dict[str, Any] = {
-            "name": parameter.name,
-            "type": argument_type.__name__,
-            "required": parameter.default is _empty,
-        }
+        metadata = _command_argument_metadata(parameter, type_hints)
+        item = PluginCommandArgumentDefinition(
+            name=parameter.name,
+            type=argument_type.__name__,
+            kind=argument_kind,
+            required=parameter.default is _empty,
+            aliases=list(metadata.aliases),
+            description=metadata.description,
+        )
         if parameter.default is not _empty:
-            item["default"] = _metadata_default(parameter.default)
+            item = item.model_copy(
+                update={"default": _metadata_default(parameter.default)}
+            )
         arguments.append(item)
+        seen_rest = seen_rest or argument_kind == PluginCommandArgumentKind.REST
     return arguments
 
 
@@ -92,12 +185,21 @@ def _build_handler_arguments(
     runtime_context: Any,
     *,
     usage: str | None = None,
+    type_hints: dict[str, Any] | None = None,
 ) -> tuple[list[Any], dict[str, Any]]:
     args: list[Any] = []
     kwargs: dict[str, Any] = {}
     slot_index = 0
     command_arg_index = 0
     has_command_arguments = False
+    parsed_command_args = None
+    if isinstance(request, PluginCommandRequest):
+        parsed_command_args = _parse_command_arguments(
+            handler_signature,
+            request,
+            type_hints,
+            usage,
+        )
 
     for parameter in handler_signature.parameters.values():
         if parameter.kind in {
@@ -113,13 +215,24 @@ def _build_handler_arguments(
             slot_index,
             command_arg_index,
             usage,
+            type_hints,
+            parsed_command_args,
         )
         if value is _UNSET:
             continue
 
-        is_command_argument = _is_command_argument_value(parameter, request)
+        is_command_argument = _is_command_argument_value(parameter, request, type_hints)
         if is_command_argument:
-            command_arg_index += 1
+            argument_kind = _command_argument_kind_for_parameter(parameter, type_hints)
+            if argument_kind == PluginCommandArgumentKind.REST:
+                command_arg_index = len(parsed_command_args.positionals)
+            elif argument_kind in {
+                PluginCommandArgumentKind.OPTION,
+                PluginCommandArgumentKind.FLAG,
+            }:
+                pass
+            else:
+                command_arg_index += 1
             has_command_arguments = True
 
         if parameter.default is _empty and not is_command_argument:
@@ -138,12 +251,13 @@ def _build_handler_arguments(
     if (
         has_command_arguments
         and isinstance(request, PluginCommandRequest)
-        and command_arg_index < len(request.command.args)
+        and parsed_command_args is not None
+        and command_arg_index < len(parsed_command_args.positionals)
     ):
         raise PluginInputError(
             _format_command_input_error(
                 f"插件命令 {request.command.name} 参数过多: "
-                f"{' '.join(request.command.args[command_arg_index:])}",
+                f"{' '.join(parsed_command_args.positionals[command_arg_index:])}",
                 usage,
             )
         )
@@ -155,6 +269,7 @@ def _validate_handler_signature(
     handler_signature: Signature,
     runtime_context: Any,
     handler_label: str = "插件命令",
+    type_hints: dict[str, Any] | None = None,
 ) -> None:
     slot_index = 0
     for parameter in handler_signature.parameters.values():
@@ -170,7 +285,7 @@ def _validate_handler_signature(
             continue
         if (
             handler_label == "插件命令"
-            and _command_argument_type_for_parameter(parameter) is not None
+            and _command_argument_type_for_parameter(parameter, type_hints) is not None
         ):
             continue
         if parameter.default is not _empty:
@@ -196,6 +311,8 @@ def _resolve_handler_parameter(
     slot_index: int,
     command_arg_index: int,
     usage: str | None,
+    type_hints: dict[str, Any] | None,
+    parsed_command_args: "_ParsedCommandArguments | None",
 ) -> Any:
     if isinstance(parameter.default, PluginDependency):
         return _resolve_dependency(parameter.default, runtime_context, request)
@@ -206,12 +323,16 @@ def _resolve_handler_parameter(
         return request.event
     if parameter.name in {"ctx", "context"}:
         return runtime_context
-    if _is_command_argument_value(parameter, request):
+    if _is_command_argument_value(parameter, request, type_hints):
+        if parsed_command_args is None:
+            raise PluginConfigurationError("插件命令参数解析状态缺失")
         return _resolve_command_argument(
             parameter,
             request,
             command_arg_index,
             usage,
+            type_hints,
+            parsed_command_args,
         )
     if parameter.default is not _empty:
         return _UNSET
@@ -229,13 +350,36 @@ def _resolve_command_argument(
     request: PluginCommandRequest,
     command_arg_index: int,
     usage: str | None,
+    type_hints: dict[str, Any] | None,
+    parsed_command_args: "_ParsedCommandArguments",
 ) -> Any:
-    argument_type = _command_argument_type_for_parameter(parameter)
+    argument_type = _command_argument_type_for_parameter(parameter, type_hints)
     if argument_type is None:
         raise PluginConfigurationError(
             f"插件命令 handler 参数 {parameter.name} 不支持从命令参数解析"
         )
-    if command_arg_index >= len(request.command.args):
+    argument_kind = _command_argument_kind_for_parameter(parameter, type_hints)
+    if argument_kind == PluginCommandArgumentKind.REST:
+        return _resolve_rest_command_argument(
+            parameter,
+            request,
+            command_arg_index,
+            usage,
+            type_hints,
+            parsed_command_args,
+        )
+    if argument_kind in {
+        PluginCommandArgumentKind.OPTION,
+        PluginCommandArgumentKind.FLAG,
+    }:
+        return _resolve_named_command_argument(
+            parameter,
+            request,
+            usage,
+            type_hints,
+            parsed_command_args,
+        )
+    if command_arg_index >= len(parsed_command_args.positionals):
         if parameter.default is not _empty:
             return _UNSET
         raise PluginInputError(
@@ -245,7 +389,7 @@ def _resolve_command_argument(
             )
         )
 
-    raw_value = request.command.args[command_arg_index]
+    raw_value = parsed_command_args.positionals[command_arg_index]
     try:
         return _parse_command_argument(raw_value, argument_type)
     except ValueError as exc:
@@ -256,6 +400,165 @@ def _resolve_command_argument(
                 usage,
             )
         ) from exc
+
+
+def _resolve_rest_command_argument(
+    parameter: Parameter,
+    request: PluginCommandRequest,
+    command_arg_index: int,
+    usage: str | None,
+    type_hints: dict[str, Any] | None,
+    parsed_command_args: "_ParsedCommandArguments",
+) -> Any:
+    argument_type = _command_argument_type_for_parameter(parameter, type_hints)
+    if argument_type is not str:
+        raise PluginConfigurationError(
+            f"插件命令 Rest 参数 {parameter.name} 目前只支持 Rest[str]"
+        )
+    if command_arg_index >= len(parsed_command_args.positionals):
+        if parameter.default is not _empty:
+            return _UNSET
+        raise PluginInputError(
+            _format_command_input_error(
+                f"插件命令 {request.command.name} 缺少参数 {parameter.name}",
+                usage,
+            )
+        )
+    return " ".join(parsed_command_args.positionals[command_arg_index:])
+
+
+def _resolve_named_command_argument(
+    parameter: Parameter,
+    request: PluginCommandRequest,
+    usage: str | None,
+    type_hints: dict[str, Any] | None,
+    parsed_command_args: "_ParsedCommandArguments",
+) -> Any:
+    argument_kind = _command_argument_kind_for_parameter(parameter, type_hints)
+    argument_type = _command_argument_type_for_parameter(parameter, type_hints)
+    if argument_kind == PluginCommandArgumentKind.FLAG:
+        if parameter.name not in parsed_command_args.options:
+            return _UNSET
+        raw_value = parsed_command_args.options[parameter.name]
+        try:
+            return _parse_command_argument(raw_value, bool)
+        except ValueError as exc:
+            raise PluginInputError(
+                _format_command_input_error(
+                    f"插件命令 {request.command.name} 参数 {parameter.name} "
+                    f"应为 bool，收到 {raw_value!r}",
+                    usage,
+                )
+            ) from exc
+
+    if parameter.name not in parsed_command_args.options:
+        if parameter.default is not _empty:
+            return _UNSET
+        raise PluginInputError(
+            _format_command_input_error(
+                f"插件命令 {request.command.name} 缺少参数 {parameter.name}",
+                usage,
+            )
+        )
+
+    raw_value = parsed_command_args.options[parameter.name]
+    try:
+        return _parse_command_argument(raw_value, argument_type)
+    except ValueError as exc:
+        raise PluginInputError(
+            _format_command_input_error(
+                f"插件命令 {request.command.name} 参数 {parameter.name} "
+                f"应为 {argument_type.__name__}，收到 {raw_value!r}",
+                usage,
+            )
+        ) from exc
+
+
+def _parse_command_arguments(
+    handler_signature: Signature,
+    request: PluginCommandRequest,
+    type_hints: dict[str, Any] | None,
+    usage: str | None,
+) -> "_ParsedCommandArguments":
+    option_names: dict[str, Parameter] = {}
+    option_parameters: set[str] = set()
+    flag_parameters: set[str] = set()
+    for parameter in handler_signature.parameters.values():
+        if not _is_command_argument_parameter(parameter, type_hints):
+            continue
+        argument_kind = _command_argument_kind_for_parameter(parameter, type_hints)
+        if argument_kind not in {
+            PluginCommandArgumentKind.OPTION,
+            PluginCommandArgumentKind.FLAG,
+        }:
+            continue
+        option_parameters.add(parameter.name)
+        if argument_kind == PluginCommandArgumentKind.FLAG:
+            flag_parameters.add(parameter.name)
+        for option_name in _command_option_names(parameter, type_hints):
+            option_names[option_name] = parameter
+
+    positionals: list[str] = []
+    options: dict[str, str] = {}
+    raw_args = list(request.command.args)
+    index = 0
+    while index < len(raw_args):
+        raw_arg = raw_args[index]
+        option_token, separator, inline_value = raw_arg.partition("=")
+        parameter = option_names.get(option_token)
+        if parameter is None:
+            positionals.append(raw_arg)
+            index += 1
+            continue
+
+        if parameter.name in options:
+            raise PluginInputError(
+                _format_command_input_error(
+                    f"插件命令 {request.command.name} 参数 {parameter.name} 重复",
+                    usage,
+                )
+            )
+
+        if parameter.name in flag_parameters:
+            options[parameter.name] = inline_value if separator else "true"
+            index += 1
+            continue
+
+        if separator:
+            if inline_value == "":
+                raise PluginInputError(
+                    _format_command_input_error(
+                        f"插件命令 {request.command.name} 参数 {parameter.name} 缺少值",
+                        usage,
+                    )
+                )
+            options[parameter.name] = inline_value
+            index += 1
+            continue
+
+        value_index = index + 1
+        if value_index >= len(raw_args):
+            raise PluginInputError(
+                _format_command_input_error(
+                    f"插件命令 {request.command.name} 参数 {parameter.name} 缺少值",
+                    usage,
+                )
+            )
+        options[parameter.name] = raw_args[value_index]
+        index += 2
+
+    return _ParsedCommandArguments(
+        positionals=tuple(positionals),
+        options=options,
+    )
+
+
+def _command_option_names(
+    parameter: Parameter,
+    type_hints: dict[str, Any] | None,
+) -> tuple[str, ...]:
+    metadata = _command_argument_metadata(parameter, type_hints)
+    return (_option_token(parameter.name), *metadata.aliases)
 
 
 def _format_command_input_error(message: str, usage: str | None) -> str:
@@ -288,16 +591,20 @@ def _parse_bool_argument(raw_value: str) -> bool:
 def _is_command_argument_value(
     parameter: Parameter,
     request: PluginCommandRequest | PluginTaskRequest | PluginEventRequest,
+    type_hints: dict[str, Any] | None,
 ) -> bool:
     return (
         isinstance(request, PluginCommandRequest)
-        and _is_command_argument_parameter(parameter)
+        and _is_command_argument_parameter(parameter, type_hints)
     )
 
 
-def _is_command_argument_parameter(parameter: Parameter) -> bool:
+def _is_command_argument_parameter(
+    parameter: Parameter,
+    type_hints: dict[str, Any] | None = None,
+) -> bool:
     return (
-        _command_argument_type_for_parameter(parameter) is not None
+        _command_argument_type_for_parameter(parameter, type_hints) is not None
         and not isinstance(parameter.default, PluginDependency)
         and parameter.kind
         in {
@@ -308,12 +615,181 @@ def _is_command_argument_parameter(parameter: Parameter) -> bool:
     )
 
 
-def _command_argument_type_for_parameter(parameter: Parameter) -> type | None:
+def _command_argument_type_for_parameter(
+    parameter: Parameter,
+    type_hints: dict[str, Any] | None = None,
+) -> type | None:
     if parameter.name in {"request", "ctx", "context"}:
         return None
+    annotation = _parameter_annotation(parameter, type_hints)
+    marked_argument_type = _marked_argument_type(annotation)
+    if marked_argument_type is _INVALID_MARKED_ARGUMENT:
+        raise PluginConfigurationError(
+            f"插件命令参数 {parameter.name} 的标记类型不支持"
+        )
+    if marked_argument_type is not None:
+        return marked_argument_type
     return _command_argument_type(
-        parameter.annotation
+        annotation
     ) or _command_argument_type_from_default(parameter) or str
+
+
+def _command_argument_kind_for_parameter(
+    parameter: Parameter,
+    type_hints: dict[str, Any] | None = None,
+) -> PluginCommandArgumentKind:
+    metadata = _command_argument_metadata(parameter, type_hints)
+    if metadata.is_rest:
+        return PluginCommandArgumentKind.REST
+    if metadata.is_option:
+        return PluginCommandArgumentKind.OPTION
+    if metadata.is_flag:
+        return PluginCommandArgumentKind.FLAG
+    return PluginCommandArgumentKind.POSITIONAL
+
+
+def _command_argument_metadata(
+    parameter: Parameter,
+    type_hints: dict[str, Any] | None = None,
+) -> "_CommandArgumentMetadata":
+    annotation = _parameter_annotation(parameter, type_hints)
+    metadata = _annotation_metadata(annotation)
+    if metadata.invalid_marker:
+        raise PluginConfigurationError(
+            f"插件命令参数 {parameter.name} 的标记类型不支持"
+        )
+    return metadata
+
+
+def _marked_argument_type(annotation: Any) -> type | object | None:
+    metadata = _annotation_metadata(annotation)
+    if metadata.invalid_marker:
+        return _INVALID_MARKED_ARGUMENT
+    if metadata.base_type is not None:
+        return metadata.base_type
+    return _string_marked_argument_type(annotation)
+
+
+def _annotation_metadata(annotation: Any) -> "_CommandArgumentMetadata":
+    origin = get_origin(annotation)
+    if origin is Annotated:
+        args = get_args(annotation)
+        if not args:
+            return _CommandArgumentMetadata()
+        base_type = args[0]
+        metadata = args[1:]
+        result = _CommandArgumentMetadata()
+        if any(isinstance(item, _RestMarker) for item in metadata):
+            result.is_rest = True
+            result.base_type = base_type
+        if any(isinstance(item, _OptionMarker) for item in metadata):
+            result.is_option = True
+            result.base_type = base_type
+        if any(isinstance(item, _FlagMarker) for item in metadata):
+            result.is_flag = True
+            result.base_type = bool
+        for item in metadata:
+            if isinstance(item, Arg):
+                result.aliases = item.aliases
+                result.description = item.description
+        if result.is_rest and result.base_type is not str:
+            result.invalid_marker = True
+        if result.is_flag and result.base_type is not bool:
+            result.invalid_marker = True
+        return result
+    if isinstance(annotation, str):
+        normalized = annotation.replace(" ", "")
+        result = _CommandArgumentMetadata()
+        if "Rest[" in normalized or normalized.endswith("Rest"):
+            result.is_rest = True
+            marked_type = _string_generic_argument_type(normalized, "Rest")
+            result.base_type = marked_type if isinstance(marked_type, type) else str
+            result.invalid_marker = marked_type is _INVALID_MARKED_ARGUMENT
+        if "Option[" in normalized:
+            result.is_option = True
+            marked_type = _string_generic_argument_type(normalized, "Option")
+            result.base_type = marked_type if isinstance(marked_type, type) else None
+            result.invalid_marker = marked_type is _INVALID_MARKED_ARGUMENT
+        if normalized.endswith("Flag") or "Flag," in normalized or "Flag]" in normalized:
+            result.is_flag = True
+            result.base_type = bool
+        return result
+    return _CommandArgumentMetadata()
+
+
+def _string_marked_argument_type(annotation: Any) -> type | object | None:
+    if isinstance(annotation, str):
+        normalized = annotation.replace(" ", "")
+        if normalized.endswith("Rest") or "Flag" in normalized:
+            return bool if "Flag" in normalized else str
+        if "Rest[" in normalized:
+            return _string_generic_argument_type(normalized, "Rest")
+        if "Option[" in normalized:
+            return _string_generic_argument_type(normalized, "Option")
+    return None
+
+
+def _string_generic_argument_type(annotation: str, name: str) -> type | object | None:
+    prefix = f"{name}["
+    index = annotation.find(prefix)
+    if index < 0:
+        return None
+    start = index + len(prefix)
+    end = annotation.find("]", start)
+    if end < 0:
+        return _INVALID_MARKED_ARGUMENT
+    inner = annotation[start:end]
+    if inner in {"str", "builtins.str"}:
+        return str
+    if inner in {"int", "builtins.int"}:
+        return int
+    if inner in {"float", "builtins.float"}:
+        return float
+    if inner in {"bool", "builtins.bool"}:
+        return bool
+    return _INVALID_MARKED_ARGUMENT
+
+
+def _parameter_annotation(
+    parameter: Parameter,
+    type_hints: dict[str, Any] | None,
+) -> Any:
+    if type_hints and parameter.name in type_hints:
+        return type_hints[parameter.name]
+    return parameter.annotation
+
+
+def _handler_type_hints(handler: Any) -> dict[str, Any]:
+    try:
+        return get_type_hints(handler, include_extras=True)
+    except Exception:
+        return {}
+
+
+def _option_token(name: str) -> str:
+    return f"--{name.replace('_', '-')}"
+
+
+class _CommandArgumentMetadata:
+    def __init__(self) -> None:
+        self.is_rest = False
+        self.is_option = False
+        self.is_flag = False
+        self.invalid_marker = False
+        self.base_type: type | None = None
+        self.aliases: tuple[str, ...] = ()
+        self.description = ""
+
+
+class _ParsedCommandArguments:
+    def __init__(
+        self,
+        *,
+        positionals: tuple[str, ...],
+        options: dict[str, str],
+    ) -> None:
+        self.positionals = positionals
+        self.options = options
 
 
 def _command_argument_type(annotation: Any) -> type | None:
@@ -368,4 +844,5 @@ class _Unset:
 
 
 _UNSET = _Unset()
+_INVALID_MARKED_ARGUMENT = object()
 _empty = Signature.empty

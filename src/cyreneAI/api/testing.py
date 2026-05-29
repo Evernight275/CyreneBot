@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import shlex
+from inspect import isawaitable
 from typing import Any
 
 from cyreneAI.api.plugin import CyreneBot
@@ -28,6 +29,7 @@ from cyreneAI.core.schema.plugin import (
     PluginEventResult,
     PluginEventType,
     PluginManifest,
+    PluginMessageReceipt,
     PluginPermission,
     PluginTaskDefinition,
     PluginTaskRequest,
@@ -132,9 +134,24 @@ class PluginTestClient:
             self._manifest = self._manifest.model_copy(
                 update={"permissions": list(permissions)}
             )
+        self.storage = _PluginTestStorage()
+        self.assets = _PluginTestAssets()
+        self.messages = _PluginTestMessages()
+        self.scheduler = _PluginTestTasks()
+        resolved_dependencies = {
+            "storage": self.storage,
+            "assets": self.assets,
+            "messages": self.messages,
+            "message": self.messages,
+            "outbox": self.messages,
+            "tasks": self.scheduler,
+            "task": self.scheduler,
+            "scheduler": self.scheduler,
+            **(dependencies or {}),
+        }
         self._runtime = _PluginTestRuntimeContext(
             self._manifest,
-            dependencies=dependencies or {},
+            dependencies=resolved_dependencies,
             enforce_permissions=enforce_permissions,
         )
         self._context = _PluginTestSetupContext(self._manifest, self._runtime)
@@ -308,6 +325,122 @@ class _PluginTestRuntimeContext:
                 return self._dependencies[name]
         joined_names = ", ".join(names)
         raise PluginConfigurationError(f"测试依赖未提供: {joined_names}")
+
+
+class _PluginTestStorage:
+    def __init__(self) -> None:
+        self.values: dict[str, Any] = {}
+
+    async def get(self, key: str, default: Any = None) -> Any:
+        return self.values.get(key, default)
+
+    async def set(self, key: str, value: Any) -> None:
+        self.values[key] = value
+
+    async def delete(self, key: str) -> None:
+        self.values.pop(key, None)
+
+    async def update(self, key: str, updater: Any, default: Any = None) -> Any:
+        value = self.values.get(key, default)
+        updated = updater(value)
+        if isawaitable(updated):
+            updated = await updated
+        self.values[key] = updated
+        return updated
+
+
+class _PluginTestAssets:
+    def __init__(self) -> None:
+        self.files: dict[str, bytes] = {}
+
+    async def read_text(self, path: str) -> str:
+        return (await self.read_bytes(path)).decode("utf-8")
+
+    async def read_bytes(self, path: str) -> bytes:
+        normalized_path = _normalize_asset_path(path)
+        if normalized_path not in self.files:
+            raise FileNotFoundError(normalized_path)
+        return self.files[normalized_path]
+
+    async def exists(self, path: str) -> bool:
+        return _normalize_asset_path(path) in self.files
+
+    async def list(self, path: str = "") -> list[str]:
+        prefix = _normalize_asset_path(path)
+        if prefix:
+            prefix = f"{prefix}/"
+        return sorted(
+            item
+            for item in self.files
+            if not prefix or item.startswith(prefix)
+        )
+
+    def add_text(self, path: str, content: str) -> None:
+        self.files[_normalize_asset_path(path)] = content.encode("utf-8")
+
+    def add_bytes(self, path: str, content: bytes) -> None:
+        self.files[_normalize_asset_path(path)] = bytes(content)
+
+
+class _PluginTestMessages:
+    def __init__(self) -> None:
+        self.sent: list[dict[str, Any]] = []
+
+    async def send(
+        self,
+        session_id: str,
+        *,
+        text: str,
+        metadata: dict[str, Any] | None = None,
+        bypass_rate_limit: bool = False,
+    ) -> PluginMessageReceipt:
+        self.sent.append(
+            {
+                "session_id": session_id,
+                "text": text,
+                "metadata": dict(metadata or {}),
+                "bypass_rate_limit": bypass_rate_limit,
+            }
+        )
+        return PluginMessageReceipt(
+            session_id=session_id,
+            accepted=True,
+            metadata=dict(metadata or {}),
+        )
+
+
+class _PluginTestTasks:
+    def __init__(self) -> None:
+        self.scheduled: list[dict[str, Any]] = []
+        self.canceled: list[str] = []
+        self.canceled_keys: list[str] = []
+
+    async def schedule_once(
+        self,
+        task_name: str,
+        *,
+        delay_seconds: float,
+        payload: dict[str, Any] | None = None,
+        key: str | None = None,
+    ) -> str:
+        task_id = f"test-task-{len(self.scheduled) + 1}"
+        self.scheduled.append(
+            {
+                "task_id": task_id,
+                "task_name": task_name,
+                "delay_seconds": delay_seconds,
+                "payload": dict(payload or {}),
+                "key": key,
+            }
+        )
+        return task_id
+
+    async def cancel(self, task_id: str) -> None:
+        self.canceled.append(task_id)
+
+    async def cancel_key(self, key: str) -> int:
+        self.canceled_keys.append(key)
+        return sum(1 for item in self.scheduled if item.get("key") == key)
 
 
 class _PluginTestSetupContext:
@@ -536,6 +669,10 @@ def _split_command_parts(
 
 def _normalize_command_name(value: str) -> str:
     return " ".join(value.strip().removeprefix("/").split()).lower()
+
+
+def _normalize_asset_path(path: str) -> str:
+    return "/".join(part for part in path.replace("\\", "/").split("/") if part)
 
 
 def _normalize_event_type(value: str | PluginEventType) -> PluginEventType:

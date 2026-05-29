@@ -103,6 +103,31 @@ class PluginEventType(StrEnum):
     UNKNOWN = "unknown"
 
 
+class PluginCommandArgumentKind(StrEnum):
+    """
+    插件命令参数的解析形态。
+    """
+
+    POSITIONAL = "positional"
+    REST = "rest"
+    OPTION = "option"
+    FLAG = "flag"
+
+
+class PluginCommandArgumentDefinition(PluginBase):
+    """
+    插件命令 handler 参数契约。
+    """
+
+    name: str
+    type: str = "str"
+    kind: PluginCommandArgumentKind = PluginCommandArgumentKind.POSITIONAL
+    required: bool = True
+    default: Any | None = None
+    aliases: list[str] = Field(default_factory=list)
+    description: str = ""
+
+
 class PluginCommandDefinition(PluginBase):
     """
     插件暴露给 bot 的命令定义。
@@ -111,6 +136,7 @@ class PluginCommandDefinition(PluginBase):
     name: str
     description: str
     usage: str | None = None
+    arguments: list[PluginCommandArgumentDefinition] = Field(default_factory=list)
     aliases: list[str] = Field(default_factory=list)
     admin_required: bool = False
     enabled: bool = True

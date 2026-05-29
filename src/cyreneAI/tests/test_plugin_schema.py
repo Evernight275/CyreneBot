@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from cyreneAI.core.schema.bot import BotCommand
 from cyreneAI.core.schema.plugin import (
+    PluginCommandArgumentDefinition,
+    PluginCommandArgumentKind,
     PluginLifecycleStatus,
     PluginCapability,
     PluginCommandDefinition,
@@ -56,10 +58,25 @@ def test_plugin_command_definition_defaults() -> None:
     )
 
     assert command.usage is None
+    assert command.arguments == []
     assert command.aliases == []
     assert command.admin_required is False
     assert command.enabled is True
     assert command.metadata == {}
+
+
+def test_plugin_command_argument_definition_schema() -> None:
+    argument = PluginCommandArgumentDefinition(
+        name="message",
+    )
+
+    assert argument.name == "message"
+    assert argument.type == "str"
+    assert argument.kind == PluginCommandArgumentKind.POSITIONAL
+    assert argument.required is True
+    assert argument.default is None
+    assert argument.aliases == []
+    assert argument.description == ""
 
 
 def test_plugin_command_request_and_result_defaults() -> None:
