@@ -25,7 +25,11 @@ from cyreneAI.core.schema.usage import TokenUsage
 def map_responses_request(request: ChatRequest) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "model": request.model,
-        "input": [map_input_message(message) for message in request.messages],
+        "input": [
+            item
+            for message in request.messages
+            for item in map_input_message(message)
+        ],
         "temperature": request.temperature,
         "max_output_tokens": request.max_tokens,
         "top_p": request.top_p,
@@ -35,18 +39,50 @@ def map_responses_request(request: ChatRequest) -> dict[str, Any]:
     return _drop_none(payload)
 
 
-def map_input_message(message: Message) -> dict[str, Any]:
-    payload: dict[str, Any] = {
-        "role": map_message_role(message.role),
-        "content": map_content_parts(message.content),
-    }
-    return _drop_none(payload)
+def map_input_message(message: Message) -> list[dict[str, Any]]:
+    if message.role == MessageRole.TOOL:
+        return [
+            {
+                "type": "function_call_output",
+                "call_id": message.tool_call_id or "",
+                "output": map_content_parts(message.content),
+            }
+        ]
+
+    items: list[dict[str, Any]] = []
+    content = map_content_parts(message.content)
+    if content or message.role != MessageRole.ASSISTANT or not message.tool_calls:
+        items.append(
+            _drop_none(
+                {
+                    "role": map_message_role(message.role),
+                    "content": content,
+                }
+            )
+        )
+    if message.role == MessageRole.ASSISTANT:
+        items.extend(map_input_tool_calls(message.tool_calls))
+    return items
 
 
 def map_message_role(role: MessageRole) -> str:
     if role == MessageRole.TOOL:
         return "user"
     return role.value
+
+
+def map_input_tool_calls(tool_calls: list[ToolCall] | None) -> list[dict[str, Any]]:
+    if not tool_calls:
+        return []
+    return [
+        {
+            "type": "function_call",
+            "call_id": tool_call.id,
+            "name": tool_call.name,
+            "arguments": tool_call.arguments or "",
+        }
+        for tool_call in tool_calls
+    ]
 
 
 def map_content_parts(parts: list[ContentPart] | None) -> str:
@@ -112,14 +148,19 @@ def map_responses_response(provider_id: str, response: Any) -> ChatResponse:
         message=(
             Message(
                 role=MessageRole.ASSISTANT,
-                content=[
-                    ContentPart(
-                        type=ContentPartType.TEXT,
-                        text=content_text,
-                    )
-                ],
+                content=(
+                    [
+                        ContentPart(
+                            type=ContentPartType.TEXT,
+                            text=content_text,
+                        )
+                    ]
+                    if content_text
+                    else None
+                ),
+                tool_calls=tool_calls or None,
             )
-            if content_text
+            if content_text or tool_calls
             else None
         ),
         tool_calls=tool_calls,

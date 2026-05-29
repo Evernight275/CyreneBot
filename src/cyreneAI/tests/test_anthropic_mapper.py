@@ -9,7 +9,7 @@ from cyreneAI.core.schema.message import (
     Message,
     MessageRole,
 )
-from cyreneAI.core.schema.tool import ToolChoice, ToolDefinition
+from cyreneAI.core.schema.tool import ToolCall, ToolChoice, ToolDefinition
 from cyreneAI.infra.adapters.providers.anthropic.mapper import (
     map_anthropic_request,
     map_anthropic_response,
@@ -108,6 +108,90 @@ def test_map_anthropic_response_builds_core_response() -> None:
     assert response.message is not None
     assert response.message.content is not None
     assert response.message.content[0].text == "pong"
+    assert response.message.tool_calls is not None
+    assert response.message.tool_calls[0].id == "toolu-1"
     assert response.tool_calls[0].id == "toolu-1"
     assert response.tool_calls[0].name == "lookup"
     assert response.tool_calls[0].arguments == "{\"key\": \"value\"}"
+
+
+def test_map_anthropic_request_preserves_tool_feedback_turn() -> None:
+    request = ChatRequest(
+        provider_id="provider-1",
+        model="claude-test",
+        messages=[
+            Message(
+                role=MessageRole.ASSISTANT,
+                tool_calls=[
+                    ToolCall(
+                        id="toolu-1",
+                        name="lookup",
+                        arguments="{\"key\":\"value\"}",
+                    )
+                ],
+            ),
+            Message(
+                role=MessageRole.TOOL,
+                name="lookup",
+                tool_call_id="toolu-1",
+                content=[ContentPart(type=ContentPartType.TEXT, text="found")],
+            ),
+        ],
+    )
+
+    payload = map_anthropic_request(request)
+
+    assert payload["messages"] == [
+        {
+            "role": "assistant",
+            "content": [
+                {
+                    "type": "tool_use",
+                    "id": "toolu-1",
+                    "name": "lookup",
+                    "input": {"key": "value"},
+                }
+            ],
+        },
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": "toolu-1",
+                    "content": "found",
+                }
+            ],
+        },
+    ]
+
+
+def test_map_anthropic_response_preserves_tool_only_message() -> None:
+    anthropic_response = AnthropicMessage.model_validate(
+        {
+            "id": "msg-1",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-test",
+            "content": [
+                {
+                    "type": "tool_use",
+                    "id": "toolu-1",
+                    "name": "lookup",
+                    "input": {"key": "value"},
+                },
+            ],
+            "stop_reason": "tool_use",
+            "usage": {
+                "input_tokens": 3,
+                "output_tokens": 4,
+            },
+        }
+    )
+
+    response = map_anthropic_response("provider-1", anthropic_response)
+
+    assert response.message is not None
+    assert response.message.content is None
+    assert response.message.tool_calls is not None
+    assert response.message.tool_calls[0].id == "toolu-1"

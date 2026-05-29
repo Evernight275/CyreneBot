@@ -190,20 +190,27 @@ class ApplicationPluginTaskScheduler:
         plugin_id: str,
         definition: PluginTaskDefinition,
     ) -> None:
+        if definition.run_on_start:
+            await self._execute_declared_once(plugin_id, definition)
+
+        if definition.interval_seconds is not None:
+            while self._started:
+                await asyncio.sleep(definition.interval_seconds)
+                await self._execute_declared_once(plugin_id, definition)
+            return
+
+        if definition.daily_at is not None:
+            while self._started:
+                await asyncio.sleep(_seconds_until_daily_at(definition.daily_at))
+                await self._execute_declared_once(plugin_id, definition)
+
+    async def _execute_declared_once(
+        self,
+        plugin_id: str,
+        definition: PluginTaskDefinition,
+    ) -> None:
         try:
-            if definition.run_on_start:
-                await self._execute(plugin_id, definition.name, payload={})
-
-            if definition.interval_seconds is not None:
-                while self._started:
-                    await asyncio.sleep(definition.interval_seconds)
-                    await self._execute(plugin_id, definition.name, payload={})
-                return
-
-            if definition.daily_at is not None:
-                while self._started:
-                    await asyncio.sleep(_seconds_until_daily_at(definition.daily_at))
-                    await self._execute(plugin_id, definition.name, payload={})
+            await self._execute(plugin_id, definition.name, payload={})
         except asyncio.CancelledError:
             raise
         except Exception:

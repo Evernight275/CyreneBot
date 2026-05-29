@@ -9,7 +9,7 @@ from cyreneAI.core.schema.message import (
     Message,
     MessageRole,
 )
-from cyreneAI.core.schema.tool import ToolChoice, ToolDefinition
+from cyreneAI.core.schema.tool import ToolCall, ToolChoice, ToolDefinition
 from cyreneAI.infra.adapters.providers.openai_responses.mapper import (
     map_responses_request,
     map_responses_response,
@@ -133,6 +133,77 @@ def test_map_responses_response_builds_core_response() -> None:
     assert mapped.message is not None
     assert mapped.message.content is not None
     assert mapped.message.content[0].text == "pong"
+    assert mapped.message.tool_calls is not None
+    assert mapped.message.tool_calls[0].id == "call-1"
     assert mapped.tool_calls[0].id == "call-1"
     assert mapped.tool_calls[0].name == "lookup"
     assert mapped.tool_calls[0].arguments == "{\"key\":\"value\"}"
+
+
+def test_map_responses_request_preserves_tool_feedback_turn() -> None:
+    request = ChatRequest(
+        provider_id="provider-1",
+        model="test-model",
+        messages=[
+            Message(
+                role=MessageRole.ASSISTANT,
+                tool_calls=[
+                    ToolCall(
+                        id="call-1",
+                        name="lookup",
+                        arguments="{\"key\":\"value\"}",
+                    )
+                ],
+            ),
+            Message(
+                role=MessageRole.TOOL,
+                name="lookup",
+                tool_call_id="call-1",
+                content=[ContentPart(type=ContentPartType.TEXT, text="found")],
+            ),
+        ],
+    )
+
+    payload = map_responses_request(request)
+
+    assert payload["input"] == [
+        {
+            "type": "function_call",
+            "call_id": "call-1",
+            "name": "lookup",
+            "arguments": "{\"key\":\"value\"}",
+        },
+        {
+            "type": "function_call_output",
+            "call_id": "call-1",
+            "output": "found",
+        },
+    ]
+
+
+def test_map_responses_response_preserves_tool_only_message() -> None:
+    response = Response(
+        id="resp-test",
+        created_at=1,
+        model="test-model",
+        object="response",
+        output=[
+            {
+                "type": "function_call",
+                "call_id": "call-1",
+                "name": "lookup",
+                "arguments": "{\"key\":\"value\"}",
+            },
+        ],
+        parallel_tool_calls=True,
+        tool_choice="auto",
+        tools=[],
+        status="completed",
+    )
+
+    mapped = map_responses_response("provider-1", response)
+
+    assert mapped.message is not None
+    assert mapped.message.content is None
+    assert mapped.message.tool_calls is not None
+    assert mapped.message.tool_calls[0].id == "call-1"

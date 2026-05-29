@@ -61,6 +61,12 @@ def map_parts(message: Message) -> list[dict[str, Any]]:
             }
         ]
 
+    if message.role == MessageRole.ASSISTANT and message.tool_calls:
+        return [
+            *map_text_parts(message.content),
+            *map_function_call_parts(message.tool_calls),
+        ]
+
     text = map_content_parts(message.content)
     return [{"text": text}] if text else []
 
@@ -74,6 +80,33 @@ def map_content_parts(parts: list[ContentPart] | None) -> str:
         if part.type == ContentPartType.TEXT and part.text is not None
     ]
     return "\n".join(texts)
+
+
+def map_text_parts(parts: list[ContentPart] | None) -> list[dict[str, Any]]:
+    text = map_content_parts(parts)
+    return [{"text": text}] if text else []
+
+
+def map_function_call_parts(tool_calls: list[ToolCall]) -> list[dict[str, Any]]:
+    return [
+        {
+            "function_call": {
+                "id": tool_call.id,
+                "name": tool_call.name,
+                "args": map_tool_arguments_object(tool_call.arguments),
+            }
+        }
+        for tool_call in tool_calls
+    ]
+
+
+def map_tool_arguments_object(arguments: str | None) -> Any:
+    if not arguments:
+        return {}
+    try:
+        return json.loads(arguments)
+    except json.JSONDecodeError:
+        return {"value": arguments}
 
 
 def map_tool(tool: ToolDefinition) -> dict[str, Any]:
@@ -141,14 +174,19 @@ def map_google_genai_response(provider_id: str, response: Any) -> ChatResponse:
         message=(
             Message(
                 role=MessageRole.ASSISTANT,
-                content=[
-                    ContentPart(
-                        type=ContentPartType.TEXT,
-                        text=text,
-                    )
-                ],
+                content=(
+                    [
+                        ContentPart(
+                            type=ContentPartType.TEXT,
+                            text=text,
+                        )
+                    ]
+                    if text
+                    else None
+                ),
+                tool_calls=tool_calls or None,
             )
-            if text
+            if text or tool_calls
             else None
         ),
         tool_calls=tool_calls,

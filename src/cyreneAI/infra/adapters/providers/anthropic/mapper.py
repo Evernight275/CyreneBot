@@ -47,6 +47,14 @@ def map_message(message: Message) -> dict[str, Any]:
         }
 
     role = "assistant" if message.role == MessageRole.ASSISTANT else "user"
+    if message.role == MessageRole.ASSISTANT and message.tool_calls:
+        return {
+            "role": role,
+            "content": [
+                *map_text_content_blocks(message.content),
+                *map_tool_use_blocks(message.tool_calls),
+            ],
+        }
     return {
         "role": role,
         "content": map_content_parts(message.content),
@@ -75,6 +83,39 @@ def map_content_parts(parts: list[ContentPart] | None) -> str:
         if part.type == ContentPartType.TEXT and part.text is not None
     ]
     return "\n".join(texts)
+
+
+def map_text_content_blocks(parts: list[ContentPart] | None) -> list[dict[str, Any]]:
+    text = map_content_parts(parts)
+    if not text:
+        return []
+    return [
+        {
+            "type": "text",
+            "text": text,
+        }
+    ]
+
+
+def map_tool_use_blocks(tool_calls: list[ToolCall]) -> list[dict[str, Any]]:
+    return [
+        {
+            "type": "tool_use",
+            "id": tool_call.id,
+            "name": tool_call.name,
+            "input": map_tool_input(tool_call.arguments),
+        }
+        for tool_call in tool_calls
+    ]
+
+
+def map_tool_input(arguments: str | None) -> Any:
+    if not arguments:
+        return {}
+    try:
+        return json.loads(arguments)
+    except json.JSONDecodeError:
+        return {"value": arguments}
 
 
 def map_tool(tool: ToolDefinition) -> dict[str, Any]:
@@ -125,14 +166,19 @@ def map_anthropic_response(provider_id: str, response: Any) -> ChatResponse:
         message=(
             Message(
                 role=MessageRole.ASSISTANT,
-                content=[
-                    ContentPart(
-                        type=ContentPartType.TEXT,
-                        text=text,
-                    )
-                ],
+                content=(
+                    [
+                        ContentPart(
+                            type=ContentPartType.TEXT,
+                            text=text,
+                        )
+                    ]
+                    if text
+                    else None
+                ),
+                tool_calls=tool_calls or None,
             )
-            if text
+            if text or tool_calls
             else None
         ),
         tool_calls=tool_calls,

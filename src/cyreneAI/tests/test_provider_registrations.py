@@ -25,7 +25,9 @@ def test_register_default_providers_registers_catalog_and_builders() -> None:
     assert factory.exists(ProviderType.OPENAI_RESPONSES)
     assert factory.exists(ProviderType.ANTHROPIC)
     assert factory.exists(ProviderType.GOOGLE)
-    assert registry.list_by_capability(ProviderCapability.EMBEDDING) == []
+    assert registry.list_by_capability(ProviderCapability.EMBEDDING) == [
+        registry.get(ProviderType.OPENAI_COMPATIBLE),
+    ]
     assert registry.list_by_capability(ProviderCapability.IMAGE_GENERATION) == [
         registry.get(ProviderType.OPENAI_RESPONSES),
         registry.get(ProviderType.GOOGLE),

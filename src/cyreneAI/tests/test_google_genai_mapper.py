@@ -10,7 +10,7 @@ from cyreneAI.core.schema.message import (
     Message,
     MessageRole,
 )
-from cyreneAI.core.schema.tool import ToolChoice, ToolDefinition
+from cyreneAI.core.schema.tool import ToolCall, ToolChoice, ToolDefinition
 from cyreneAI.infra.adapters.providers.google_genai.mapper import (
     map_google_content_image_generation_request,
     map_google_genai_request,
@@ -122,9 +122,97 @@ def test_map_google_genai_response_builds_core_response() -> None:
     assert response.message is not None
     assert response.message.content is not None
     assert response.message.content[0].text == "pong"
+    assert response.message.tool_calls is not None
+    assert response.message.tool_calls[0].id == "lookup"
     assert response.tool_calls[0].id == "lookup"
     assert response.tool_calls[0].name == "lookup"
     assert response.tool_calls[0].arguments == "{\"key\": \"value\"}"
+
+
+def test_map_google_genai_request_preserves_tool_feedback_turn() -> None:
+    request = ChatRequest(
+        provider_id="provider-1",
+        model="gemini-test",
+        messages=[
+            Message(
+                role=MessageRole.ASSISTANT,
+                tool_calls=[
+                    ToolCall(
+                        id="call-1",
+                        name="lookup",
+                        arguments="{\"key\":\"value\"}",
+                    )
+                ],
+            ),
+            Message(
+                role=MessageRole.TOOL,
+                name="lookup",
+                tool_call_id="call-1",
+                content=[ContentPart(type=ContentPartType.TEXT, text="found")],
+            ),
+        ],
+    )
+
+    payload = map_google_genai_request(request)
+
+    assert payload["contents"] == [
+        {
+            "role": "model",
+            "parts": [
+                {
+                    "function_call": {
+                        "id": "call-1",
+                        "name": "lookup",
+                        "args": {"key": "value"},
+                    }
+                }
+            ],
+        },
+        {
+            "role": "user",
+            "parts": [
+                {
+                    "function_response": {
+                        "name": "lookup",
+                        "response": {
+                            "result": "found",
+                        },
+                    }
+                }
+            ],
+        },
+    ]
+
+
+def test_map_google_genai_response_preserves_tool_only_message() -> None:
+    google_response = GenerateContentResponse.model_validate(
+        {
+            "model_version": "gemini-test",
+            "candidates": [
+                {
+                    "content": {
+                        "role": "model",
+                        "parts": [
+                            {
+                                "function_call": {
+                                    "name": "lookup",
+                                    "args": {"key": "value"},
+                                }
+                            },
+                        ],
+                    },
+                    "finish_reason": "STOP",
+                }
+            ],
+        }
+    )
+
+    response = map_google_genai_response("provider-1", google_response)
+
+    assert response.message is not None
+    assert response.message.content is None
+    assert response.message.tool_calls is not None
+    assert response.message.tool_calls[0].id == "lookup"
 
 
 def test_google_image_generation_route_selection() -> None:

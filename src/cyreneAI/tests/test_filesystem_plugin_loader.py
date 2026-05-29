@@ -181,3 +181,24 @@ def test_filesystem_plugin_loader_requires_plugin_object(tmp_path) -> None:
 
     with pytest.raises(PluginConfigurationError):
         FileSystemPluginLoader(plugin_path).load()
+
+
+def test_filesystem_plugin_loader_rejects_entrypoint_escape(tmp_path) -> None:
+    plugin_path = tmp_path / "escaped"
+    plugin_path.mkdir()
+    outside_path = tmp_path / "outside.py"
+    outside_path.write_text("plugin = object()\n", encoding="utf-8")
+    (plugin_path / "plugin.json").write_text(
+        json.dumps(
+            {
+                "plugin_id": "demo.escaped",
+                "name": "Escaped",
+                "description": "Escaped plugin entrypoint.",
+                "entrypoint": "../outside.py",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(PluginConfigurationError):
+        FileSystemPluginLoader(plugin_path).load()

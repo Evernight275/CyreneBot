@@ -604,6 +604,40 @@ def test_plugin_declared_interval_task_runs_on_start() -> None:
     asyncio.run(run())
 
 
+def test_plugin_declared_interval_task_continues_after_failure() -> None:
+    manifest = PluginManifest(
+        plugin_id="thirdparty.interval",
+        name="Interval",
+        description="Interval plugin.",
+        entrypoint="plugin.py",
+        capabilities=[PluginCapability.TASK],
+    )
+    plugin = CyreneBot(manifest)
+    called = asyncio.Event()
+    attempts = 0
+
+    @plugin.task("tick", interval_seconds=0.01, run_on_start=True)
+    async def tick(request):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("temporary failure")
+        called.set()
+
+    async def run() -> None:
+        runtime = await build_cyrene_ai_runtime(
+            plugin_loaders=[_FakePluginLoader(plugin)],
+            register_builtin_plugins=False,
+        )
+        try:
+            await asyncio.wait_for(called.wait(), timeout=1)
+            assert attempts >= 2
+        finally:
+            await runtime.close()
+
+    asyncio.run(run())
+
+
 def test_plugin_runtime_context_requires_task_permission() -> None:
     manifest = PluginManifest(
         plugin_id="thirdparty.tasks",

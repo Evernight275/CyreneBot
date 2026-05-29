@@ -78,7 +78,12 @@ def _load_plugin_project(
     if plugin_assets is not None:
         plugin_assets.register(manifest.plugin_id, project_path / "assets")
 
+    project_root = project_path.resolve()
     entrypoint = (project_path / manifest.entrypoint).resolve()
+    if entrypoint != project_root and not entrypoint.is_relative_to(project_root):
+        raise PluginConfigurationError(
+            f"Plugin {manifest.plugin_id} entrypoint cannot escape plugin project"
+        )
     if not entrypoint.is_file():
         raise PluginConfigurationError(
             f"Plugin {manifest.plugin_id} entrypoint {entrypoint} does not exist"

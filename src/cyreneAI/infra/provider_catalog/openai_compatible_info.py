@@ -14,6 +14,7 @@ OPENAI_COMPATIBLE_PROVIDER_INFO = ProviderInfo(
     models=None,
     capabilities=[
         ProviderCapability.CHAT,
+        ProviderCapability.EMBEDDING,
     ],
     features=[
         ProviderFeature.TOOL_CALLING,
