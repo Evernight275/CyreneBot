@@ -24,16 +24,47 @@ infra/bootstrap
 
 application
   应用编排层：runtime、chat、embedding、indexing、retrieval、RAG chat。
+
+cyreneAI.bootstrap
+  默认 composition root：把 core、application 和 infra 装成可运行 runtime。
+
+server
+  HTTP/API 层：只依赖默认 composition root、application runtime 和 server 自身模块。
 ```
 
-依赖方向固定：
+允许依赖方向固定：
 
 ```text
-core -> infra
-core/infra -> application
+core
+  -> 标准库和项目无关的轻量基础库
+
+infra/provider_catalog
+  -> core/schema
+
+infra/adapters
+  -> core
+  -> 外部 SDK 只允许在 adapter 内出现
+
+infra/bootstrap
+  -> core
+  -> infra/provider_catalog
+  -> infra/adapters
+
+application
+  -> core
+
+cyreneAI.bootstrap
+  -> core
+  -> application
+  -> infra
+
+server
+  -> cyreneAI.bootstrap
+  -> application runtime
+  -> server
 ```
 
-实际代码里体现为：`core` 不知道 `infra` 和 `application`；`infra` 不反向依赖 `application`；`application` 可以组合 `core` 和 `infra` 提供的能力。
+实际代码里体现为：`core` 不知道 `infra`、`application` 和 `server`；`infra` 不反向依赖 `application` 或 `server`；`application` 只面向 `core` 的 schema、protocol 和 manager 编排业务流程；默认总装只落在 `cyreneAI.bootstrap`。
 
 `cyreneAI.adapters` 是面向使用方的公共适配层。它可以放本地文件加载、轻量 factory、稳定 adapter 导出；不允许放 provider 的 `builder.py`、`instance.py`、`mapper.py`、`errors.py` 这类内部实现文件，也不放 provider 实现目录。provider 仍通过 `provider_catalog`、`infra/adapters/providers` 和 `infra/bootstrap/registrations` 治理。
 
@@ -41,6 +72,14 @@ core/infra -> application
 
 ```mermaid
 flowchart LR
+  %% =====================
+  %% Default Composition Root
+  %% =====================
+  subgraph ROOT["cyreneAI.bootstrap：默认总装"]
+    direction TB
+    root_boot["build_cyrene_ai_runtime\n装配默认 infra"]
+  end
+
   %% =====================
   %% Application Layer
   %% =====================
@@ -110,10 +149,11 @@ flowchart LR
   app_runtime --> app_retrieve
   app_runtime --> app_rag
 
-  app_boot --> provider_regs
-  app_boot --> skill_adapters
-  app_boot --> sqlite
-  app_boot --> vector_adapters
+  root_boot --> app_boot
+  root_boot --> provider_regs
+  root_boot --> skill_adapters
+  root_boot --> sqlite
+  root_boot --> vector_adapters
 
   app_chat --> provider_core
   app_chat --> context_core
@@ -173,10 +213,12 @@ flowchart LR
   %% Styling
   %% =====================
   classDef app fill:#e8f1ff,stroke:#3267c8,color:#111;
+  classDef root fill:#f5ecff,stroke:#7b45c6,color:#111;
   classDef infra fill:#fff4e6,stroke:#d18419,color:#111;
   classDef core fill:#eef9f0,stroke:#2f8f46,color:#111;
   classDef base fill:#f7f7f7,stroke:#777,color:#111;
 
+  class root_boot root;
   class app_boot,app_runtime,app_chat app;
   class app_boot,app_runtime,app_chat,app_embed,app_index,app_retrieve,app_rag app;
   class provider_regs,provider_adapters,tool_adapters,skill_adapters,vector_adapters,sqlite,sqlalchemy,catalog infra;
@@ -246,6 +288,41 @@ RAGChatOrchestrator
 ```
 
 例如 DeepSeek thinking tool-call 需要回传 `reasoning_content`，这是 OpenAI-compatible 供应商差异：`mapper` 提供可选字段映射，`instance` 根据 provider 配置启用，`core` 只保存通用 `Message.metadata`，`application` 不认识 DeepSeek。
+
+## 边界守护
+
+分层边界由测试守住，不只依赖人工 review。核心边界测试位于 `src/cyreneAI/tests/test_infra_provider_boundaries.py`，覆盖：
+
+```text
+provider_catalog 只允许 info 文件
+core 不 import 外部 SDK、infra、application、server、adapters
+provider_catalog 只 import core/schema
+provider adapter 目录只允许 __init__.py、builder.py、errors.py、instance.py、mapper.py
+provider adapters 不 import application 或 server
+infra 不 import application 或 server
+bootstrap registrations 只装配 core、catalog、adapters、infra bootstrap
+application 不 import infra 或 server
+application 不定义 CyreneAISchema 派生类
+application 不定义公开 dataclass DTO，明确白名单除外
+只有 core/schema 可以定义 CyreneAISchema 派生类
+application 顶层目录按用例分组
+```
+
+同时还有模块级边界测试守住 `core/context`、`core/skill`、`core/tool`、`core/vector` 等子域不 import infra 或外部 SDK；公共 adapter facade 测试守住 `cyreneAI.adapters` 不泄露 application、infra bootstrap 或 provider catalog。
+
+当前验收命令：
+
+```bash
+uv run python -m compileall src
+uv run pytest src\cyreneAI\tests
+```
+
+最近一次本地验收结果：
+
+```text
+compileall 通过
+467 passed, 8 skipped
+```
 
 ## 扩展落点
 
