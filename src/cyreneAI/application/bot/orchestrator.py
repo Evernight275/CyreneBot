@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 
+from cyreneAI.application.agent.orchestrator import AgentOrchestrator, AgentRunRequest
 from cyreneAI.application.chat.orchestrator import (
     ApplicationChatRequest,
     ApplicationChatResult,
@@ -30,9 +31,12 @@ from cyreneAI.core.schema.bot import (
 )
 from cyreneAI.core.errors.bot import BotInputError, BotUnsupportedEventError
 from cyreneAI.core.schema.application import ApplicationBotRequest, ApplicationBotResult
+from cyreneAI.core.schema.application import BotMessageResponseMode, BotMessageTriggerMode
 from cyreneAI.core.schema.message import ContentPart, ContentPartType, Message, MessageRole
 from cyreneAI.core.schema.plugin import PluginCommandRequest
 from cyreneAI.core.schema.plugin import PluginEvent, PluginEventType
+from cyreneAI.core.schema.agent import AgentRunResult
+from cyreneAI.core.schema.tool import ToolResult
 
 
 logger = logging.getLogger(__name__)
@@ -46,6 +50,7 @@ class BotOrchestrator:
     def __init__(self, runtime: CyreneAIRuntime) -> None:
         self._runtime = runtime
         self._chat_orchestrator = ChatOrchestrator(runtime)
+        self._agent_orchestrator = AgentOrchestrator(runtime)
 
     async def handle(self, request: ApplicationBotRequest) -> ApplicationBotResult:
         """
@@ -69,7 +74,57 @@ class BotOrchestrator:
                 f"Bot event {request.event.event_type} is not supported"
             )
 
+        if not _should_trigger_message_response(request):
+            return ApplicationBotResult(
+                actions=plugin_event_actions,
+                metadata={
+                    **request.metadata,
+                    "bot_event_id": request.event.event_id,
+                    "bot_channel_id": request.event.channel_id,
+                    "message_triggered": False,
+                    "message_trigger_mode": request.message_trigger_mode,
+                },
+            )
+
         user_message = _bot_event_to_user_message(request.event)
+        if request.message_response_mode == BotMessageResponseMode.AGENT:
+            agent_result = await self._agent_orchestrator.run(
+                AgentRunRequest(
+                    session_id=request.event.session_id,
+                    provider_id=request.provider_id,
+                    model=request.model,
+                    messages=[user_message],
+                    context_budget=request.context_budget,
+                    max_steps=request.max_agent_steps,
+                    temperature=request.temperature,
+                    max_tokens=request.max_tokens,
+                    stream=request.stream,
+                    tool_choice=request.tool_choice,
+                    allowed_tool_names=request.allowed_tool_names,
+                    metadata={
+                        **request.metadata,
+                        "bot_event_id": request.event.event_id,
+                        "bot_channel_id": request.event.channel_id,
+                        "bot_user_id": request.event.user_id or "",
+                    },
+                )
+            )
+            action = _agent_result_to_send_message_action(
+                event=request.event,
+                agent_result=agent_result,
+            )
+            return ApplicationBotResult(
+                actions=[*plugin_event_actions, action],
+                agent_result=agent_result,
+                tool_results=_agent_tool_results(agent_result),
+                metadata={
+                    **request.metadata,
+                    "bot_event_id": request.event.event_id,
+                    "bot_channel_id": request.event.channel_id,
+                    "message_response_mode": request.message_response_mode,
+                },
+            )
+
         chat_result = await self._chat_orchestrator.chat(
             ApplicationChatRequest(
                 session_id=request.event.session_id,
@@ -105,6 +160,7 @@ class BotOrchestrator:
                 **request.metadata,
                 "bot_event_id": request.event.event_id,
                 "bot_channel_id": request.event.channel_id,
+                "message_response_mode": request.message_response_mode,
             },
         )
 
@@ -306,6 +362,76 @@ def _known_plugin_command_names(plugin_manager: PluginManager | None) -> set[str
     }
 
 
+def _should_trigger_message_response(request: ApplicationBotRequest) -> bool:
+    mode = request.message_trigger_mode
+    if mode == BotMessageTriggerMode.ALWAYS:
+        return True
+    if mode == BotMessageTriggerMode.NEVER:
+        return False
+    if mode == BotMessageTriggerMode.DIRECT:
+        return _is_direct_message(request.event)
+    if mode == BotMessageTriggerMode.MENTION:
+        return _is_mentioned(request)
+    if mode == BotMessageTriggerMode.KEYWORD:
+        return _has_trigger_keyword(request)
+    if mode == BotMessageTriggerMode.DIRECT_OR_MENTION:
+        return _is_direct_message(request.event) or _is_mentioned(request)
+    return False
+
+
+def _is_direct_message(event: BotEvent) -> bool:
+    if _metadata_truthy(event.metadata.get("is_direct")):
+        return True
+    if event.message is not None and _metadata_truthy(
+        event.message.metadata.get("is_direct")
+    ):
+        return True
+
+    chat_type = event.metadata.get("telegram_chat_type")
+    if chat_type is None and event.message is not None:
+        chat_type = event.message.metadata.get("telegram_chat_type")
+    return str(chat_type).casefold() == "private"
+
+
+def _is_mentioned(request: ApplicationBotRequest) -> bool:
+    if _metadata_truthy(request.event.metadata.get("bot_was_mentioned")):
+        return True
+
+    text = _bot_event_text(request.event)
+    if not text:
+        return False
+    normalized_text = text.casefold()
+    mentions = [
+        mention.casefold().removeprefix("@")
+        for mention in request.message_trigger_mentions
+        if mention.strip()
+    ]
+    return any(
+        f"@{mention}" in normalized_text
+        for mention in mentions
+    )
+
+
+def _has_trigger_keyword(request: ApplicationBotRequest) -> bool:
+    text = _bot_event_text(request.event)
+    if not text:
+        return False
+    normalized_text = text.casefold()
+    return any(
+        keyword.strip().casefold() in normalized_text
+        for keyword in request.message_trigger_keywords
+        if keyword.strip()
+    )
+
+
+def _metadata_truthy(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.casefold() in {"1", "true", "yes", "on"}
+    return False
+
+
 def _bot_event_to_plugin_event(event: BotEvent) -> PluginEvent:
     return PluginEvent(
         event_id=event.event_id,
@@ -385,3 +511,49 @@ def _chat_result_to_send_message_action(
             "finish_reason": chat_result.response.finish_reason,
         },
     )
+
+
+def _agent_result_to_send_message_action(
+    *,
+    event: BotEvent,
+    agent_result: AgentRunResult,
+) -> BotAction:
+    response_message = agent_result.response.message
+    content = response_message.content if response_message is not None else None
+    if not content:
+        content = [
+            ContentPart(
+                type=ContentPartType.TEXT,
+                text="",
+            )
+        ]
+
+    return BotAction(
+        action_type=BotActionType.SEND_MESSAGE,
+        channel_id=event.channel_id,
+        session_id=event.session_id,
+        recipient_id=event.user_id,
+        thread_id=event.thread_id,
+        message=BotMessage(
+            sender_id="bot",
+            content=content,
+            metadata={
+                "provider_id": agent_result.response.provider_id,
+                "model": agent_result.response.model or "",
+                "agent_stop_reason": agent_result.stop_reason,
+            },
+        ),
+        metadata={
+            "bot_event_id": event.event_id,
+            "agent_completed": agent_result.completed,
+            "agent_stop_reason": agent_result.stop_reason,
+        },
+    )
+
+
+def _agent_tool_results(agent_result: AgentRunResult) -> list[ToolResult]:
+    return [
+        tool_result
+        for step in agent_result.steps
+        for tool_result in step.tool_results
+    ]

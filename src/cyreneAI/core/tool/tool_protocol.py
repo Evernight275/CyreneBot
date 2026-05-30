@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from cyreneAI.core.schema.tool import ToolCall, ToolDefinition, ToolResult
+from cyreneAI.core.schema.tool import (
+    ToolCall,
+    ToolDefinition,
+    ToolExecutionPolicy,
+    ToolResult,
+)
 
 
 class ToolExecutorProtocol(Protocol):
@@ -55,5 +60,24 @@ class ToolRegistryProtocol(Protocol):
     def list_definitions(self) -> list[ToolDefinition]:
         """
         列出工具定义
+        """
+        ...
+
+
+class ToolSandboxRunnerProtocol(Protocol):
+    """
+    工具沙箱运行器协议。
+    """
+
+    async def execute(
+        self,
+        *,
+        call: ToolCall,
+        definition: ToolDefinition,
+        executor: ToolExecutorProtocol,
+        policy: ToolExecutionPolicy,
+    ) -> ToolResult:
+        """
+        在受控执行环境中执行工具调用。
         """
         ...

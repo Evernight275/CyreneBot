@@ -5,6 +5,11 @@ from typing import Any, Literal
 from pydantic import Field
 
 from cyreneAI.core.schema.base import CyreneAISchema
+from cyreneAI.core.schema.application import (
+    BotMessageResponseMode,
+    BotMessageTriggerMode,
+)
+from cyreneAI.core.schema.context import ContextBudget, ContextSegment
 from cyreneAI.core.schema.message import (
     ContentPart,
     ContentPartType,
@@ -22,6 +27,7 @@ from cyreneAI.core.schema.plugin import (
     PluginStatusReport,
     PluginTaskDefinition,
 )
+from cyreneAI.core.schema.tool import ToolChoice
 
 
 class HTTPMessage(CyreneAISchema):
@@ -59,6 +65,21 @@ class ChatRequestBody(CyreneAISchema):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class AgentRunRequestBody(CyreneAISchema):
+    provider_id: str
+    model: str
+    goal: str | None = None
+    messages: list[HTTPMessage] = []
+    context_budget: ContextBudget | None = None
+    additional_context_segments: list[ContextSegment] = []
+    max_steps: int = Field(default=4, ge=1)
+    allowed_tool_names: list[str] | None = None
+    tool_choice: ToolChoice | None = None
+    temperature: float | None = None
+    max_tokens: int | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class ImageGenerationRequestBody(CyreneAISchema):
     provider_id: str
     model: str
@@ -76,6 +97,11 @@ class ChannelWebhookRequestBody(CyreneAISchema):
     payload: dict[str, Any]
     temperature: float | None = None
     max_tokens: int | None = None
+    max_agent_steps: int = Field(default=4, ge=1)
+    message_response_mode: BotMessageResponseMode = BotMessageResponseMode.CHAT
+    message_trigger_mode: BotMessageTriggerMode = BotMessageTriggerMode.ALWAYS
+    message_trigger_keywords: list[str] = []
+    message_trigger_mentions: list[str] = []
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -147,6 +173,7 @@ class PluginPermissionAuditReport(CyreneAISchema):
 
 
 __all__ = [
+    "AgentRunRequestBody",
     "ChannelWebhookRequestBody",
     "ChatRequestBody",
     "HTTPMessage",

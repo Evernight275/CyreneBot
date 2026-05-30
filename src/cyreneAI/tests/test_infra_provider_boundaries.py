@@ -23,6 +23,7 @@ EXTERNAL_SDK_IMPORT_ROOTS = {
 
 APPLICATION_TOP_LEVEL_NAMES = {
     "__init__.py",
+    "agent",
     "bootstrap.py",
     "bot",
     "channels",
@@ -31,6 +32,7 @@ APPLICATION_TOP_LEVEL_NAMES = {
     "knowledge",
     "plugins",
     "runtime.py",
+    "tools",
 }
 
 APPLICATION_ALLOWED_PUBLIC_DATACLASSES = {

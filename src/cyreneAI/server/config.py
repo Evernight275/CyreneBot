@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import os
 from datetime import timedelta
+from typing import Any, Literal, cast
 
 from dotenv import load_dotenv
 
@@ -103,6 +105,60 @@ def build_context_database_path_from_env() -> str | None:
     load_dotenv()
 
     return _env_str("CYRENEAI_CONTEXT_DATABASE_PATH") or "data/context.db"
+
+
+def build_vector_database_path_from_env() -> str | None:
+    load_dotenv()
+
+    return _env_str("CYRENEAI_VECTOR_DATABASE_PATH") or "data/vector.db"
+
+
+def build_tool_sandbox_mode_from_env() -> Literal["in_process", "subprocess"] | None:
+    load_dotenv()
+
+    mode = _env_str("CYRENEAI_TOOL_SANDBOX_MODE")
+    if mode is None:
+        return None
+    if mode not in {"in_process", "subprocess"}:
+        raise ValueError("CYRENEAI_TOOL_SANDBOX_MODE must be in_process or subprocess")
+    return cast(Literal["in_process", "subprocess"], mode)
+
+
+def build_tool_sandbox_commands_from_env() -> dict[str, list[str]] | None:
+    load_dotenv()
+
+    raw = _env_str("CYRENEAI_TOOL_SANDBOX_COMMANDS_JSON")
+    if raw is None:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError("CYRENEAI_TOOL_SANDBOX_COMMANDS_JSON must be valid JSON") from exc
+    if not isinstance(parsed, dict):
+        raise ValueError("CYRENEAI_TOOL_SANDBOX_COMMANDS_JSON must be a JSON object")
+
+    commands: dict[str, list[str]] = {}
+    for name, command in cast(dict[str, Any], parsed).items():
+        if not isinstance(name, str) or not name:
+            raise ValueError("tool sandbox command names must be non-empty strings")
+        if not isinstance(command, list) or not command:
+            raise ValueError("tool sandbox commands must be non-empty arrays")
+        command_items: list[str] = []
+        for item in cast(list[Any], command):
+            if not isinstance(item, str) or not item:
+                raise ValueError("tool sandbox command items must be non-empty strings")
+            command_items.append(item)
+        commands[name] = command_items
+    return commands
+
+
+def build_tool_sandbox_timeout_seconds_from_env() -> float | None:
+    load_dotenv()
+
+    raw = _env_str("CYRENEAI_TOOL_SANDBOX_TIMEOUT_SECONDS")
+    if raw is None:
+        return None
+    return float(raw)
 
 
 def build_plugin_paths_from_env() -> list[str]:

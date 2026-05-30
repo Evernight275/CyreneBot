@@ -55,6 +55,11 @@ class ChannelWebhookHandler:
                 tool_choice=request.tool_choice,
                 allowed_tool_names=request.allowed_tool_names,
                 max_tool_rounds=request.max_tool_rounds,
+                max_agent_steps=request.max_agent_steps,
+                message_response_mode=request.message_response_mode,
+                message_trigger_mode=request.message_trigger_mode,
+                message_trigger_keywords=request.message_trigger_keywords,
+                message_trigger_mentions=request.message_trigger_mentions,
                 metadata={
                     **request.metadata,
                     "webhook_channel_id": request.channel_id,

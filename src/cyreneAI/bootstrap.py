@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
+from typing import Literal
 
 from cyreneAI.application.bootstrap import (
     build_cyrene_ai_runtime as build_application_runtime,
@@ -28,7 +29,10 @@ from cyreneAI.core.provider.registry import ProviderRegistry
 from cyreneAI.core.schema.provider import ProviderConfig
 from cyreneAI.core.skill.manager import SkillManager
 from cyreneAI.core.skill.registry import SkillRegistry
-from cyreneAI.core.tool.tool_protocol import ToolRegistryProtocol
+from cyreneAI.core.tool.tool_protocol import (
+    ToolRegistryProtocol,
+    ToolSandboxRunnerProtocol,
+)
 from cyreneAI.core.vector.vector_protocol import VectorStoreProtocol
 from cyreneAI.infra.adapters.skills.filesystem.loader import FileSystemSkillLoader
 from cyreneAI.infra.adapters.bot_polling_states.sqlite.builder import (
@@ -41,6 +45,10 @@ from cyreneAI.infra.adapters.plugins.filesystem import (
 )
 from cyreneAI.infra.adapters.plugins.sqlite import create_sqlite_plugin_task_store
 from cyreneAI.infra.adapters.bot_sessions.memory import InMemoryBotSessionStore
+from cyreneAI.infra.adapters.tools.sandbox import (
+    InProcessToolSandboxRunner,
+    SubprocessToolSandboxRunner,
+)
 from cyreneAI.infra.adapters.vector_stores.sqlite.builder import (
     create_sqlite_vector_store,
 )
@@ -81,6 +89,11 @@ async def build_cyrene_ai_runtime(
     disabled_plugin_ids: list[str] | None = None,
     plugin_fail_fast: bool = True,
     register_builtin_plugins: bool = True,
+    register_builtin_tools: bool = True,
+    tool_sandbox_runner: ToolSandboxRunnerProtocol | None = None,
+    tool_sandbox_mode: Literal["in_process", "subprocess"] | None = None,
+    tool_sandbox_commands: Mapping[str, Sequence[str]] | None = None,
+    tool_sandbox_timeout_seconds: float | None = None,
 ) -> CyreneAIRuntime:
     """
     构建带默认 infra 适配的 CyreneAI 运行时。
@@ -113,6 +126,13 @@ async def build_cyrene_ai_runtime(
         raise ValueError("vector_store and vector_database_path cannot both be set")
     if runtime_vector_store is None and vector_database_path is not None:
         runtime_vector_store = await create_sqlite_vector_store(vector_database_path)
+
+    runtime_tool_sandbox_runner = _build_tool_sandbox_runner(
+        tool_sandbox_runner=tool_sandbox_runner,
+        tool_sandbox_mode=tool_sandbox_mode,
+        tool_sandbox_commands=tool_sandbox_commands,
+        tool_sandbox_timeout_seconds=tool_sandbox_timeout_seconds,
+    )
 
     runtime_bot_session_manager = bot_session_manager
     if runtime_bot_session_manager is not None and bot_session_store is not None:
@@ -152,7 +172,10 @@ async def build_cyrene_ai_runtime(
                 "plugin_paths require FileSystemPluginAssets or plugin_assets=None"
             )
         runtime_plugin_loaders.extend(
-            FileSystemPluginLoader(path, plugin_assets=runtime_plugin_assets)
+            FileSystemPluginLoader(
+                _resolve_project_relative_path(path),
+                plugin_assets=runtime_plugin_assets,
+            )
             for path in plugin_paths
         )
 
@@ -164,10 +187,7 @@ async def build_cyrene_ai_runtime(
         )
 
     runtime_plugin_task_store = plugin_task_store
-    if (
-        runtime_plugin_task_store is not None
-        and plugin_task_database_path is not None
-    ):
+    if runtime_plugin_task_store is not None and plugin_task_database_path is not None:
         raise ValueError(
             "plugin_task_store and plugin_task_database_path cannot both be set"
         )
@@ -198,10 +218,7 @@ async def build_cyrene_ai_runtime(
             token=telegram_bot_token,
         )
 
-    if (
-        runtime_bot_session_manager is None
-        and runtime_bot_channel_registry is not None
-    ):
+    if runtime_bot_session_manager is None and runtime_bot_channel_registry is not None:
         runtime_bot_session_manager = BotSessionManager(InMemoryBotSessionStore())
 
     return await build_application_runtime(
@@ -218,7 +235,9 @@ async def build_cyrene_ai_runtime(
         disabled_plugin_ids=disabled_plugin_ids,
         plugin_fail_fast=plugin_fail_fast,
         register_builtin_plugins=register_builtin_plugins,
+        register_builtin_tools=register_builtin_tools,
         tool_registry=tool_registry,
+        tool_sandbox_runner=runtime_tool_sandbox_runner,
         vector_store=runtime_vector_store,
         bot_channel_registry=runtime_bot_channel_registry,
         bot_session_manager=runtime_bot_session_manager,
@@ -246,10 +265,49 @@ def load_filesystem_plugins(
     for path in plugin_paths:
         definitions.extend(
             runtime.plugin_host.load(
-                FileSystemPluginLoader(path, plugin_assets=runtime.plugin_assets)
+                FileSystemPluginLoader(
+                    _resolve_project_relative_path(path),
+                    plugin_assets=runtime.plugin_assets,
+                )
             )
         )
     return definitions
+
+
+def _build_tool_sandbox_runner(
+    *,
+    tool_sandbox_runner: ToolSandboxRunnerProtocol | None,
+    tool_sandbox_mode: Literal["in_process", "subprocess"] | None,
+    tool_sandbox_commands: Mapping[str, Sequence[str]] | None,
+    tool_sandbox_timeout_seconds: float | None,
+) -> ToolSandboxRunnerProtocol | None:
+    if tool_sandbox_runner is not None and tool_sandbox_mode is not None:
+        raise ValueError("tool_sandbox_runner and tool_sandbox_mode cannot both be set")
+    if tool_sandbox_runner is not None:
+        return tool_sandbox_runner
+    if tool_sandbox_mode is None:
+        return None
+    if tool_sandbox_mode == "in_process":
+        return InProcessToolSandboxRunner()
+    if tool_sandbox_mode == "subprocess":
+        if not tool_sandbox_commands:
+            raise ValueError("subprocess tool sandbox requires tool_sandbox_commands")
+        return SubprocessToolSandboxRunner(
+            tool_sandbox_commands,
+            default_timeout=tool_sandbox_timeout_seconds or 30.0,
+        )
+    raise ValueError(f"Unsupported tool sandbox mode: {tool_sandbox_mode}")
+
+
+def _resolve_project_relative_path(path: str | Path) -> Path:
+    candidate = Path(path)
+    if candidate.is_absolute() or candidate.exists():
+        return candidate
+
+    project_candidate = Path(__file__).resolve().parents[2] / candidate
+    if project_candidate.exists():
+        return project_candidate
+    return candidate
 
 
 __all__ = ["build_cyrene_ai_runtime", "load_filesystem_plugins"]

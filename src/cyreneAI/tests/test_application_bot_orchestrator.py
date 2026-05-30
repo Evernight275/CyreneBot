@@ -29,6 +29,10 @@ from cyreneAI.core.errors.plugin import PluginInputError
 from cyreneAI.core.provider.factory import ProviderFactory
 from cyreneAI.core.provider.manager import ProviderManager
 from cyreneAI.core.schema.chat import ChatFinishReason, ChatRequest, ChatResponse
+from cyreneAI.core.schema.application import (
+    BotMessageResponseMode,
+    BotMessageTriggerMode,
+)
 from cyreneAI.core.schema.message import (
     ContentPart,
     ContentPartType,
@@ -77,6 +81,34 @@ def _bot_event(text: str = "hello") -> BotEvent:
             sender_id="user-1",
             content=_content(text),
         ),
+    )
+
+
+def _telegram_event(
+    text: str = "hello",
+    *,
+    chat_type: str = "private",
+) -> BotEvent:
+    event = _bot_event(text)
+    message = event.message
+    assert message is not None
+    return event.model_copy(
+        update={
+            "channel_id": "telegram",
+            "session_id": "telegram:99",
+            "thread_id": "99",
+            "message": message.model_copy(
+                update={
+                    "metadata": {
+                        "telegram_chat_type": chat_type,
+                    }
+                }
+            ),
+            "metadata": {
+                "telegram_chat_id": "99",
+                "telegram_chat_type": chat_type,
+            },
+        }
     )
 
 
@@ -210,6 +242,97 @@ def test_bot_orchestrator_turns_message_event_into_send_action() -> None:
         assert action.message.content == _content("pong")
         assert result.chat_result is not None
         assert result.chat_result.response.finish_reason == ChatFinishReason.STOP
+
+    asyncio.run(run())
+
+
+def test_bot_orchestrator_can_run_agent_for_direct_non_command_message() -> None:
+    async def run() -> None:
+        provider = FakeChatProvider(
+            ChatResponse(
+                provider_id="provider-1",
+                model="fake-model",
+                message=_chat_message(MessageRole.ASSISTANT, "agent pong"),
+                finish_reason=ChatFinishReason.STOP,
+            )
+        )
+        runtime = await _build_runtime(provider)
+
+        result = await BotOrchestrator(runtime).handle(
+            ApplicationBotRequest(
+                event=_telegram_event("hello agent"),
+                provider_id="provider-1",
+                model="fake-model",
+                message_response_mode=BotMessageResponseMode.AGENT,
+                message_trigger_mode=BotMessageTriggerMode.DIRECT,
+            )
+        )
+
+        assert len(provider.requests) == 1
+        assert provider.requests[0].messages[-1].content == _content("hello agent")
+        assert result.chat_result is None
+        assert result.agent_result is not None
+        assert result.actions[0].message is not None
+        assert result.actions[0].message.content == _content("agent pong")
+        assert result.actions[0].metadata["agent_completed"] is True
+
+    asyncio.run(run())
+
+
+def test_bot_orchestrator_skips_group_message_when_direct_trigger_required() -> None:
+    async def run() -> None:
+        provider = FakeChatProvider(
+            ChatResponse(
+                provider_id="provider-1",
+                model="fake-model",
+                message=_chat_message(MessageRole.ASSISTANT, "unused"),
+                finish_reason=ChatFinishReason.STOP,
+            )
+        )
+        runtime = await _build_runtime(provider)
+
+        result = await BotOrchestrator(runtime).handle(
+            ApplicationBotRequest(
+                event=_telegram_event("group noise", chat_type="group"),
+                provider_id="provider-1",
+                model="fake-model",
+                message_trigger_mode=BotMessageTriggerMode.DIRECT,
+            )
+        )
+
+        assert provider.requests == []
+        assert result.actions == []
+        assert result.metadata["message_triggered"] is False
+        assert result.metadata["message_trigger_mode"] == "direct"
+
+    asyncio.run(run())
+
+
+def test_bot_orchestrator_triggers_keyword_message_without_slash() -> None:
+    async def run() -> None:
+        provider = FakeChatProvider(
+            ChatResponse(
+                provider_id="provider-1",
+                model="fake-model",
+                message=_chat_message(MessageRole.ASSISTANT, "keyword pong"),
+                finish_reason=ChatFinishReason.STOP,
+            )
+        )
+        runtime = await _build_runtime(provider)
+
+        result = await BotOrchestrator(runtime).handle(
+            ApplicationBotRequest(
+                event=_telegram_event("cyrene please help", chat_type="group"),
+                provider_id="provider-1",
+                model="fake-model",
+                message_trigger_mode=BotMessageTriggerMode.KEYWORD,
+                message_trigger_keywords=["cyrene"],
+            )
+        )
+
+        assert len(provider.requests) == 1
+        assert result.actions[0].message is not None
+        assert result.actions[0].message.content == _content("keyword pong")
 
     asyncio.run(run())
 

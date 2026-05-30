@@ -10,6 +10,10 @@ from cyreneAI.application.channels.webhook_handler import (
 )
 from cyreneAI.application.runtime import CyreneAIRuntime
 from cyreneAI.core.errors.base import CyreneAIError
+from cyreneAI.core.schema.application import (
+    BotMessageResponseMode,
+    BotMessageTriggerMode,
+)
 from cyreneAI.server.dependencies import get_runtime
 
 
@@ -29,6 +33,15 @@ async def handle_telegram_webhook(
     model: str | None = Query(default=None),
     temperature: float | None = Query(default=None),
     max_tokens: int | None = Query(default=None),
+    max_agent_steps: int = Query(default=4, ge=1),
+    message_response_mode: BotMessageResponseMode = Query(
+        default=BotMessageResponseMode.CHAT
+    ),
+    message_trigger_mode: BotMessageTriggerMode = Query(
+        default=BotMessageTriggerMode.ALWAYS
+    ),
+    message_trigger_keyword: list[str] = Query(default=[]),
+    message_trigger_mention: list[str] = Query(default=[]),
     runtime: CyreneAIRuntime = Depends(get_runtime),
 ) -> dict:
     _verify_telegram_secret_token(
@@ -53,6 +66,11 @@ async def handle_telegram_webhook(
                 model=runtime_model,
                 temperature=temperature,
                 max_tokens=max_tokens,
+                max_agent_steps=max_agent_steps,
+                message_response_mode=message_response_mode,
+                message_trigger_mode=message_trigger_mode,
+                message_trigger_keywords=message_trigger_keyword,
+                message_trigger_mentions=message_trigger_mention,
                 metadata={
                     "telegram_update_id": str(payload.get("update_id") or ""),
                 },

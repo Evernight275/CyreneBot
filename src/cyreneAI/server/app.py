@@ -10,6 +10,7 @@ from cyreneAI.application.runtime import CyreneAIRuntime
 from cyreneAI.server.channel_polling import ChannelPollingRunner
 from cyreneAI.server.config import ServerSettings, build_server_settings_from_env
 from cyreneAI.server.routes import (
+    agents,
     auth,
     channels,
     chat,
@@ -64,6 +65,7 @@ def create_app(
     app.include_router(auth.router)
     app.include_router(providers.router)
     app.include_router(chat.router)
+    app.include_router(agents.router)
     app.include_router(images.router)
     app.include_router(plugins.router)
     app.include_router(channels.router)

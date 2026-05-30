@@ -4,9 +4,9 @@ from typing import cast
 from uuid import uuid4
 
 from cyreneAI.application.runtime import CyreneAIRuntime
+from cyreneAI.application.tools.execution_context import use_tool_execution_context
 from cyreneAI.core.context.context_protocol import ContextBuilderProtocol
 from cyreneAI.core.errors.base import StateError, UnsupportedError
-from cyreneAI.core.errors.tool import ToolExecutionError
 from cyreneAI.core.provider.provider_protocol import ChatProviderProtocol
 from cyreneAI.core.schema.application import ApplicationChatRequest, ApplicationChatResult
 from cyreneAI.core.schema.chat import ChatRequest, ChatResponse
@@ -23,7 +23,12 @@ from cyreneAI.core.schema.context import (
 )
 from cyreneAI.core.schema.message import ContentPart, ContentPartType, Message, MessageRole
 from cyreneAI.core.schema.skill import SkillInstructionBundle, SkillSelectionRequest
-from cyreneAI.core.schema.tool import ToolChoice, ToolDefinition, ToolResult
+from cyreneAI.core.schema.tool import (
+    ToolChoice,
+    ToolDefinition,
+    ToolExecutionPolicy,
+    ToolResult,
+)
 
 
 class ChatOrchestrator:
@@ -116,6 +121,7 @@ class ChatOrchestrator:
                 break
 
             round_results = await self._execute_tool_calls(
+                current_request,
                 current_response,
                 allowed_tool_names=allowed_tool_names,
             )
@@ -242,6 +248,7 @@ class ChatOrchestrator:
 
     async def _execute_tool_calls(
         self,
+        request: ChatRequest,
         response: ChatResponse,
         *,
         allowed_tool_names: set[str] | None,
@@ -253,12 +260,17 @@ class ChatOrchestrator:
             raise StateError("Provider returned tool calls but no tool manager is set")
 
         results: list[ToolResult] = []
+        policy = _build_tool_execution_policy(allowed_tool_names)
         for call in response.tool_calls:
-            if allowed_tool_names is not None and call.name not in allowed_tool_names:
-                raise ToolExecutionError(
-                    f"Tool {call.name} is not allowed for this chat request"
+            with use_tool_execution_context(
+                session_id=_optional_string(request.metadata.get("session_id")),
+                provider_id=request.provider_id,
+                model=request.model,
+                metadata=request.metadata,
+            ):
+                results.append(
+                    await self._runtime.tool_manager.execute(call, policy=policy)
                 )
-            results.append(await self._runtime.tool_manager.execute(call))
         return results
 
 
@@ -375,6 +387,18 @@ def _filter_tool_choice(
     if tool_choice.name not in tool_names:
         return None
     return tool_choice
+
+
+def _build_tool_execution_policy(
+    allowed_tool_names: set[str] | None,
+) -> ToolExecutionPolicy:
+    return ToolExecutionPolicy(
+        allowed_tool_names=(
+            sorted(allowed_tool_names)
+            if allowed_tool_names is not None
+            else None
+        )
+    )
 
 
 def _build_provider_messages(
@@ -507,3 +531,9 @@ def _messages_to_text(messages: list[Message]) -> str:
             if part.text:
                 chunks.append(part.text)
     return "\n".join(chunks)
+
+
+def _optional_string(value: object) -> str | None:
+    if isinstance(value, str) and value:
+        return value
+    return None

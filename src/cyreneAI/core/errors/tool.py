@@ -51,6 +51,14 @@ class ToolExecutionError(ToolError, RequestError):
     pass
 
 
+class ToolPolicyError(ToolExecutionError):
+    """
+    当工具执行策略拒绝调用时引发此异常
+    """
+
+    pass
+
+
 class ToolResultError(ToolError, ResponseError):
     """
     当工具执行结果不可用时引发此异常

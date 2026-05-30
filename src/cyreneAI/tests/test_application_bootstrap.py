@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sys
+from pathlib import Path
 
 import pytest
 
@@ -10,7 +12,14 @@ from cyreneAI.core.bot.registry import BotChannelRegistry
 from cyreneAI.core.bot.session_manager import BotSessionManager
 from cyreneAI.core.schema.bot import BotChannelDefinition
 from cyreneAI.core.schema.skill import SkillSelectionRequest
-from cyreneAI.core.schema.tool import ToolCall, ToolDefinition, ToolResult
+from cyreneAI.core.schema.tool import (
+    ToolCall,
+    ToolDefinition,
+    ToolPermission,
+    ToolResult,
+    ToolRiskLevel,
+    ToolSafetyProfile,
+)
 from cyreneAI.core.schema.vector import VectorQuery, VectorRecord
 from cyreneAI.infra.adapters.channels.memory import InMemoryBotChannel
 from cyreneAI.infra.adapters.channels.telegram import TelegramBotChannel
@@ -105,6 +114,18 @@ def _tool_call(call_id: str, name: str, arguments: str) -> ToolCall:
     return ToolCall(id=call_id, name=name, arguments=arguments)
 
 
+def _sandboxed_definition(name: str) -> ToolDefinition:
+    return ToolDefinition(
+        name=name,
+        description="Sandboxed tool.",
+        safety_profile=ToolSafetyProfile(
+            risk_level=ToolRiskLevel.PROCESS,
+            permissions=[ToolPermission.SUBPROCESS],
+            sandbox_required=True,
+        ),
+    )
+
+
 def test_build_cyrene_ai_runtime_wires_context_skills_and_tools(tmp_path) -> None:
     asyncio.run(_run_build_runtime(tmp_path))
 
@@ -156,6 +177,106 @@ def test_build_cyrene_ai_runtime_rejects_duplicate_vector_store_config(
     tmp_path,
 ) -> None:
     asyncio.run(_run_build_runtime_rejects_duplicate_vector_store_config(tmp_path))
+
+
+async def _run_build_runtime_wires_in_process_tool_sandbox() -> None:
+    runtime = await build_cyrene_ai_runtime(
+        tool_sandbox_mode="in_process",
+        register_builtin_plugins=False,
+    )
+    try:
+        assert runtime.tool_registry is not None
+        assert runtime.tool_manager is not None
+        assert runtime.tool_sandbox_runner is not None
+
+        runtime.tool_registry.register(
+            _sandboxed_definition("sandboxed_lookup"),
+            _FakeToolExecutor(),
+        )
+        result = await runtime.tool_manager.execute(
+            _tool_call("call-1", "sandboxed_lookup", "{\"key\":\"value\"}")
+        )
+
+        assert result.metadata["sandbox"]["mode"] == "in_process"
+        assert result.metadata["tool_policy"]["sandbox_used"] is True
+        assert result.metadata["tool_policy"]["sandbox_mode"] == "in_process"
+    finally:
+        await runtime.close()
+
+
+def test_build_cyrene_ai_runtime_wires_in_process_tool_sandbox() -> None:
+    asyncio.run(_run_build_runtime_wires_in_process_tool_sandbox())
+
+
+async def _run_build_runtime_wires_subprocess_tool_sandbox() -> None:
+    code = (
+        "import json, sys; "
+        "payload = json.load(sys.stdin); "
+        "print(json.dumps({'content': 'sandbox:' + payload['arguments']['key']}))"
+    )
+    runtime = await build_cyrene_ai_runtime(
+        tool_sandbox_mode="subprocess",
+        tool_sandbox_commands={
+            "sandboxed_lookup": [sys.executable, "-c", code],
+        },
+        tool_sandbox_timeout_seconds=5,
+        register_builtin_plugins=False,
+    )
+    try:
+        assert runtime.tool_registry is not None
+        assert runtime.tool_manager is not None
+        assert runtime.tool_sandbox_runner is not None
+
+        runtime.tool_registry.register(
+            _sandboxed_definition("sandboxed_lookup"),
+            _FakeToolExecutor(),
+        )
+        result = await runtime.tool_manager.execute(
+            _tool_call("call-1", "sandboxed_lookup", "{\"key\":\"value\"}")
+        )
+
+        assert result.content == "sandbox:value"
+        assert result.metadata["sandbox"]["mode"] == "subprocess"
+        assert result.metadata["tool_policy"]["sandbox_used"] is True
+        assert result.metadata["tool_policy"]["sandbox_mode"] == "subprocess"
+    finally:
+        await runtime.close()
+
+
+def test_build_cyrene_ai_runtime_wires_subprocess_tool_sandbox() -> None:
+    asyncio.run(_run_build_runtime_wires_subprocess_tool_sandbox())
+
+
+async def _run_build_runtime_rejects_duplicate_tool_sandbox_config() -> None:
+    runtime = await build_cyrene_ai_runtime(
+        tool_sandbox_mode="in_process",
+        register_builtin_plugins=False,
+    )
+    try:
+        with pytest.raises(ValueError):
+            await build_cyrene_ai_runtime(
+                tool_sandbox_runner=runtime.tool_sandbox_runner,
+                tool_sandbox_mode="in_process",
+                register_builtin_plugins=False,
+            )
+    finally:
+        await runtime.close()
+
+
+def test_build_cyrene_ai_runtime_rejects_duplicate_tool_sandbox_config() -> None:
+    asyncio.run(_run_build_runtime_rejects_duplicate_tool_sandbox_config())
+
+
+async def _run_build_runtime_rejects_subprocess_sandbox_without_commands() -> None:
+    with pytest.raises(ValueError):
+        await build_cyrene_ai_runtime(
+            tool_sandbox_mode="subprocess",
+            register_builtin_plugins=False,
+        )
+
+
+def test_build_cyrene_ai_runtime_rejects_subprocess_sandbox_without_commands() -> None:
+    asyncio.run(_run_build_runtime_rejects_subprocess_sandbox_without_commands())
 
 
 async def _run_build_runtime_wires_bot_channel_registry() -> None:
@@ -342,6 +463,40 @@ async def _run_build_runtime_loads_plugin_paths(tmp_path) -> None:
 
 def test_build_cyrene_ai_runtime_loads_plugin_paths(tmp_path) -> None:
     asyncio.run(_run_build_runtime_loads_plugin_paths(tmp_path))
+
+
+async def _run_build_runtime_resolves_project_relative_plugin_paths(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    runtime = await build_cyrene_ai_runtime(
+        plugin_paths=["examples/plugins/demo_hello"],
+        register_builtin_plugins=False,
+    )
+    try:
+        assert runtime.plugin_manager is not None
+        assert [
+            plugin.plugin_id for plugin in runtime.plugin_manager.list_plugins()
+        ] == ["demo.hello"]
+    finally:
+        await runtime.close()
+
+
+def test_build_runtime_resolves_project_relative_plugin_paths(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    project_path = Path("examples/plugins/demo_hello")
+    if not project_path.exists():
+        pytest.skip("example plugin project is not available")
+
+    asyncio.run(
+        _run_build_runtime_resolves_project_relative_plugin_paths(
+            tmp_path,
+            monkeypatch,
+        )
+    )
 
 
 async def _run_build_runtime_rejects_duplicate_plugin_storage_config(tmp_path) -> None:

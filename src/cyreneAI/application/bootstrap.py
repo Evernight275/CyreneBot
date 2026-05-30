@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from cyreneAI.application.runtime import CyreneAIRuntime
+from cyreneAI.application.tools import register_memory_tools
 from cyreneAI.application.plugins.builtin_bot_commands import (
     register_builtin_bot_command_plugins,
 )
@@ -30,7 +31,10 @@ from cyreneAI.core.skill.manager import SkillManager
 from cyreneAI.core.skill.skill_protocol import SkillRegistryProtocol
 from cyreneAI.core.tool.manager import ToolManager
 from cyreneAI.core.tool.registry import ToolRegistry
-from cyreneAI.core.tool.tool_protocol import ToolRegistryProtocol
+from cyreneAI.core.tool.tool_protocol import (
+    ToolRegistryProtocol,
+    ToolSandboxRunnerProtocol,
+)
 from cyreneAI.core.vector.manager import VectorManager
 from cyreneAI.core.vector.vector_protocol import VectorStoreProtocol
 
@@ -54,7 +58,9 @@ async def build_cyrene_ai_runtime(
     disabled_plugin_ids: list[str] | None = None,
     plugin_fail_fast: bool = True,
     register_builtin_plugins: bool = True,
+    register_builtin_tools: bool = True,
     tool_registry: ToolRegistryProtocol | None = None,
+    tool_sandbox_runner: ToolSandboxRunnerProtocol | None = None,
     vector_store: VectorStoreProtocol | None = None,
     bot_channel_registry: BotChannelRegistryProtocol | None = None,
     bot_session_manager: BotSessionManager | None = None,
@@ -100,12 +106,19 @@ async def build_cyrene_ai_runtime(
         plugin_assets=plugin_assets,
         plugin_task_scheduler=runtime_plugin_task_scheduler,
         tool_registry=runtime_tool_registry,
-        tool_manager=ToolManager(runtime_tool_registry),
+        tool_manager=ToolManager(
+            runtime_tool_registry,
+            sandbox_runner=tool_sandbox_runner,
+        ),
+        tool_sandbox_runner=tool_sandbox_runner,
         bot_channel_registry=bot_channel_registry,
         bot_session_manager=bot_session_manager,
         bot_polling_state_store=bot_polling_state_store,
     )
     runtime.plugin_outbox = ApplicationPluginOutbox(runtime)
+    if register_builtin_tools:
+        register_memory_tools(runtime)
+
     runtime_plugin_host = PluginHost(
         runtime=runtime,
         registry=runtime_plugin_registry,

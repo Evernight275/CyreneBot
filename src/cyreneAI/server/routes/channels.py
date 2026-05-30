@@ -33,6 +33,11 @@ async def handle_channel_webhook(
                 model=body.model,
                 temperature=body.temperature,
                 max_tokens=body.max_tokens,
+                max_agent_steps=body.max_agent_steps,
+                message_response_mode=body.message_response_mode,
+                message_trigger_mode=body.message_trigger_mode,
+                message_trigger_keywords=body.message_trigger_keywords,
+                message_trigger_mentions=body.message_trigger_mentions,
                 metadata=body.metadata.copy(),
             )
         )

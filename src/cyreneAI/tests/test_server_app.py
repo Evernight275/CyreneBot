@@ -6,6 +6,7 @@ import logging
 from datetime import UTC, datetime
 from datetime import timedelta
 
+import pytest
 from fastapi.testclient import TestClient
 
 from cyreneAI.api.cli import init_plugin_project
@@ -78,6 +79,10 @@ from cyreneAI.server.config import (
     build_telegram_webhook_model_from_env,
     build_telegram_webhook_provider_id_from_env,
     build_telegram_webhook_secret_from_env,
+    build_tool_sandbox_commands_from_env,
+    build_tool_sandbox_mode_from_env,
+    build_tool_sandbox_timeout_seconds_from_env,
+    build_vector_database_path_from_env,
 )
 
 
@@ -455,6 +460,28 @@ def test_server_chat() -> None:
     assert response.json()["response"]["message"]["content"][0]["text"] == "pong"
 
 
+def test_server_runs_agent() -> None:
+    response = _client().post(
+        "/agents/run",
+        json={
+            "provider_id": "provider-1",
+            "model": "chat-model",
+            "goal": "ping",
+            "metadata": {
+                "session_id": "agent-session",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["completed"] is True
+    assert data["stop_reason"] == "final_response"
+    assert data["metadata"]["session_id"] == "agent-session"
+    assert data["response"]["message"]["content"][0]["text"] == "pong"
+    assert data["steps"][0]["request"]["messages"][0]["content"][0]["text"] == "ping"
+
+
 def test_server_generates_images() -> None:
     response = _client().post(
         "/images/generate",
@@ -622,6 +649,57 @@ def test_server_uses_default_context_database_path(monkeypatch) -> None:
     monkeypatch.delenv("CYRENEAI_CONTEXT_DATABASE_PATH", raising=False)
 
     assert build_context_database_path_from_env() == "data/context.db"
+
+
+def test_server_builds_vector_database_path_from_env(monkeypatch) -> None:
+    monkeypatch.setenv("CYRENEAI_VECTOR_DATABASE_PATH", "data/vector.db")
+
+    assert build_vector_database_path_from_env() == "data/vector.db"
+
+
+def test_server_uses_default_vector_database_path(monkeypatch) -> None:
+    monkeypatch.delenv("CYRENEAI_VECTOR_DATABASE_PATH", raising=False)
+
+    assert build_vector_database_path_from_env() == "data/vector.db"
+
+
+def test_server_builds_tool_sandbox_config_from_env(monkeypatch) -> None:
+    monkeypatch.setenv("CYRENEAI_TOOL_SANDBOX_MODE", "subprocess")
+    monkeypatch.setenv(
+        "CYRENEAI_TOOL_SANDBOX_COMMANDS_JSON",
+        '{"lookup":["python","tool.py"]}',
+    )
+    monkeypatch.setenv("CYRENEAI_TOOL_SANDBOX_TIMEOUT_SECONDS", "10")
+
+    assert build_tool_sandbox_mode_from_env() == "subprocess"
+    assert build_tool_sandbox_commands_from_env() == {
+        "lookup": ["python", "tool.py"],
+    }
+    assert build_tool_sandbox_timeout_seconds_from_env() == 10
+
+
+def test_server_disables_tool_sandbox_by_default(monkeypatch) -> None:
+    monkeypatch.delenv("CYRENEAI_TOOL_SANDBOX_MODE", raising=False)
+    monkeypatch.delenv("CYRENEAI_TOOL_SANDBOX_COMMANDS_JSON", raising=False)
+    monkeypatch.delenv("CYRENEAI_TOOL_SANDBOX_TIMEOUT_SECONDS", raising=False)
+
+    assert build_tool_sandbox_mode_from_env() is None
+    assert build_tool_sandbox_commands_from_env() is None
+    assert build_tool_sandbox_timeout_seconds_from_env() is None
+
+
+def test_server_rejects_invalid_tool_sandbox_mode(monkeypatch) -> None:
+    monkeypatch.setenv("CYRENEAI_TOOL_SANDBOX_MODE", "docker")
+
+    with pytest.raises(ValueError):
+        build_tool_sandbox_mode_from_env()
+
+
+def test_server_rejects_invalid_tool_sandbox_commands(monkeypatch) -> None:
+    monkeypatch.setenv("CYRENEAI_TOOL_SANDBOX_COMMANDS_JSON", '{"lookup":[]}')
+
+    with pytest.raises(ValueError):
+        build_tool_sandbox_commands_from_env()
 
 
 def test_server_builds_plugin_paths_from_env(monkeypatch) -> None:

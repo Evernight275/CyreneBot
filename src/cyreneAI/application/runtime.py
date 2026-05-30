@@ -19,7 +19,10 @@ from cyreneAI.core.plugin.plugin_protocol import (
 from cyreneAI.core.provider.manager import ProviderManager
 from cyreneAI.core.skill.manager import SkillManager
 from cyreneAI.core.tool.manager import ToolManager
-from cyreneAI.core.tool.tool_protocol import ToolRegistryProtocol
+from cyreneAI.core.tool.tool_protocol import (
+    ToolRegistryProtocol,
+    ToolSandboxRunnerProtocol,
+)
 from cyreneAI.core.vector.manager import VectorManager
 
 if TYPE_CHECKING:
@@ -45,6 +48,7 @@ class CyreneAIRuntime:
     plugin_task_scheduler: PluginTaskSchedulerProtocol | None = None
     tool_registry: ToolRegistryProtocol | None = None
     tool_manager: ToolManager | None = None
+    tool_sandbox_runner: ToolSandboxRunnerProtocol | None = None
     bot_channel_registry: BotChannelRegistryProtocol | None = None
     bot_session_manager: BotSessionManager | None = None
     bot_polling_state_store: BotPollingStateStoreProtocol | None = None

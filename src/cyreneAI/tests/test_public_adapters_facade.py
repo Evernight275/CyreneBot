@@ -20,7 +20,9 @@ from cyreneAI.adapters.documents import (
 from cyreneAI.adapters.skills import FileSystemSkillLoader
 from cyreneAI.adapters.tools import (
     HttpToolExecutor,
+    InProcessToolSandboxRunner,
     PythonCallableToolExecutor,
+    SubprocessToolSandboxRunner,
     SubprocessToolExecutor,
     define_python_tool,
 )
@@ -41,7 +43,9 @@ def test_public_adapters_facade_exports_supported_adapters() -> None:
     assert create_memory_vector_store.__name__ == "create_memory_vector_store"
     assert create_sqlite_vector_store.__name__ == "create_sqlite_vector_store"
     assert HttpToolExecutor.__name__ == "HttpToolExecutor"
+    assert InProcessToolSandboxRunner.__name__ == "InProcessToolSandboxRunner"
     assert PythonCallableToolExecutor.__name__ == "PythonCallableToolExecutor"
+    assert SubprocessToolSandboxRunner.__name__ == "SubprocessToolSandboxRunner"
     assert SubprocessToolExecutor.__name__ == "SubprocessToolExecutor"
     assert define_python_tool.__name__ == "define_python_tool"
     assert FileSystemSkillLoader.__name__ == "FileSystemSkillLoader"

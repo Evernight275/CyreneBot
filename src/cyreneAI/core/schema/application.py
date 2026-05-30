@@ -6,6 +6,7 @@ from typing import Any, Literal
 from pydantic import Field, model_validator
 
 from cyreneAI.core.schema.base import CyreneAISchema
+from cyreneAI.core.schema.agent import AgentRunResult
 from cyreneAI.core.schema.bot import (
     BotAction,
     BotConversationState,
@@ -44,6 +45,28 @@ class RAGContextFormat(StrEnum):
     NUMBERED = "numbered"
     SOURCE_TAGGED = "source_tagged"
     COMPACT = "compact"
+
+
+class BotMessageResponseMode(StrEnum):
+    """
+    普通 bot 消息触发后的响应模式。
+    """
+
+    CHAT = "chat"
+    AGENT = "agent"
+
+
+class BotMessageTriggerMode(StrEnum):
+    """
+    普通 bot 消息触发策略。
+    """
+
+    ALWAYS = "always"
+    DIRECT = "direct"
+    MENTION = "mention"
+    KEYWORD = "keyword"
+    DIRECT_OR_MENTION = "direct_or_mention"
+    NEVER = "never"
 
 
 class ApplicationChatRequest(CyreneAISchema):
@@ -253,6 +276,11 @@ class ApplicationBotRequest(CyreneAISchema):
     tool_choice: ToolChoice | None = None
     allowed_tool_names: list[str] | None = None
     max_tool_rounds: int = Field(default=1, ge=0)
+    max_agent_steps: int = Field(default=4, ge=1)
+    message_response_mode: BotMessageResponseMode = BotMessageResponseMode.CHAT
+    message_trigger_mode: BotMessageTriggerMode = BotMessageTriggerMode.ALWAYS
+    message_trigger_keywords: list[str] = []
+    message_trigger_mentions: list[str] = []
 
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -264,6 +292,7 @@ class ApplicationBotResult(CyreneAISchema):
 
     actions: list[BotAction] = []
     chat_result: ApplicationChatResult | None = None
+    agent_result: AgentRunResult | None = None
     tool_results: list[ToolResult] = []
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -297,6 +326,11 @@ class ApplicationChannelEventsRequest(CyreneAISchema):
     tool_choice: ToolChoice | None = None
     allowed_tool_names: list[str] | None = None
     max_tool_rounds: int = Field(default=1, ge=0)
+    max_agent_steps: int = Field(default=4, ge=1)
+    message_response_mode: BotMessageResponseMode = BotMessageResponseMode.CHAT
+    message_trigger_mode: BotMessageTriggerMode = BotMessageTriggerMode.ALWAYS
+    message_trigger_keywords: list[str] = []
+    message_trigger_mentions: list[str] = []
 
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -330,6 +364,11 @@ class ApplicationChannelWebhookRequest(CyreneAISchema):
     tool_choice: ToolChoice | None = None
     allowed_tool_names: list[str] | None = None
     max_tool_rounds: int = Field(default=1, ge=0)
+    max_agent_steps: int = Field(default=4, ge=1)
+    message_response_mode: BotMessageResponseMode = BotMessageResponseMode.CHAT
+    message_trigger_mode: BotMessageTriggerMode = BotMessageTriggerMode.ALWAYS
+    message_trigger_keywords: list[str] = []
+    message_trigger_mentions: list[str] = []
 
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -404,6 +443,8 @@ __all__ = [
     "ApplicationVectorSearchResult",
     "ApplicationVectorUpsertRequest",
     "ApplicationVectorWriteResult",
+    "BotMessageResponseMode",
+    "BotMessageTriggerMode",
     "ChunkStrategy",
     "RAGContextFormat",
 ]
