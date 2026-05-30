@@ -6,6 +6,7 @@ name = "cyreneai-plugin-sdk"
 version = "0.1.1"
 description = "Plugin author SDK for CyreneAI."
 readme = "README.md"
+license = "Apache-2.0"
 requires-python = ">=3.12"
 dependencies = [
     "pydantic",
