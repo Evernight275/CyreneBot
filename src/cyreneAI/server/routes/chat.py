@@ -35,6 +35,10 @@ async def chat(
                 ],
                 temperature=body.temperature,
                 max_tokens=body.max_tokens,
+                tool_choice=body.tool_choice,
+                allowed_tool_names=body.allowed_tool_names,
+                tool_execution_policy=body.tool_execution_policy,
+                max_tool_rounds=body.max_tool_rounds,
                 metadata=body.metadata.copy(),
             )
         )

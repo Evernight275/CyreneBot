@@ -1,13 +1,22 @@
 from __future__ import annotations
 
-from typing import cast
+import json
+from typing import Any, cast
 from uuid import uuid4
 
 from cyreneAI.application.runtime import CyreneAIRuntime
+from cyreneAI.application.tools.execution_policy import (
+    build_effective_tool_execution_policy,
+    filter_tool_definitions_for_policy,
+)
 from cyreneAI.application.tools.execution_context import use_tool_execution_context
 from cyreneAI.core.errors.base import StateError, UnsupportedError
+from cyreneAI.core.errors.tool import ToolExecutionError
 from cyreneAI.core.provider.provider_protocol import ChatProviderProtocol
 from cyreneAI.core.schema.agent import (
+    AgentMemoryRetrievalConfig,
+    AgentPlan,
+    AgentPlanningConfig,
     AgentRunRequest,
     AgentRunResult,
     AgentStep,
@@ -27,6 +36,7 @@ from cyreneAI.core.schema.context import (
 )
 from cyreneAI.core.schema.message import ContentPart, ContentPartType, Message, MessageRole
 from cyreneAI.core.schema.tool import (
+    ToolCall,
     ToolChoice,
     ToolDefinition,
     ToolExecutionPolicy,
@@ -44,24 +54,51 @@ class AgentOrchestrator:
 
     async def run(self, request: AgentRunRequest) -> AgentRunResult:
         provider = self._get_chat_provider(request.provider_id)
-        allowed_tool_names = (
-            set(request.allowed_tool_names)
-            if request.allowed_tool_names is not None
-            else None
+        tool_execution_policy = build_effective_tool_execution_policy(
+            policy=request.tool_execution_policy,
+            allowed_tool_names=request.allowed_tool_names,
+            constrained_tool_names=(
+                request.tool_selection.allowed_tool_names
+                if request.tool_selection is not None
+                else None
+            ),
+            additional_denied_tool_names=(
+                request.tool_selection.denied_tool_names
+                if request.tool_selection is not None
+                else None
+            ),
+        )
+        tools = self._list_tool_definitions(
+            tool_execution_policy=tool_execution_policy
+        )
+        plan = _build_agent_plan(
+            request=request,
+            tools=tools,
         )
         initial_messages = _build_initial_messages(request)
         context_result = await self._build_context(
             request=request,
             messages=initial_messages,
         )
+        memory_segment = await self._retrieve_memory_context(
+            request=request,
+            plan=plan,
+            tool_execution_policy=tool_execution_policy,
+        )
         context_window = _append_context_segments(
             context_result.window,
-            request.additional_context_segments,
+            [
+                *([memory_segment] if memory_segment is not None else []),
+                *request.additional_context_segments,
+            ],
         )
         current_request = self._build_provider_request(
             request=request,
-            messages=_context_window_to_messages(context_window),
-            allowed_tool_names=allowed_tool_names,
+            messages=_build_provider_messages(
+                context_window=context_window,
+                plan=plan,
+            ),
+            tools=tools,
         )
         steps: list[AgentStep] = []
         response: ChatResponse | None = None
@@ -72,7 +109,7 @@ class AgentOrchestrator:
             tool_results = await self._execute_tool_calls(
                 current_request,
                 response,
-                allowed_tool_names=allowed_tool_names,
+                tool_execution_policy=tool_execution_policy,
             )
             steps.append(
                 AgentStep(
@@ -97,6 +134,7 @@ class AgentOrchestrator:
                 return AgentRunResult(
                     response=response,
                     steps=steps,
+                    plan=plan,
                     context_snapshot=context_snapshot,
                     completed=True,
                     stop_reason=AgentStopReason.FINAL_RESPONSE,
@@ -130,6 +168,7 @@ class AgentOrchestrator:
         return AgentRunResult(
             response=response,
             steps=steps,
+            plan=plan,
             context_snapshot=context_snapshot,
             completed=False,
             stop_reason=AgentStopReason.MAX_STEPS,
@@ -165,9 +204,8 @@ class AgentOrchestrator:
         *,
         request: AgentRunRequest,
         messages: list[Message],
-        allowed_tool_names: set[str] | None,
+        tools: list[ToolDefinition],
     ) -> ChatRequest:
-        tools = self._list_tool_definitions(allowed_tool_names=allowed_tool_names)
         tool_choice = _filter_tool_choice(
             tool_choice=request.tool_choice,
             tools=tools,
@@ -185,24 +223,23 @@ class AgentOrchestrator:
                 **request.metadata,
                 "session_id": request.session_id,
                 "agent_loop": "minimal",
+                "agent_plan_enabled": plan_enabled(request.planning),
             },
         )
 
     def _list_tool_definitions(
         self,
         *,
-        allowed_tool_names: set[str] | None,
+        tool_execution_policy: ToolExecutionPolicy,
     ) -> list[ToolDefinition]:
         if self._runtime.tool_registry is None:
             return []
         definitions = self._runtime.tool_registry.list_definitions()
-        if allowed_tool_names is None:
-            return definitions
-        return [
-            definition
-            for definition in definitions
-            if definition.name in allowed_tool_names
-        ]
+        return filter_tool_definitions_for_policy(
+            definitions=definitions,
+            policy=tool_execution_policy,
+            sandbox_available=self._runtime.tool_sandbox_runner is not None,
+        )
 
     def _get_chat_provider(self, provider_id: str) -> ChatProviderProtocol:
         provider = self._runtime.provider_manager.get(provider_id)
@@ -229,7 +266,7 @@ class AgentOrchestrator:
         request: ChatRequest,
         response: ChatResponse,
         *,
-        allowed_tool_names: set[str] | None,
+        tool_execution_policy: ToolExecutionPolicy,
     ) -> list[ToolResult]:
         if not response.tool_calls:
             return []
@@ -238,7 +275,6 @@ class AgentOrchestrator:
             raise StateError("Provider returned tool calls but no tool manager is set")
 
         results: list[ToolResult] = []
-        policy = _build_tool_execution_policy(allowed_tool_names)
         for call in response.tool_calls:
             with use_tool_execution_context(
                 session_id=_optional_string(request.metadata.get("session_id")),
@@ -247,9 +283,73 @@ class AgentOrchestrator:
                 metadata=request.metadata,
             ):
                 results.append(
-                    await self._runtime.tool_manager.execute(call, policy=policy)
+                    await self._runtime.tool_manager.execute(
+                        call,
+                        policy=tool_execution_policy,
+                    )
                 )
         return results
+
+    async def _retrieve_memory_context(
+        self,
+        *,
+        request: AgentRunRequest,
+        plan: AgentPlan | None,
+        tool_execution_policy: ToolExecutionPolicy,
+    ) -> ContextSegment | None:
+        config = request.memory_retrieval
+        if config is None or not config.enabled:
+            return None
+        if self._runtime.tool_manager is None:
+            raise StateError("Agent memory retrieval requires a tool manager")
+        if self._runtime.tool_registry is None or not self._runtime.tool_registry.exists(
+            "search_memory"
+        ):
+            raise StateError("Agent memory retrieval requires search_memory tool")
+
+        query = _memory_query(
+            request=request,
+            config=config,
+        )
+        if query is None:
+            return None
+
+        arguments: dict[str, object] = {
+            "query": query,
+            "top_k": config.top_k,
+        }
+        if config.namespace is not None:
+            arguments["namespace"] = config.namespace
+        if config.min_score is not None:
+            arguments["min_score"] = config.min_score
+
+        call = ToolCall(
+            id=f"agent-memory:{uuid4()}",
+            name="search_memory",
+            arguments=json.dumps(arguments, ensure_ascii=False, sort_keys=True),
+        )
+        with use_tool_execution_context(
+            session_id=request.session_id,
+            provider_id=request.provider_id,
+            model=request.model,
+            metadata={
+                **request.metadata,
+                "agent_memory_retrieval": True,
+            },
+        ):
+            result = await self._runtime.tool_manager.execute(
+                call,
+                policy=tool_execution_policy,
+            )
+
+        segment = _memory_result_to_context_segment(
+            request=request,
+            query=query,
+            result=result,
+        )
+        if plan is not None:
+            plan.metadata["memory_match_count"] = len(segment.items)
+        return segment
 
 
 def _build_initial_messages(request: AgentRunRequest) -> list[Message]:
@@ -270,6 +370,105 @@ def _build_initial_messages(request: AgentRunRequest) -> list[Message]:
     return messages
 
 
+def _build_agent_plan(
+    *,
+    request: AgentRunRequest,
+    tools: list[ToolDefinition],
+) -> AgentPlan | None:
+    planning = request.planning
+    if not plan_enabled(planning):
+        return None
+
+    goal = request.goal or _messages_to_text(request.messages)
+    objectives = _build_plan_objectives(
+        goal=goal,
+        planning=planning,
+    )
+    memory_query = (
+        _memory_query(
+            request=request,
+            config=request.memory_retrieval,
+        )
+        if request.memory_retrieval is not None
+        and request.memory_retrieval.enabled
+        else None
+    )
+    return AgentPlan(
+        goal=goal or None,
+        objectives=objectives,
+        selected_tool_names=[tool.name for tool in tools],
+        memory_query=memory_query,
+        instructions=planning.instructions if planning is not None else None,
+        metadata={
+            "planning_enabled": True,
+            "selected_tool_count": len(tools),
+        },
+    )
+
+
+def _build_plan_objectives(
+    *,
+    goal: str,
+    planning: AgentPlanningConfig | None,
+) -> list[str]:
+    max_objectives = planning.max_objectives if planning is not None else 4
+    objectives = [
+        "Understand the goal and relevant constraints.",
+        "Use only selected tools when they reduce uncertainty or perform required work.",
+        "Incorporate retrieved memory before deciding on a final answer.",
+        "Return a concise final response when the goal is satisfied.",
+    ]
+    if goal:
+        objectives.insert(0, f"Complete the user goal: {goal}")
+    return objectives[:max_objectives]
+
+
+def _build_provider_messages(
+    *,
+    context_window: ContextWindow,
+    plan: AgentPlan | None,
+) -> list[Message]:
+    messages: list[Message] = []
+    planning_message = _build_planning_message(plan)
+    if planning_message is not None:
+        messages.append(planning_message)
+    messages.extend(_context_window_to_messages(context_window))
+    return messages
+
+
+def _build_planning_message(plan: AgentPlan | None) -> Message | None:
+    if plan is None:
+        return None
+
+    lines = ["Agent plan:"]
+    if plan.goal:
+        lines.append(f"Goal: {plan.goal}")
+    if plan.instructions:
+        lines.append(f"Instructions: {plan.instructions}")
+    if plan.objectives:
+        lines.append("Objectives:")
+        lines.extend(f"- {objective}" for objective in plan.objectives)
+    if plan.selected_tool_names:
+        lines.append("Selected tools: " + ", ".join(plan.selected_tool_names))
+    if plan.memory_query:
+        lines.append(f"Memory query: {plan.memory_query}")
+
+    return Message(
+        role=MessageRole.SYSTEM,
+        name="agent_plan",
+        content=[
+            ContentPart(
+                type=ContentPartType.TEXT,
+                text="\n".join(lines),
+            )
+        ],
+    )
+
+
+def plan_enabled(planning: AgentPlanningConfig | None) -> bool:
+    return planning is not None and planning.enabled
+
+
 def _build_context_snapshot(
     *,
     request: AgentRunRequest,
@@ -286,6 +485,108 @@ def _build_context_snapshot(
             "agent_loop": "minimal",
         },
     )
+
+
+def _memory_query(
+    *,
+    request: AgentRunRequest,
+    config: AgentMemoryRetrievalConfig | None,
+) -> str | None:
+    if config is not None and config.query is not None and config.query.strip():
+        return config.query.strip()
+    if request.goal is not None and request.goal.strip():
+        return request.goal.strip()
+    text = _messages_to_text(request.messages).strip()
+    if text:
+        return text
+    return None
+
+
+def _memory_result_to_context_segment(
+    *,
+    request: AgentRunRequest,
+    query: str,
+    result: ToolResult,
+) -> ContextSegment:
+    payload = _parse_memory_result_payload(result)
+    raw_matches = payload.get("matches", [])
+    if not isinstance(raw_matches, list):
+        raise ToolExecutionError("search_memory result matches must be an array")
+    matches = cast(list[Any], raw_matches)
+
+    items: list[ContextItem] = []
+    for index, value in enumerate(matches):
+        if not isinstance(value, dict):
+            continue
+        match = cast(dict[str, Any], value)
+        content = match.get("content")
+        if not isinstance(content, str) or not content.strip():
+            continue
+        memory_id = match.get("memory_id")
+        score = match.get("score")
+        metadata = match.get("metadata")
+        item_metadata: dict[str, Any] = {
+            "agent_memory_query": query,
+        }
+        if isinstance(memory_id, str):
+            item_metadata["memory_id"] = memory_id
+        if isinstance(score, (int, float)) and not isinstance(score, bool):
+            item_metadata["score"] = float(score)
+        if isinstance(metadata, dict):
+            item_metadata["memory_metadata"] = cast(dict[str, Any], metadata)
+
+        items.append(
+            ContextItem(
+                item_id=f"{request.session_id}:agent-memory:{index}",
+                type=ContextItemType.MEMORY,
+                source=ContextItemSource.MEMORY,
+                content=content,
+                priority=_memory_priority(score),
+                metadata=item_metadata,
+            )
+        )
+
+    return ContextSegment(
+        segment_id=f"{request.session_id}:agent-memory",
+        role=ContextSegmentRole.MEMORY,
+        items=items,
+        metadata={
+            "agent_memory_query": query,
+            "tool_call_id": result.call_id,
+            "tool_name": result.name,
+            "match_count": len(items),
+        },
+    )
+
+
+def _parse_memory_result_payload(result: ToolResult) -> dict[str, Any]:
+    if result.content is None:
+        return {}
+    try:
+        payload = json.loads(result.content)
+    except json.JSONDecodeError as exc:
+        raise ToolExecutionError(
+            "search_memory result must be valid JSON",
+            cause=exc,
+        ) from exc
+    if not isinstance(payload, dict):
+        raise ToolExecutionError("search_memory result must be a JSON object")
+    return cast(dict[str, Any], payload)
+
+
+def _memory_priority(score: object) -> int:
+    if isinstance(score, (int, float)) and not isinstance(score, bool):
+        return int(float(score) * 1000)
+    return 0
+
+
+def _messages_to_text(messages: list[Message]) -> str:
+    chunks: list[str] = []
+    for message in messages:
+        for part in message.content or []:
+            if part.text:
+                chunks.append(part.text)
+    return "\n".join(chunks)
 
 
 def _append_context_segments(
@@ -480,18 +781,6 @@ def _filter_tool_choice(
     if tool_choice.name not in tool_names:
         return None
     return tool_choice
-
-
-def _build_tool_execution_policy(
-    allowed_tool_names: set[str] | None,
-) -> ToolExecutionPolicy:
-    return ToolExecutionPolicy(
-        allowed_tool_names=(
-            sorted(allowed_tool_names)
-            if allowed_tool_names is not None
-            else None
-        )
-    )
 
 
 def _optional_string(value: object) -> str | None:

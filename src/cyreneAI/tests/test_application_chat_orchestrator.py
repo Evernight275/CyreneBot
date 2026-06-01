@@ -43,7 +43,15 @@ from cyreneAI.core.schema.plugin import (
     PluginMiddlewareType,
 )
 from cyreneAI.core.schema.skill import SkillDefinition
-from cyreneAI.core.schema.tool import ToolCall, ToolChoice, ToolDefinition, ToolResult
+from cyreneAI.core.schema.tool import (
+    ToolCall,
+    ToolChoice,
+    ToolDefinition,
+    ToolExecutionPolicy,
+    ToolResult,
+    ToolRiskLevel,
+    ToolSafetyProfile,
+)
 from cyreneAI.core.skill.manager import SkillManager
 from cyreneAI.core.skill.registry import SkillRegistry
 from cyreneAI.core.tool.manager import ToolManager
@@ -372,6 +380,63 @@ async def _run_chat_orchestrator_filters_tools_by_request_and_skill() -> None:
 
 def test_chat_orchestrator_filters_tools_by_request_and_skill() -> None:
     asyncio.run(_run_chat_orchestrator_filters_tools_by_request_and_skill())
+
+
+async def _run_chat_orchestrator_filters_tools_by_execution_policy() -> None:
+    provider = FakeChatProvider(
+        ChatResponse(
+            provider_id="provider-1",
+            model="fake-model",
+            message=_message(MessageRole.ASSISTANT, "hello"),
+            finish_reason=ChatFinishReason.STOP,
+        )
+    )
+    provider_manager = await _build_provider_manager(provider)
+    tool_registry = ToolRegistry()
+    tool_registry.register(
+        ToolDefinition(
+            name="lookup",
+            description="Lookup a value.",
+            safety_profile=ToolSafetyProfile(risk_level=ToolRiskLevel.READ_ONLY),
+        ),
+        FakeToolExecutor(),
+    )
+    tool_registry.register(
+        ToolDefinition(
+            name="delete",
+            description="Delete a value.",
+            safety_profile=ToolSafetyProfile(risk_level=ToolRiskLevel.WRITE),
+        ),
+        FakeToolExecutor(),
+    )
+    runtime = CyreneAIRuntime(
+        provider_manager=provider_manager,
+        context_builder=ContextWindowBuilder(),
+        tool_registry=tool_registry,
+        tool_manager=ToolManager(tool_registry),
+    )
+
+    await ChatOrchestrator(runtime).chat(
+        ApplicationChatRequest(
+            session_id="session-1",
+            provider_id="provider-1",
+            model="fake-model",
+            messages=[_message(MessageRole.USER, "Use tools.")],
+            tool_choice=ToolChoice(mode="tool", name="delete"),
+            tool_execution_policy=ToolExecutionPolicy(
+                max_risk_level=ToolRiskLevel.READ_ONLY
+            ),
+        )
+    )
+
+    provider_tools = provider.requests[0].tools
+    assert provider_tools is not None
+    assert [tool.name for tool in provider_tools] == ["lookup"]
+    assert provider.requests[0].tool_choice is None
+
+
+def test_chat_orchestrator_filters_tools_by_execution_policy() -> None:
+    asyncio.run(_run_chat_orchestrator_filters_tools_by_execution_policy())
 
 
 async def _run_chat_orchestrator_runs_plugin_llm_middlewares() -> None:

@@ -23,7 +23,7 @@ from cyreneAI.core.schema.embedding import EmbeddingResponse
 from cyreneAI.core.schema.image import ImageGenerationResponse
 from cyreneAI.core.schema.message import Message
 from cyreneAI.core.schema.skill import SkillInstructionBundle
-from cyreneAI.core.schema.tool import ToolChoice, ToolResult
+from cyreneAI.core.schema.tool import ToolChoice, ToolExecutionPolicy, ToolResult
 from cyreneAI.core.schema.vector import VectorRecord, VectorSearchResult
 
 
@@ -89,6 +89,7 @@ class ApplicationChatRequest(CyreneAISchema):
     stream: bool = False
     tool_choice: ToolChoice | None = None
     allowed_tool_names: list[str] | None = None
+    tool_execution_policy: ToolExecutionPolicy | None = None
     max_tool_rounds: int = Field(default=1, ge=0)
 
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -275,6 +276,7 @@ class ApplicationBotRequest(CyreneAISchema):
     stream: bool = False
     tool_choice: ToolChoice | None = None
     allowed_tool_names: list[str] | None = None
+    tool_execution_policy: ToolExecutionPolicy | None = None
     max_tool_rounds: int = Field(default=1, ge=0)
     max_agent_steps: int = Field(default=4, ge=1)
     message_response_mode: BotMessageResponseMode = BotMessageResponseMode.CHAT
@@ -325,6 +327,7 @@ class ApplicationChannelEventsRequest(CyreneAISchema):
     stream: bool = False
     tool_choice: ToolChoice | None = None
     allowed_tool_names: list[str] | None = None
+    tool_execution_policy: ToolExecutionPolicy | None = None
     max_tool_rounds: int = Field(default=1, ge=0)
     max_agent_steps: int = Field(default=4, ge=1)
     message_response_mode: BotMessageResponseMode = BotMessageResponseMode.CHAT
@@ -363,6 +366,7 @@ class ApplicationChannelWebhookRequest(CyreneAISchema):
     stream: bool = False
     tool_choice: ToolChoice | None = None
     allowed_tool_names: list[str] | None = None
+    tool_execution_policy: ToolExecutionPolicy | None = None
     max_tool_rounds: int = Field(default=1, ge=0)
     max_agent_steps: int = Field(default=4, ge=1)
     message_response_mode: BotMessageResponseMode = BotMessageResponseMode.CHAT
@@ -404,6 +408,7 @@ class ApplicationRAGChatRequest(CyreneAISchema):
     stream: bool = False
     tool_choice: ToolChoice | None = None
     allowed_tool_names: list[str] | None = None
+    tool_execution_policy: ToolExecutionPolicy | None = None
     max_tool_rounds: int = Field(default=1, ge=0)
 
     metadata: dict[str, Any] = Field(default_factory=dict)

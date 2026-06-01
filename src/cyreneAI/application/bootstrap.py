@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from cyreneAI.application.runtime import CyreneAIRuntime
-from cyreneAI.application.tools import register_memory_tools
+from cyreneAI.application.tools import (
+    register_core_builtin_tools,
+    register_memory_tools,
+)
 from cyreneAI.application.plugins.builtin_bot_commands import (
     register_builtin_bot_command_plugins,
 )
@@ -117,6 +120,7 @@ async def build_cyrene_ai_runtime(
     )
     runtime.plugin_outbox = ApplicationPluginOutbox(runtime)
     if register_builtin_tools:
+        register_core_builtin_tools(runtime_tool_registry)
         register_memory_tools(runtime)
 
     runtime_plugin_host = PluginHost(

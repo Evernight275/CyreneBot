@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import timedelta
 
 import pytest
@@ -17,6 +18,11 @@ from cyreneAI.core.errors.base import StateError
 from cyreneAI.core.errors.tool import ToolExecutionError
 from cyreneAI.core.provider.factory import ProviderFactory
 from cyreneAI.core.provider.manager import ProviderManager
+from cyreneAI.core.schema.agent import (
+    AgentMemoryRetrievalConfig,
+    AgentPlanningConfig,
+    AgentToolSelectionConfig,
+)
 from cyreneAI.core.schema.chat import ChatFinishReason, ChatRequest, ChatResponse
 from cyreneAI.core.schema.context import (
     ContextItem,
@@ -33,7 +39,13 @@ from cyreneAI.core.schema.message import (
     MessageRole,
 )
 from cyreneAI.core.schema.provider import ProviderConfig, ProviderInfo, ProviderType
-from cyreneAI.core.schema.tool import ToolCall, ToolDefinition, ToolResult
+from cyreneAI.core.schema.tool import (
+    ToolCall,
+    ToolChoice,
+    ToolDefinition,
+    ToolExecutionPolicy,
+    ToolResult,
+)
 from cyreneAI.core.tool.manager import ToolManager
 from cyreneAI.core.tool.registry import ToolRegistry
 
@@ -85,6 +97,31 @@ class RecordingToolExecutor:
             call_id=call.id,
             name=call.name,
             content=f"executed:{call.name}",
+        )
+
+
+class MemorySearchToolExecutor:
+    def __init__(self) -> None:
+        self.calls: list[ToolCall] = []
+
+    async def execute(self, call: ToolCall) -> ToolResult:
+        self.calls.append(call)
+        return ToolResult(
+            call_id=call.id,
+            name=call.name,
+            content=json.dumps(
+                {
+                    "matches": [
+                        {
+                            "memory_id": "memory:session-1:1",
+                            "content": "The user prefers concise answers.",
+                            "score": 0.91,
+                            "metadata": {"namespace": "session-1"},
+                        }
+                    ]
+                },
+                sort_keys=True,
+            ),
         )
 
 
@@ -362,6 +399,169 @@ async def _run_agent_rejects_disallowed_tool_call() -> None:
 
 def test_agent_orchestrator_rejects_disallowed_tool_call() -> None:
     asyncio.run(_run_agent_rejects_disallowed_tool_call())
+
+
+async def _run_agent_intersects_policy_and_legacy_allowed_tools() -> None:
+    provider = FakeChatProvider(
+        ChatResponse(
+            provider_id="provider-1",
+            model="fake-model",
+            message=_message(MessageRole.ASSISTANT, "final"),
+            finish_reason=ChatFinishReason.STOP,
+        )
+    )
+    tool_registry = ToolRegistry()
+    tool_registry.register(
+        ToolDefinition(name="lookup", description="Lookup a value."),
+        RecordingToolExecutor(),
+    )
+    tool_registry.register(
+        ToolDefinition(name="delete", description="Delete a value."),
+        RecordingToolExecutor(),
+    )
+    runtime = await _build_runtime(provider, tool_registry)
+
+    await AgentOrchestrator(runtime).run(
+        AgentRunRequest(
+            session_id="session-1",
+            provider_id="provider-1",
+            model="fake-model",
+            goal="Use tools.",
+            allowed_tool_names=["lookup"],
+            tool_execution_policy=ToolExecutionPolicy(
+                allowed_tool_names=["lookup", "delete"]
+            ),
+            tool_choice=ToolChoice(mode="tool", name="delete"),
+        )
+    )
+
+    assert provider.requests[0].tools is not None
+    assert [tool.name for tool in provider.requests[0].tools] == ["lookup"]
+    assert provider.requests[0].tool_choice is None
+
+
+def test_agent_orchestrator_intersects_policy_and_legacy_allowed_tools() -> None:
+    asyncio.run(_run_agent_intersects_policy_and_legacy_allowed_tools())
+
+
+async def _run_agent_builds_plan_and_selects_tools() -> None:
+    provider = FakeChatProvider(
+        ChatResponse(
+            provider_id="provider-1",
+            model="fake-model",
+            message=_message(MessageRole.ASSISTANT, "final"),
+            finish_reason=ChatFinishReason.STOP,
+        )
+    )
+    tool_registry = ToolRegistry()
+    tool_registry.register(
+        ToolDefinition(name="lookup", description="Lookup a value."),
+        RecordingToolExecutor(),
+    )
+    tool_registry.register(
+        ToolDefinition(name="delete", description="Delete a value."),
+        RecordingToolExecutor(),
+    )
+    runtime = await _build_runtime(provider, tool_registry)
+
+    result = await AgentOrchestrator(runtime).run(
+        AgentRunRequest(
+            session_id="session-1",
+            provider_id="provider-1",
+            model="fake-model",
+            goal="Find the project status.",
+            planning=AgentPlanningConfig(
+                enabled=True,
+                instructions="Prefer low-risk tools first.",
+                max_objectives=2,
+            ),
+            tool_selection=AgentToolSelectionConfig(
+                allowed_tool_names=["lookup"],
+                denied_tool_names=["delete"],
+            ),
+            tool_choice=ToolChoice(mode="tool", name="delete"),
+        )
+    )
+
+    assert result.plan is not None
+    assert result.plan.goal == "Find the project status."
+    assert result.plan.selected_tool_names == ["lookup"]
+    assert len(result.plan.objectives) == 2
+    assert result.plan.instructions == "Prefer low-risk tools first."
+
+    first_request = provider.requests[0]
+    assert first_request.tools is not None
+    assert [tool.name for tool in first_request.tools] == ["lookup"]
+    assert first_request.tool_choice is None
+    assert first_request.messages[0].role == MessageRole.SYSTEM
+    assert first_request.messages[0].name == "agent_plan"
+    assert first_request.messages[0].content is not None
+    assert "Prefer low-risk tools first." in first_request.messages[0].content[0].text
+
+
+def test_agent_orchestrator_builds_plan_and_selects_tools() -> None:
+    asyncio.run(_run_agent_builds_plan_and_selects_tools())
+
+
+async def _run_agent_retrieves_memory_before_first_step() -> None:
+    provider = FakeChatProvider(
+        ChatResponse(
+            provider_id="provider-1",
+            model="fake-model",
+            message=_message(MessageRole.ASSISTANT, "final"),
+            finish_reason=ChatFinishReason.STOP,
+        )
+    )
+    memory_executor = MemorySearchToolExecutor()
+    tool_registry = ToolRegistry()
+    tool_registry.register(
+        ToolDefinition(name="search_memory", description="Search memory."),
+        memory_executor,
+    )
+    runtime = await _build_runtime(provider, tool_registry)
+
+    result = await AgentOrchestrator(runtime).run(
+        AgentRunRequest(
+            session_id="session-1",
+            provider_id="provider-1",
+            model="fake-model",
+            goal="How should you answer me?",
+            planning=AgentPlanningConfig(enabled=True),
+            memory_retrieval=AgentMemoryRetrievalConfig(
+                enabled=True,
+                query="answer style",
+                top_k=3,
+            ),
+        )
+    )
+
+    assert len(memory_executor.calls) == 1
+    assert memory_executor.calls[0].name == "search_memory"
+    assert memory_executor.calls[0].arguments is not None
+    assert json.loads(memory_executor.calls[0].arguments) == {
+        "query": "answer style",
+        "top_k": 3,
+    }
+    assert result.plan is not None
+    assert result.plan.memory_query == "answer style"
+    assert result.plan.metadata["memory_match_count"] == 1
+
+    first_request = provider.requests[0]
+    assert first_request.messages[0].name == "agent_plan"
+    assert first_request.messages[-1].role == MessageRole.SYSTEM
+    assert first_request.messages[-1].content is not None
+    assert first_request.messages[-1].content[0].text == (
+        "The user prefers concise answers."
+    )
+
+    memory_segment = result.context_snapshot.window.segments[1]
+    assert memory_segment.role == ContextSegmentRole.MEMORY
+    assert memory_segment.items[0].type == ContextItemType.MEMORY
+    assert memory_segment.items[0].metadata["memory_id"] == "memory:session-1:1"
+
+
+def test_agent_orchestrator_retrieves_memory_before_first_step() -> None:
+    asyncio.run(_run_agent_retrieves_memory_before_first_step())
 
 
 async def _run_agent_requires_tool_manager_for_tool_calls() -> None:

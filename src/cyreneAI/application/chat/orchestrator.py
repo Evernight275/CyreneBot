@@ -4,6 +4,10 @@ from typing import cast
 from uuid import uuid4
 
 from cyreneAI.application.runtime import CyreneAIRuntime
+from cyreneAI.application.tools.execution_policy import (
+    build_effective_tool_execution_policy,
+    filter_tool_definitions_for_policy,
+)
 from cyreneAI.application.tools.execution_context import use_tool_execution_context
 from cyreneAI.core.context.context_protocol import ContextBuilderProtocol
 from cyreneAI.core.errors.base import StateError, UnsupportedError
@@ -60,15 +64,20 @@ class ChatOrchestrator:
             request.additional_context_segments,
         )
         skill_bundle = self._build_skill_bundle(request)
-        allowed_tool_names = _resolve_allowed_tool_names(
-            request_allowed_tool_names=request.allowed_tool_names,
-            skill_bundle=skill_bundle,
+        tool_execution_policy = build_effective_tool_execution_policy(
+            policy=request.tool_execution_policy,
+            allowed_tool_names=request.allowed_tool_names,
+            constrained_tool_names=(
+                skill_bundle.allowed_tools
+                if skill_bundle is not None
+                else None
+            ),
         )
         provider_request = self._build_provider_request(
             request=request,
             context_window=context_window,
             skill_bundle=skill_bundle,
-            allowed_tool_names=allowed_tool_names,
+            tool_execution_policy=tool_execution_policy,
         )
         provider = self._get_chat_provider(request.provider_id)
         response = await self._chat_provider(provider, provider_request)
@@ -77,7 +86,7 @@ class ChatOrchestrator:
             provider=provider,
             provider_request=provider_request,
             response=response,
-            allowed_tool_names=allowed_tool_names,
+            tool_execution_policy=tool_execution_policy,
         )
 
         saved_context_window = _append_response_message(
@@ -110,7 +119,7 @@ class ChatOrchestrator:
         provider: ChatProviderProtocol,
         provider_request: ChatRequest,
         response: ChatResponse,
-        allowed_tool_names: set[str] | None,
+        tool_execution_policy: ToolExecutionPolicy,
     ) -> tuple[ChatResponse, list[ToolResult]]:
         tool_results: list[ToolResult] = []
         current_request = provider_request
@@ -123,7 +132,7 @@ class ChatOrchestrator:
             round_results = await self._execute_tool_calls(
                 current_request,
                 current_response,
-                allowed_tool_names=allowed_tool_names,
+                tool_execution_policy=tool_execution_policy,
             )
             tool_results.extend(round_results)
             current_request = _append_tool_feedback_messages(
@@ -179,9 +188,9 @@ class ChatOrchestrator:
         request: ApplicationChatRequest,
         context_window: ContextWindow,
         skill_bundle: SkillInstructionBundle | None,
-        allowed_tool_names: set[str] | None,
+        tool_execution_policy: ToolExecutionPolicy,
     ) -> ChatRequest:
-        tools = self._list_tool_definitions(allowed_tool_names=allowed_tool_names)
+        tools = self._list_tool_definitions(tool_execution_policy=tool_execution_policy)
         tool_choice = _filter_tool_choice(
             tool_choice=request.tool_choice,
             tools=tools,
@@ -213,18 +222,16 @@ class ChatOrchestrator:
     def _list_tool_definitions(
         self,
         *,
-        allowed_tool_names: set[str] | None,
+        tool_execution_policy: ToolExecutionPolicy,
     ) -> list[ToolDefinition]:
         if self._runtime.tool_registry is None:
             return []
         definitions = self._runtime.tool_registry.list_definitions()
-        if allowed_tool_names is None:
-            return definitions
-        return [
-            definition
-            for definition in definitions
-            if definition.name in allowed_tool_names
-        ]
+        return filter_tool_definitions_for_policy(
+            definitions=definitions,
+            policy=tool_execution_policy,
+            sandbox_available=self._runtime.tool_sandbox_runner is not None,
+        )
 
     def _get_chat_provider(self, provider_id: str) -> ChatProviderProtocol:
         provider = self._runtime.provider_manager.get(provider_id)
@@ -251,7 +258,7 @@ class ChatOrchestrator:
         request: ChatRequest,
         response: ChatResponse,
         *,
-        allowed_tool_names: set[str] | None,
+        tool_execution_policy: ToolExecutionPolicy,
     ) -> list[ToolResult]:
         if not response.tool_calls:
             return []
@@ -260,7 +267,6 @@ class ChatOrchestrator:
             raise StateError("Provider returned tool calls but no tool manager is set")
 
         results: list[ToolResult] = []
-        policy = _build_tool_execution_policy(allowed_tool_names)
         for call in response.tool_calls:
             with use_tool_execution_context(
                 session_id=_optional_string(request.metadata.get("session_id")),
@@ -269,7 +275,10 @@ class ChatOrchestrator:
                 metadata=request.metadata,
             ):
                 results.append(
-                    await self._runtime.tool_manager.execute(call, policy=policy)
+                    await self._runtime.tool_manager.execute(
+                        call,
+                        policy=tool_execution_policy,
+                    )
                 )
         return results
 
@@ -352,25 +361,6 @@ def _append_response_message(
     return context_window.model_copy(update={"segments": segments})
 
 
-def _resolve_allowed_tool_names(
-    *,
-    request_allowed_tool_names: list[str] | None,
-    skill_bundle: SkillInstructionBundle | None,
-) -> set[str] | None:
-    allowed_tool_names = (
-        set(request_allowed_tool_names)
-        if request_allowed_tool_names is not None
-        else None
-    )
-    if skill_bundle is None:
-        return allowed_tool_names
-
-    skill_allowed_tool_names = set(skill_bundle.allowed_tools)
-    if allowed_tool_names is None:
-        return skill_allowed_tool_names
-    return allowed_tool_names & skill_allowed_tool_names
-
-
 def _filter_tool_choice(
     *,
     tool_choice: ToolChoice | None,
@@ -387,18 +377,6 @@ def _filter_tool_choice(
     if tool_choice.name not in tool_names:
         return None
     return tool_choice
-
-
-def _build_tool_execution_policy(
-    allowed_tool_names: set[str] | None,
-) -> ToolExecutionPolicy:
-    return ToolExecutionPolicy(
-        allowed_tool_names=(
-            sorted(allowed_tool_names)
-            if allowed_tool_names is not None
-            else None
-        )
-    )
 
 
 def _build_provider_messages(

@@ -9,6 +9,11 @@ from cyreneAI.core.schema.application import (
     BotMessageResponseMode,
     BotMessageTriggerMode,
 )
+from cyreneAI.core.schema.agent import (
+    AgentMemoryRetrievalConfig,
+    AgentPlanningConfig,
+    AgentToolSelectionConfig,
+)
 from cyreneAI.core.schema.context import ContextBudget, ContextSegment
 from cyreneAI.core.schema.message import (
     ContentPart,
@@ -27,7 +32,7 @@ from cyreneAI.core.schema.plugin import (
     PluginStatusReport,
     PluginTaskDefinition,
 )
-from cyreneAI.core.schema.tool import ToolChoice
+from cyreneAI.core.schema.tool import ToolChoice, ToolExecutionPolicy
 
 
 class HTTPMessage(CyreneAISchema):
@@ -62,6 +67,10 @@ class ChatRequestBody(CyreneAISchema):
     messages: list[HTTPMessage]
     temperature: float | None = None
     max_tokens: int | None = None
+    tool_choice: ToolChoice | None = None
+    allowed_tool_names: list[str] | None = None
+    tool_execution_policy: ToolExecutionPolicy | None = None
+    max_tool_rounds: int = Field(default=1, ge=0)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -74,6 +83,10 @@ class AgentRunRequestBody(CyreneAISchema):
     additional_context_segments: list[ContextSegment] = []
     max_steps: int = Field(default=4, ge=1)
     allowed_tool_names: list[str] | None = None
+    tool_execution_policy: ToolExecutionPolicy | None = None
+    planning: AgentPlanningConfig | None = None
+    tool_selection: AgentToolSelectionConfig | None = None
+    memory_retrieval: AgentMemoryRetrievalConfig | None = None
     tool_choice: ToolChoice | None = None
     temperature: float | None = None
     max_tokens: int | None = None
@@ -97,6 +110,10 @@ class ChannelWebhookRequestBody(CyreneAISchema):
     payload: dict[str, Any]
     temperature: float | None = None
     max_tokens: int | None = None
+    tool_choice: ToolChoice | None = None
+    allowed_tool_names: list[str] | None = None
+    tool_execution_policy: ToolExecutionPolicy | None = None
+    max_tool_rounds: int = Field(default=1, ge=0)
     max_agent_steps: int = Field(default=4, ge=1)
     message_response_mode: BotMessageResponseMode = BotMessageResponseMode.CHAT
     message_trigger_mode: BotMessageTriggerMode = BotMessageTriggerMode.ALWAYS

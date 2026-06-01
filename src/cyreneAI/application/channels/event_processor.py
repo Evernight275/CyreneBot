@@ -44,6 +44,7 @@ class ChannelEventProcessor:
                         stream=request.stream,
                         tool_choice=request.tool_choice,
                         allowed_tool_names=request.allowed_tool_names,
+                        tool_execution_policy=request.tool_execution_policy,
                         max_tool_rounds=request.max_tool_rounds,
                         max_agent_steps=request.max_agent_steps,
                         message_response_mode=request.message_response_mode,

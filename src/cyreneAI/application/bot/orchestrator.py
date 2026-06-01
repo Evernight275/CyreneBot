@@ -101,6 +101,7 @@ class BotOrchestrator:
                     stream=request.stream,
                     tool_choice=request.tool_choice,
                     allowed_tool_names=request.allowed_tool_names,
+                    tool_execution_policy=request.tool_execution_policy,
                     metadata={
                         **request.metadata,
                         "bot_event_id": request.event.event_id,
@@ -139,6 +140,7 @@ class BotOrchestrator:
                 stream=request.stream,
                 tool_choice=request.tool_choice,
                 allowed_tool_names=request.allowed_tool_names,
+                tool_execution_policy=request.tool_execution_policy,
                 max_tool_rounds=request.max_tool_rounds,
                 metadata={
                     **request.metadata,
