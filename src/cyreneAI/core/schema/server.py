@@ -35,6 +35,10 @@ from cyreneAI.core.schema.plugin import (
 from cyreneAI.core.schema.tool import ToolChoice, ToolExecutionPolicy
 
 
+def _empty_context_segments() -> list[ContextSegment]:
+    return []
+
+
 class HTTPMessage(CyreneAISchema):
     role: MessageRole
     content: str | None = None
@@ -61,6 +65,10 @@ class HTTPMessage(CyreneAISchema):
         )
 
 
+def _empty_http_messages() -> list[HTTPMessage]:
+    return []
+
+
 class ChatRequestBody(CyreneAISchema):
     provider_id: str
     model: str
@@ -78,10 +86,14 @@ class AgentRunRequestBody(CyreneAISchema):
     provider_id: str
     model: str
     goal: str | None = None
-    messages: list[HTTPMessage] = []
+    messages: list[HTTPMessage] = Field(default_factory=_empty_http_messages)
     context_budget: ContextBudget | None = None
-    additional_context_segments: list[ContextSegment] = []
+    additional_context_segments: list[ContextSegment] = Field(
+        default_factory=_empty_context_segments
+    )
     max_steps: int = Field(default=4, ge=1)
+    required_skill_names: list[str] = Field(default_factory=list)
+    max_skills: int | None = None
     allowed_tool_names: list[str] | None = None
     tool_execution_policy: ToolExecutionPolicy | None = None
     planning: AgentPlanningConfig | None = None
@@ -115,10 +127,15 @@ class ChannelWebhookRequestBody(CyreneAISchema):
     tool_execution_policy: ToolExecutionPolicy | None = None
     max_tool_rounds: int = Field(default=1, ge=0)
     max_agent_steps: int = Field(default=4, ge=1)
+    required_skill_names: list[str] = Field(default_factory=list)
+    max_skills: int | None = None
+    agent_planning: AgentPlanningConfig | None = None
+    agent_tool_selection: AgentToolSelectionConfig | None = None
+    agent_memory_retrieval: AgentMemoryRetrievalConfig | None = None
     message_response_mode: BotMessageResponseMode = BotMessageResponseMode.CHAT
     message_trigger_mode: BotMessageTriggerMode = BotMessageTriggerMode.ALWAYS
-    message_trigger_keywords: list[str] = []
-    message_trigger_mentions: list[str] = []
+    message_trigger_keywords: list[str] = Field(default_factory=list)
+    message_trigger_mentions: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 

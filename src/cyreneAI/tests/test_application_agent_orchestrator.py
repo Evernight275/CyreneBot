@@ -31,6 +31,7 @@ from cyreneAI.core.schema.context import (
     ContextSegment,
     ContextSegmentRole,
     ContextSnapshot,
+    ContextWindow,
 )
 from cyreneAI.core.schema.message import (
     ContentPart,
@@ -39,6 +40,7 @@ from cyreneAI.core.schema.message import (
     MessageRole,
 )
 from cyreneAI.core.schema.provider import ProviderConfig, ProviderInfo, ProviderType
+from cyreneAI.core.schema.skill import SkillDefinition
 from cyreneAI.core.schema.tool import (
     ToolCall,
     ToolChoice,
@@ -48,6 +50,8 @@ from cyreneAI.core.schema.tool import (
 )
 from cyreneAI.core.tool.manager import ToolManager
 from cyreneAI.core.tool.registry import ToolRegistry
+from cyreneAI.core.skill.manager import SkillManager
+from cyreneAI.core.skill.registry import SkillRegistry
 
 
 def _message(role: MessageRole, text: str) -> Message:
@@ -171,6 +175,7 @@ async def _build_runtime(
     *,
     with_tool_manager: bool = True,
     context_manager: ContextManager | None = None,
+    skill_manager: SkillManager | None = None,
 ) -> CyreneAIRuntime:
     provider_manager = await _build_provider_manager(provider)
     return CyreneAIRuntime(
@@ -183,6 +188,7 @@ async def _build_runtime(
             if with_tool_manager and tool_registry is not None
             else None
         ),
+        skill_manager=skill_manager,
     )
 
 
@@ -315,15 +321,80 @@ def test_agent_orchestrator_builds_prompt_from_context_window() -> None:
     asyncio.run(_run_agent_builds_prompt_from_context_window())
 
 
-async def _run_agent_stops_after_max_steps() -> None:
-    tool_call = ToolCall(id="call-1", name="lookup", arguments="{}")
+async def _run_agent_loads_session_history_before_current_messages() -> None:
     provider = FakeChatProvider(
         ChatResponse(
             provider_id="provider-1",
             model="fake-model",
-            tool_calls=[tool_call],
-            finish_reason=ChatFinishReason.TOOL_CALLS,
+            message=_message(MessageRole.ASSISTANT, "final"),
+            finish_reason=ChatFinishReason.STOP,
         )
+    )
+    context_store = FakeContextStore()
+    context_store.snapshots.append(
+        ContextSnapshot(
+            snapshot_id="snapshot-1",
+            session_id="session-1",
+            window=ContextWindow(
+                window_id="window-1",
+                segments=[
+                    ContextSegment(
+                        segment_id="history",
+                        role=ContextSegmentRole.HISTORY,
+                        items=[
+                            ContextItem(
+                                item_id="history-1",
+                                type=ContextItemType.MESSAGE,
+                                source=ContextItemSource.USER,
+                                message=_message(MessageRole.USER, "Earlier context."),
+                            )
+                        ],
+                    )
+                ],
+            ),
+        )
+    )
+    runtime = await _build_runtime(
+        provider,
+        context_manager=ContextManager(context_store),
+    )
+
+    await AgentOrchestrator(runtime).run(
+        AgentRunRequest(
+            session_id="session-1",
+            provider_id="provider-1",
+            model="fake-model",
+            goal="Continue from there.",
+        )
+    )
+
+    assert provider.requests[0].messages == [
+        _message(MessageRole.USER, "Earlier context."),
+        _message(MessageRole.USER, "Continue from there."),
+    ]
+
+
+def test_agent_orchestrator_loads_session_history_before_current_messages() -> None:
+    asyncio.run(_run_agent_loads_session_history_before_current_messages())
+
+
+async def _run_agent_stops_after_max_steps() -> None:
+    tool_call = ToolCall(id="call-1", name="lookup", arguments="{}")
+    provider = FakeChatProvider(
+        [
+            ChatResponse(
+                provider_id="provider-1",
+                model="fake-model",
+                tool_calls=[tool_call],
+                finish_reason=ChatFinishReason.TOOL_CALLS,
+            ),
+            ChatResponse(
+                provider_id="provider-1",
+                model="fake-model",
+                message=_message(MessageRole.ASSISTANT, "final after tool"),
+                finish_reason=ChatFinishReason.STOP,
+            ),
+        ]
     )
     tool_registry = ToolRegistry()
     tool_registry.register(
@@ -344,10 +415,15 @@ async def _run_agent_stops_after_max_steps() -> None:
 
     assert result.completed is False
     assert result.stop_reason == AgentStopReason.MAX_STEPS
-    assert len(result.steps) == 1
+    assert result.response.message == _message(MessageRole.ASSISTANT, "final after tool")
+    assert len(result.steps) == 2
     assert result.steps[0].tool_calls == [tool_call]
     assert result.steps[0].tool_results[0].name == "lookup"
-    assert len(provider.requests) == 1
+    assert result.steps[1].tool_calls == []
+    assert result.steps[1].request.tools is None
+    assert result.steps[1].request.tool_choice is None
+    assert result.steps[1].request.metadata["agent_max_steps_finalization"] is True
+    assert len(provider.requests) == 2
 
 
 def test_agent_orchestrator_stops_after_max_steps() -> None:
@@ -488,6 +564,7 @@ async def _run_agent_builds_plan_and_selects_tools() -> None:
     assert result.plan.selected_tool_names == ["lookup"]
     assert len(result.plan.objectives) == 2
     assert result.plan.instructions == "Prefer low-risk tools first."
+    assert result.plan.metadata["planning_mode"] == "runtime_hint"
 
     first_request = provider.requests[0]
     assert first_request.tools is not None
@@ -496,11 +573,78 @@ async def _run_agent_builds_plan_and_selects_tools() -> None:
     assert first_request.messages[0].role == MessageRole.SYSTEM
     assert first_request.messages[0].name == "agent_plan"
     assert first_request.messages[0].content is not None
+    assert first_request.metadata["agent_plan_mode"] == "runtime_hint"
     assert "Prefer low-risk tools first." in first_request.messages[0].content[0].text
 
 
 def test_agent_orchestrator_builds_plan_and_selects_tools() -> None:
     asyncio.run(_run_agent_builds_plan_and_selects_tools())
+
+
+async def _run_agent_builds_skill_bundle_and_constrains_tools() -> None:
+    provider = FakeChatProvider(
+        ChatResponse(
+            provider_id="provider-1",
+            model="fake-model",
+            message=_message(MessageRole.ASSISTANT, "final"),
+            finish_reason=ChatFinishReason.STOP,
+        )
+    )
+    tool_registry = ToolRegistry()
+    tool_registry.register(
+        ToolDefinition(name="lookup", description="Lookup a value."),
+        RecordingToolExecutor(),
+    )
+    tool_registry.register(
+        ToolDefinition(name="delete", description="Delete a value."),
+        RecordingToolExecutor(),
+    )
+    skill_registry = SkillRegistry()
+    skill_registry.register(
+        SkillDefinition(
+            name="project_status",
+            description="Project status style.",
+            instructions="Answer with project status discipline.",
+            allowed_tools=["lookup"],
+        )
+    )
+    runtime = await _build_runtime(
+        provider,
+        tool_registry,
+        skill_manager=SkillManager(skill_registry),
+    )
+
+    result = await AgentOrchestrator(runtime).run(
+        AgentRunRequest(
+            session_id="session-1",
+            provider_id="provider-1",
+            model="fake-model",
+            goal="Find the project status.",
+            required_skill_names=["project_status"],
+            tool_selection=AgentToolSelectionConfig(
+                allowed_tool_names=["lookup", "delete"]
+            ),
+        )
+    )
+
+    assert result.skill_bundle is not None
+    assert result.skill_bundle.metadata["skills"] == ["project_status"]
+
+    first_request = provider.requests[0]
+    assert first_request.messages[0].role == MessageRole.SYSTEM
+    assert first_request.messages[0].name == "skills"
+    assert first_request.messages[0].content is not None
+    assert (
+        "Answer with project status discipline."
+        in first_request.messages[0].content[0].text
+    )
+    assert first_request.tools is not None
+    assert [tool.name for tool in first_request.tools] == ["lookup"]
+    assert first_request.metadata["skill_names"] == ["project_status"]
+
+
+def test_agent_orchestrator_builds_skill_bundle_and_constrains_tools() -> None:
+    asyncio.run(_run_agent_builds_skill_bundle_and_constrains_tools())
 
 
 async def _run_agent_retrieves_memory_before_first_step() -> None:

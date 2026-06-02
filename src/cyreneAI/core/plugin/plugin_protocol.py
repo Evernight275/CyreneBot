@@ -8,7 +8,12 @@ from cyreneAI.core.schema.application import (
     ApplicationImageGenerationRequest,
     ApplicationImageGenerationResult,
 )
-from cyreneAI.core.schema.agent import AgentRunResult
+from cyreneAI.core.schema.agent import (
+    AgentMemoryRetrievalConfig,
+    AgentPlanningConfig,
+    AgentRunResult,
+    AgentToolSelectionConfig,
+)
 from cyreneAI.core.schema.tool import ToolChoice, ToolDefinition, ToolExecutionPolicy
 from cyreneAI.core.schema.plugin import (
     PluginCommandDefinition,
@@ -146,8 +151,13 @@ class PluginAgentNamespaceProtocol(Protocol):
         system: str | None = None,
         session_id: str | None = None,
         max_steps: int = 4,
+        required_skill_names: list[str] | None = None,
+        max_skills: int | None = None,
         allowed_tool_names: list[str] | None = None,
         tool_execution_policy: ToolExecutionPolicy | None = None,
+        planning: AgentPlanningConfig | None = None,
+        tool_selection: AgentToolSelectionConfig | None = None,
+        memory_retrieval: AgentMemoryRetrievalConfig | None = None,
         tool_choice: ToolChoice | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
@@ -167,8 +177,13 @@ class PluginAgentNamespaceProtocol(Protocol):
         system: str | None = None,
         session_id: str | None = None,
         max_steps: int = 4,
+        required_skill_names: list[str] | None = None,
+        max_skills: int | None = None,
         allowed_tool_names: list[str] | None = None,
         tool_execution_policy: ToolExecutionPolicy | None = None,
+        planning: AgentPlanningConfig | None = None,
+        tool_selection: AgentToolSelectionConfig | None = None,
+        memory_retrieval: AgentMemoryRetrievalConfig | None = None,
         tool_choice: ToolChoice | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,

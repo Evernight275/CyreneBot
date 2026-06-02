@@ -13,12 +13,33 @@ from cyreneAI.core.schema.context import (
     ContextSnapshot,
 )
 from cyreneAI.core.schema.message import Message
+from cyreneAI.core.schema.skill import SkillInstructionBundle
 from cyreneAI.core.schema.tool import (
     ToolCall,
     ToolChoice,
     ToolExecutionPolicy,
     ToolResult,
 )
+
+
+def _empty_messages() -> list[Message]:
+    return []
+
+
+def _empty_context_segments() -> list[ContextSegment]:
+    return []
+
+
+def _empty_tool_calls() -> list[ToolCall]:
+    return []
+
+
+def _empty_tool_results() -> list[ToolResult]:
+    return []
+
+
+def _empty_agent_steps() -> list["AgentStep"]:
+    return []
 
 
 class AgentStopReason(StrEnum):
@@ -32,7 +53,7 @@ class AgentStopReason(StrEnum):
 
 class AgentPlanningConfig(CyreneAISchema):
     """
-    Agent 计划生成配置。
+    Agent 运行提示配置。
     """
 
     enabled: bool = False
@@ -63,7 +84,7 @@ class AgentMemoryRetrievalConfig(CyreneAISchema):
 
 class AgentPlan(CyreneAISchema):
     """
-    Agent 运行前生成的轻量计划。
+    Agent 运行前生成的轻量运行提示。
     """
 
     goal: str | None = None
@@ -83,11 +104,15 @@ class AgentRunRequest(CyreneAISchema):
     provider_id: str
     model: str
     goal: str | None = None
-    messages: list[Message] = []
+    messages: list[Message] = Field(default_factory=_empty_messages)
     context_budget: ContextBudget | None = None
-    additional_context_segments: list[ContextSegment] = []
+    additional_context_segments: list[ContextSegment] = Field(
+        default_factory=_empty_context_segments
+    )
 
     max_steps: int = Field(default=4, ge=1)
+    required_skill_names: list[str] = Field(default_factory=list)
+    max_skills: int | None = None
     allowed_tool_names: list[str] | None = None
     tool_execution_policy: ToolExecutionPolicy | None = None
     planning: AgentPlanningConfig | None = None
@@ -110,8 +135,8 @@ class AgentStep(CyreneAISchema):
     index: int
     request: ChatRequest
     response: ChatResponse
-    tool_calls: list[ToolCall] = []
-    tool_results: list[ToolResult] = []
+    tool_calls: list[ToolCall] = Field(default_factory=_empty_tool_calls)
+    tool_results: list[ToolResult] = Field(default_factory=_empty_tool_results)
 
 
 class AgentRunResult(CyreneAISchema):
@@ -120,8 +145,9 @@ class AgentRunResult(CyreneAISchema):
     """
 
     response: ChatResponse
-    steps: list[AgentStep] = []
+    steps: list[AgentStep] = Field(default_factory=_empty_agent_steps)
     plan: AgentPlan | None = None
+    skill_bundle: SkillInstructionBundle | None = None
     context_snapshot: ContextSnapshot
     completed: bool
     stop_reason: AgentStopReason

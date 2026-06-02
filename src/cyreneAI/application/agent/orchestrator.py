@@ -22,7 +22,7 @@ from cyreneAI.core.schema.agent import (
     AgentStep,
     AgentStopReason,
 )
-from cyreneAI.core.schema.chat import ChatRequest, ChatResponse
+from cyreneAI.core.schema.chat import ChatFinishReason, ChatRequest, ChatResponse
 from cyreneAI.core.schema.context import (
     ContextBuildRequest,
     ContextBuildResult,
@@ -35,6 +35,7 @@ from cyreneAI.core.schema.context import (
     ContextWindow,
 )
 from cyreneAI.core.schema.message import ContentPart, ContentPartType, Message, MessageRole
+from cyreneAI.core.schema.skill import SkillInstructionBundle, SkillSelectionRequest
 from cyreneAI.core.schema.tool import (
     ToolCall,
     ToolChoice,
@@ -54,13 +55,24 @@ class AgentOrchestrator:
 
     async def run(self, request: AgentRunRequest) -> AgentRunResult:
         provider = self._get_chat_provider(request.provider_id)
+        request_messages = _build_initial_messages(request)
+        history_messages = await self._load_session_history_messages(
+            request.session_id
+        )
+        context_messages = [
+            *history_messages,
+            *request_messages,
+        ]
+        skill_bundle = self._build_skill_bundle(
+            request=request,
+            messages=context_messages,
+        )
         tool_execution_policy = build_effective_tool_execution_policy(
             policy=request.tool_execution_policy,
             allowed_tool_names=request.allowed_tool_names,
-            constrained_tool_names=(
-                request.tool_selection.allowed_tool_names
-                if request.tool_selection is not None
-                else None
+            constrained_tool_names=_tool_constraint_names(
+                skill_bundle=skill_bundle,
+                request=request,
             ),
             additional_denied_tool_names=(
                 request.tool_selection.denied_tool_names
@@ -75,10 +87,9 @@ class AgentOrchestrator:
             request=request,
             tools=tools,
         )
-        initial_messages = _build_initial_messages(request)
         context_result = await self._build_context(
             request=request,
-            messages=initial_messages,
+            messages=context_messages,
         )
         memory_segment = await self._retrieve_memory_context(
             request=request,
@@ -96,9 +107,11 @@ class AgentOrchestrator:
             request=request,
             messages=_build_provider_messages(
                 context_window=context_window,
+                skill_bundle=skill_bundle,
                 plan=plan,
             ),
             tools=tools,
+            skill_bundle=skill_bundle,
         )
         steps: list[AgentStep] = []
         response: ChatResponse | None = None
@@ -135,6 +148,7 @@ class AgentOrchestrator:
                     response=response,
                     steps=steps,
                     plan=plan,
+                    skill_bundle=skill_bundle,
                     context_snapshot=context_snapshot,
                     completed=True,
                     stop_reason=AgentStopReason.FINAL_RESPONSE,
@@ -156,6 +170,23 @@ class AgentOrchestrator:
         if response is None:
             raise StateError("Agent loop did not execute any step")
 
+        if response.tool_calls:
+            final_request = _build_max_steps_final_response_request(current_request)
+            final_response = await self._chat_provider(provider, final_request)
+            response = _ensure_max_steps_final_response(
+                request=final_request,
+                response=final_response,
+            )
+            steps.append(
+                AgentStep(
+                    index=len(steps),
+                    request=final_request,
+                    response=response,
+                    tool_calls=[],
+                    tool_results=[],
+                )
+            )
+
         context_snapshot = _build_context_snapshot(
             request=request,
             context_window=_append_agent_trace_segment(
@@ -169,6 +200,7 @@ class AgentOrchestrator:
             response=response,
             steps=steps,
             plan=plan,
+            skill_bundle=skill_bundle,
             context_snapshot=context_snapshot,
             completed=False,
             stop_reason=AgentStopReason.MAX_STEPS,
@@ -199,12 +231,38 @@ class AgentOrchestrator:
             )
         )
 
+    async def _load_session_history_messages(self, session_id: str) -> list[Message]:
+        if self._runtime.context_manager is None:
+            return []
+        snapshots = await self._runtime.context_manager.list_by_session(session_id)
+        if not snapshots:
+            return []
+        return _context_window_to_messages(snapshots[-1].window)
+
+    def _build_skill_bundle(
+        self,
+        *,
+        request: AgentRunRequest,
+        messages: list[Message],
+    ) -> SkillInstructionBundle | None:
+        if self._runtime.skill_manager is None:
+            return None
+        return self._runtime.skill_manager.build_instruction_bundle(
+            SkillSelectionRequest(
+                text=_messages_to_text(messages),
+                required_skill_names=request.required_skill_names,
+                max_skills=request.max_skills,
+                metadata=request.metadata.copy(),
+            )
+        )
+
     def _build_provider_request(
         self,
         *,
         request: AgentRunRequest,
         messages: list[Message],
         tools: list[ToolDefinition],
+        skill_bundle: SkillInstructionBundle | None,
     ) -> ChatRequest:
         tool_choice = _filter_tool_choice(
             tool_choice=request.tool_choice,
@@ -224,6 +282,14 @@ class AgentOrchestrator:
                 "session_id": request.session_id,
                 "agent_loop": "minimal",
                 "agent_plan_enabled": plan_enabled(request.planning),
+                "agent_plan_mode": (
+                    "runtime_hint" if plan_enabled(request.planning) else None
+                ),
+                "skill_names": (
+                    skill_bundle.metadata.get("skills", [])
+                    if skill_bundle is not None
+                    else []
+                ),
             },
         )
 
@@ -401,6 +467,7 @@ def _build_agent_plan(
         instructions=planning.instructions if planning is not None else None,
         metadata={
             "planning_enabled": True,
+            "planning_mode": "runtime_hint",
             "selected_tool_count": len(tools),
         },
     )
@@ -426,9 +493,13 @@ def _build_plan_objectives(
 def _build_provider_messages(
     *,
     context_window: ContextWindow,
+    skill_bundle: SkillInstructionBundle | None,
     plan: AgentPlan | None,
 ) -> list[Message]:
     messages: list[Message] = []
+    skill_message = _build_skill_message(skill_bundle)
+    if skill_message is not None:
+        messages.append(skill_message)
     planning_message = _build_planning_message(plan)
     if planning_message is not None:
         messages.append(planning_message)
@@ -436,17 +507,39 @@ def _build_provider_messages(
     return messages
 
 
+def _build_skill_message(
+    skill_bundle: SkillInstructionBundle | None,
+) -> Message | None:
+    if skill_bundle is None or not skill_bundle.instructions:
+        return None
+
+    content = "\n\n".join(
+        f"[{instruction.name}]\n{instruction.content}"
+        for instruction in skill_bundle.instructions
+    )
+    return Message(
+        role=MessageRole.SYSTEM,
+        name="skills",
+        content=[
+            ContentPart(
+                type=ContentPartType.TEXT,
+                text=content,
+            )
+        ],
+    )
+
+
 def _build_planning_message(plan: AgentPlan | None) -> Message | None:
     if plan is None:
         return None
 
-    lines = ["Agent plan:"]
+    lines = ["Agent runtime hints:"]
     if plan.goal:
         lines.append(f"Goal: {plan.goal}")
     if plan.instructions:
         lines.append(f"Instructions: {plan.instructions}")
     if plan.objectives:
-        lines.append("Objectives:")
+        lines.append("Hints:")
         lines.extend(f"- {objective}" for objective in plan.objectives)
     if plan.selected_tool_names:
         lines.append("Selected tools: " + ", ".join(plan.selected_tool_names))
@@ -467,6 +560,28 @@ def _build_planning_message(plan: AgentPlan | None) -> Message | None:
 
 def plan_enabled(planning: AgentPlanningConfig | None) -> bool:
     return planning is not None and planning.enabled
+
+
+def _tool_constraint_names(
+    *,
+    skill_bundle: SkillInstructionBundle | None,
+    request: AgentRunRequest,
+) -> list[str] | None:
+    constraints: list[list[str] | None] = []
+    if skill_bundle is not None:
+        constraints.append(skill_bundle.allowed_tools)
+    if request.tool_selection is not None:
+        constraints.append(request.tool_selection.allowed_tool_names)
+
+    constrained: set[str] | None = None
+    for names in constraints:
+        if names is None:
+            continue
+        name_set = set(names)
+        constrained = name_set if constrained is None else constrained & name_set
+    if constrained is None:
+        return None
+    return sorted(constrained)
 
 
 def _build_context_snapshot(
@@ -665,6 +780,75 @@ def _append_tool_feedback_messages(
         messages.append(assistant_message)
     messages.extend(_tool_result_to_message(result) for result in tool_results)
     return request.model_copy(update={"messages": messages})
+
+
+def _build_max_steps_final_response_request(request: ChatRequest) -> ChatRequest:
+    messages = [
+        *request.messages,
+        Message(
+            role=MessageRole.SYSTEM,
+            name="agent_max_steps",
+            content=[
+                ContentPart(
+                    type=ContentPartType.TEXT,
+                    text=(
+                        "The agent reached max_steps after executing the available "
+                        "tool results. Produce a concise final response from the "
+                        "information already available. Do not call tools."
+                    ),
+                )
+            ],
+        ),
+    ]
+    return request.model_copy(
+        update={
+            "messages": messages,
+            "tools": None,
+            "tool_choice": None,
+            "metadata": {
+                **request.metadata,
+                "agent_max_steps_finalization": True,
+            },
+        }
+    )
+
+
+def _ensure_max_steps_final_response(
+    *,
+    request: ChatRequest,
+    response: ChatResponse,
+) -> ChatResponse:
+    if _response_has_text(response):
+        return response.model_copy(update={"tool_calls": []})
+    return ChatResponse(
+        provider_id=response.provider_id or request.provider_id,
+        model=response.model or request.model,
+        message=Message(
+            role=MessageRole.ASSISTANT,
+            content=[
+                ContentPart(
+                    type=ContentPartType.TEXT,
+                    text=(
+                        "Agent stopped after reaching max_steps before producing "
+                        "a final response."
+                    ),
+                )
+            ],
+        ),
+        finish_reason=ChatFinishReason.STOP,
+        raw=response.raw,
+    )
+
+
+def _response_has_text(response: ChatResponse) -> bool:
+    message = response.message
+    if message is None or not message.content:
+        return False
+    return any(
+        bool(part.text)
+        for part in message.content
+        if part.type == ContentPartType.TEXT
+    )
 
 
 def _context_window_to_messages(context_window: ContextWindow) -> list[Message]:

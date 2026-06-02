@@ -33,6 +33,7 @@ from cyreneAI.core.schema.application import (
     BotMessageResponseMode,
     BotMessageTriggerMode,
 )
+from cyreneAI.core.schema.agent import AgentPlanningConfig
 from cyreneAI.core.schema.message import (
     ContentPart,
     ContentPartType,
@@ -265,10 +266,20 @@ def test_bot_orchestrator_can_run_agent_for_direct_non_command_message() -> None
                 model="fake-model",
                 message_response_mode=BotMessageResponseMode.AGENT,
                 message_trigger_mode=BotMessageTriggerMode.DIRECT,
+                agent_planning=AgentPlanningConfig(
+                    enabled=True,
+                    instructions="Answer through agent mode.",
+                ),
             )
         )
 
         assert len(provider.requests) == 1
+        assert provider.requests[0].messages[0].name == "agent_plan"
+        assert provider.requests[0].messages[0].content is not None
+        assert (
+            "Answer through agent mode."
+            in provider.requests[0].messages[0].content[0].text
+        )
         assert provider.requests[0].messages[-1].content == _content("hello agent")
         assert result.chat_result is None
         assert result.agent_result is not None

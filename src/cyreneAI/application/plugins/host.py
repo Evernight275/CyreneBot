@@ -5,7 +5,8 @@ import uuid
 from contextlib import suppress
 from datetime import UTC, datetime
 
-from cyreneAI.application.agent.orchestrator import AgentOrchestrator, AgentRunRequest
+from cyreneAI.application.agent.orchestrator import AgentOrchestrator
+from cyreneAI.application.agent.request_builder import build_agent_run_request
 from cyreneAI.application.chat.orchestrator import ChatOrchestrator
 from cyreneAI.application.generation.image_orchestrator import ImageGenerationOrchestrator
 from cyreneAI.application.runtime import CyreneAIRuntime
@@ -39,7 +40,12 @@ from cyreneAI.core.schema.application import (
     ApplicationImageGenerationRequest,
     ApplicationImageGenerationResult,
 )
-from cyreneAI.core.schema.agent import AgentRunResult
+from cyreneAI.core.schema.agent import (
+    AgentMemoryRetrievalConfig,
+    AgentPlanningConfig,
+    AgentRunResult,
+    AgentToolSelectionConfig,
+)
 from cyreneAI.core.schema.message import ContentPart, ContentPartType, Message, MessageRole
 from cyreneAI.core.schema.plugin import (
     PluginCapability,
@@ -611,8 +617,13 @@ class ApplicationPluginAgentNamespace:
         system: str | None = None,
         session_id: str | None = None,
         max_steps: int = 4,
+        required_skill_names: list[str] | None = None,
+        max_skills: int | None = None,
         allowed_tool_names: list[str] | None = None,
         tool_execution_policy: ToolExecutionPolicy | None = None,
+        planning: AgentPlanningConfig | None = None,
+        tool_selection: AgentToolSelectionConfig | None = None,
+        memory_retrieval: AgentMemoryRetrievalConfig | None = None,
         tool_choice: ToolChoice | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
@@ -625,8 +636,13 @@ class ApplicationPluginAgentNamespace:
             system=system,
             session_id=session_id,
             max_steps=max_steps,
+            required_skill_names=required_skill_names,
+            max_skills=max_skills,
             allowed_tool_names=allowed_tool_names,
             tool_execution_policy=tool_execution_policy,
+            planning=planning,
+            tool_selection=tool_selection,
+            memory_retrieval=memory_retrieval,
             tool_choice=tool_choice,
             temperature=temperature,
             max_tokens=max_tokens,
@@ -643,8 +659,13 @@ class ApplicationPluginAgentNamespace:
         system: str | None = None,
         session_id: str | None = None,
         max_steps: int = 4,
+        required_skill_names: list[str] | None = None,
+        max_skills: int | None = None,
         allowed_tool_names: list[str] | None = None,
         tool_execution_policy: ToolExecutionPolicy | None = None,
+        planning: AgentPlanningConfig | None = None,
+        tool_selection: AgentToolSelectionConfig | None = None,
+        memory_retrieval: AgentMemoryRetrievalConfig | None = None,
         tool_choice: ToolChoice | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
@@ -662,7 +683,7 @@ class ApplicationPluginAgentNamespace:
             messages.append(_text_message(MessageRole.SYSTEM, system))
         messages.append(_text_message(MessageRole.USER, prompt))
         return await self._agent_orchestrator.run(
-            AgentRunRequest(
+            build_agent_run_request(
                 session_id=session_id
                 or self._default_session_id
                 or f"plugin:{self._plugin_id}",
@@ -670,8 +691,13 @@ class ApplicationPluginAgentNamespace:
                 model=resolved_model,
                 messages=messages,
                 max_steps=max_steps,
+                required_skill_names=required_skill_names or [],
+                max_skills=max_skills,
                 allowed_tool_names=allowed_tool_names,
                 tool_execution_policy=tool_execution_policy,
+                planning=planning,
+                tool_selection=tool_selection,
+                memory_retrieval=memory_retrieval,
                 tool_choice=tool_choice,
                 temperature=temperature,
                 max_tokens=max_tokens,

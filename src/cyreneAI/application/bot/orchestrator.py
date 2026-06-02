@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import logging
 
-from cyreneAI.application.agent.orchestrator import AgentOrchestrator, AgentRunRequest
+from cyreneAI.application.agent.orchestrator import AgentOrchestrator
+from cyreneAI.application.agent.request_builder import build_agent_run_request
 from cyreneAI.application.chat.orchestrator import (
     ApplicationChatRequest,
     ApplicationChatResult,
@@ -89,19 +90,24 @@ class BotOrchestrator:
         user_message = _bot_event_to_user_message(request.event)
         if request.message_response_mode == BotMessageResponseMode.AGENT:
             agent_result = await self._agent_orchestrator.run(
-                AgentRunRequest(
+                build_agent_run_request(
                     session_id=request.event.session_id,
                     provider_id=request.provider_id,
                     model=request.model,
                     messages=[user_message],
                     context_budget=request.context_budget,
                     max_steps=request.max_agent_steps,
+                    required_skill_names=request.required_skill_names,
+                    max_skills=request.max_skills,
                     temperature=request.temperature,
                     max_tokens=request.max_tokens,
                     stream=request.stream,
                     tool_choice=request.tool_choice,
                     allowed_tool_names=request.allowed_tool_names,
                     tool_execution_policy=request.tool_execution_policy,
+                    planning=request.agent_planning,
+                    tool_selection=request.agent_tool_selection,
+                    memory_retrieval=request.agent_memory_retrieval,
                     metadata={
                         **request.metadata,
                         "bot_event_id": request.event.event_id,

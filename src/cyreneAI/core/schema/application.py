@@ -6,7 +6,12 @@ from typing import Any, Literal
 from pydantic import Field, model_validator
 
 from cyreneAI.core.schema.base import CyreneAISchema
-from cyreneAI.core.schema.agent import AgentRunResult
+from cyreneAI.core.schema.agent import (
+    AgentMemoryRetrievalConfig,
+    AgentPlanningConfig,
+    AgentRunResult,
+    AgentToolSelectionConfig,
+)
 from cyreneAI.core.schema.bot import (
     BotAction,
     BotConversationState,
@@ -279,6 +284,9 @@ class ApplicationBotRequest(CyreneAISchema):
     tool_execution_policy: ToolExecutionPolicy | None = None
     max_tool_rounds: int = Field(default=1, ge=0)
     max_agent_steps: int = Field(default=4, ge=1)
+    agent_planning: AgentPlanningConfig | None = None
+    agent_tool_selection: AgentToolSelectionConfig | None = None
+    agent_memory_retrieval: AgentMemoryRetrievalConfig | None = None
     message_response_mode: BotMessageResponseMode = BotMessageResponseMode.CHAT
     message_trigger_mode: BotMessageTriggerMode = BotMessageTriggerMode.ALWAYS
     message_trigger_keywords: list[str] = []
@@ -330,6 +338,9 @@ class ApplicationChannelEventsRequest(CyreneAISchema):
     tool_execution_policy: ToolExecutionPolicy | None = None
     max_tool_rounds: int = Field(default=1, ge=0)
     max_agent_steps: int = Field(default=4, ge=1)
+    agent_planning: AgentPlanningConfig | None = None
+    agent_tool_selection: AgentToolSelectionConfig | None = None
+    agent_memory_retrieval: AgentMemoryRetrievalConfig | None = None
     message_response_mode: BotMessageResponseMode = BotMessageResponseMode.CHAT
     message_trigger_mode: BotMessageTriggerMode = BotMessageTriggerMode.ALWAYS
     message_trigger_keywords: list[str] = []
@@ -369,6 +380,9 @@ class ApplicationChannelWebhookRequest(CyreneAISchema):
     tool_execution_policy: ToolExecutionPolicy | None = None
     max_tool_rounds: int = Field(default=1, ge=0)
     max_agent_steps: int = Field(default=4, ge=1)
+    agent_planning: AgentPlanningConfig | None = None
+    agent_tool_selection: AgentToolSelectionConfig | None = None
+    agent_memory_retrieval: AgentMemoryRetrievalConfig | None = None
     message_response_mode: BotMessageResponseMode = BotMessageResponseMode.CHAT
     message_trigger_mode: BotMessageTriggerMode = BotMessageTriggerMode.ALWAYS
     message_trigger_keywords: list[str] = []

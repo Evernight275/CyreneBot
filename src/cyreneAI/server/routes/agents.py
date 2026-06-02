@@ -4,8 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from cyreneAI.application.agent.orchestrator import (
     AgentOrchestrator,
-    AgentRunRequest,
 )
+from cyreneAI.application.agent.request_builder import build_agent_run_request
 from cyreneAI.application.runtime import CyreneAIRuntime
 from cyreneAI.core.errors.base import CyreneAIError
 from cyreneAI.server.dependencies import get_runtime, require_admin
@@ -25,7 +25,7 @@ async def run_agent(
 ) -> dict:
     try:
         result = await AgentOrchestrator(runtime).run(
-            AgentRunRequest(
+            build_agent_run_request(
                 session_id=body.metadata.get("session_id", "http"),
                 provider_id=body.provider_id,
                 model=body.model,
@@ -37,6 +37,8 @@ async def run_agent(
                 context_budget=body.context_budget,
                 additional_context_segments=body.additional_context_segments,
                 max_steps=body.max_steps,
+                required_skill_names=body.required_skill_names,
+                max_skills=body.max_skills,
                 allowed_tool_names=body.allowed_tool_names,
                 tool_execution_policy=body.tool_execution_policy,
                 planning=body.planning,
