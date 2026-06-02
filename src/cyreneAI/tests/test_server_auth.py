@@ -54,6 +54,15 @@ def test_health_does_not_require_admin_auth() -> None:
     assert response.status_code == 200
 
 
+def test_readiness_does_not_require_admin_auth() -> None:
+    client = _client(ServerSettings())
+
+    with client:
+        response = client.get("/ready")
+
+    assert response.status_code == 200
+
+
 def test_admin_route_rejects_missing_auth_config() -> None:
     response = _client(ServerSettings()).get(
         "/providers",

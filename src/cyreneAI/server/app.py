@@ -43,15 +43,18 @@ def create_app(
         app.state.telegram_polling_runner = polling_runner
         if polling_runner is not None:
             polling_runner.start()
+        app.state.runtime_ready = True
         try:
             yield
         finally:
+            app.state.runtime_ready = False
             if polling_runner is not None:
                 await polling_runner.stop()
             await runtime.close()
 
     app = FastAPI(title="CyreneBot API", lifespan=lifespan)
     app.state.runtime = runtime
+    app.state.runtime_ready = False
     app.state.server_settings = settings or build_server_settings_from_env()
     app.state.telegram_webhook_secret = telegram_webhook_secret
     app.state.telegram_provider_id = telegram_provider_id
@@ -93,15 +96,18 @@ def create_app_with_runtime_builder(
         app.state.telegram_polling_runner = polling_runner
         if polling_runner is not None:
             polling_runner.start()
+        app.state.runtime_ready = True
         try:
             yield
         finally:
+            app.state.runtime_ready = False
             if polling_runner is not None:
                 await polling_runner.stop()
             await runtime.close()
 
     app = FastAPI(title="CyreneBot API", lifespan=lifespan)
     app.state.runtime = None
+    app.state.runtime_ready = False
     app.state.server_settings = settings or build_server_settings_from_env()
     app.state.telegram_webhook_secret = telegram_webhook_secret
     app.state.telegram_provider_id = telegram_provider_id

@@ -62,7 +62,10 @@ from cyreneAI.core.schema.provider import (
     ProviderType,
 )
 from cyreneAI.server import create_app
-from cyreneAI.server.app import _log_plugin_startup_state
+from cyreneAI.server.app import (
+    _log_plugin_startup_state,
+    create_app_with_runtime_builder,
+)
 from cyreneAI.server.config import (
     ServerSettings,
     build_bot_polling_state_database_path_from_env,
@@ -173,6 +176,32 @@ class FakeServerChannel:
         self.actions.append(action)
 
 
+async def _build_fake_runtime(*, channel_id: str = "fake") -> CyreneAIRuntime:
+    provider = FakeServerProvider()
+    channel = FakeServerChannel(channel_id=channel_id)
+    bot_channel_registry = BotChannelRegistry()
+    bot_channel_registry.register(
+        BotChannelDefinition(
+            channel_id=channel_id,
+            name="Fake",
+        ),
+        channel,
+    )
+    factory = ProviderFactory()
+
+    async def build_provider(config: ProviderConfig) -> FakeServerProvider:
+        return provider
+
+    factory.register(ProviderType.OPENAI_RESPONSES, build_provider)
+    manager = ProviderManager(factory)
+    await manager.add(provider.config)
+    return CyreneAIRuntime(
+        provider_manager=manager,
+        context_builder=ContextWindowBuilder(),
+        bot_channel_registry=bot_channel_registry,
+    )
+
+
 def _client(
     *,
     channel_id: str = "fake",
@@ -182,34 +211,9 @@ def _client(
     telegram_model: str | None = None,
     telegram_polling_enabled: bool = False,
 ) -> TestClient:
-    async def build_runtime() -> CyreneAIRuntime:
-        provider = FakeServerProvider()
-        channel = FakeServerChannel(channel_id=channel_id)
-        bot_channel_registry = BotChannelRegistry()
-        bot_channel_registry.register(
-            BotChannelDefinition(
-                channel_id=channel_id,
-                name="Fake",
-            ),
-            channel,
-        )
-        factory = ProviderFactory()
-
-        async def build_provider(config: ProviderConfig) -> FakeServerProvider:
-            return provider
-
-        factory.register(ProviderType.OPENAI_RESPONSES, build_provider)
-        manager = ProviderManager(factory)
-        await manager.add(provider.config)
-        return CyreneAIRuntime(
-            provider_manager=manager,
-            context_builder=ContextWindowBuilder(),
-            bot_channel_registry=bot_channel_registry,
-        )
-
     return TestClient(
         create_app(
-            asyncio.run(build_runtime()),
+            asyncio.run(_build_fake_runtime(channel_id=channel_id)),
             settings=settings or ServerSettings(auth_enabled=False),
             telegram_webhook_secret=telegram_webhook_secret,
             telegram_provider_id=telegram_provider_id,
@@ -435,6 +439,58 @@ def test_server_health() -> None:
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_server_readiness_requires_lifespan_startup() -> None:
+    response = _client().get("/ready")
+
+    assert response.status_code == 503
+    assert response.json() == {"status": "not_ready"}
+
+
+def test_server_readiness_reports_lifespan_runtime_ready() -> None:
+    client = _client()
+
+    with client:
+        response = client.get("/ready")
+
+        assert response.status_code == 200
+        assert response.json() == {"status": "ready"}
+        assert client.app.state.runtime_ready is True
+
+    assert client.app.state.runtime_ready is False
+
+
+def test_server_readiness_waits_for_runtime_builder_lifespan() -> None:
+    async def build_runtime() -> CyreneAIRuntime:
+        return await _build_fake_runtime()
+
+    cold_client = TestClient(
+        create_app_with_runtime_builder(
+            build_runtime,
+            settings=ServerSettings(auth_enabled=False),
+        )
+    )
+    ready_client = TestClient(
+        create_app_with_runtime_builder(
+            build_runtime,
+            settings=ServerSettings(auth_enabled=False),
+        )
+    )
+
+    cold_response = cold_client.get("/ready")
+
+    assert cold_response.status_code == 503
+    assert cold_response.json() == {"status": "not_ready"}
+
+    with ready_client:
+        ready_response = ready_client.get("/ready")
+
+        assert ready_response.status_code == 200
+        assert ready_response.json() == {"status": "ready"}
+        assert ready_client.app.state.runtime is not None
+
+    assert ready_client.app.state.runtime_ready is False
 
 
 def test_server_lists_providers_and_models() -> None:
