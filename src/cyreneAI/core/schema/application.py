@@ -106,6 +106,14 @@ class BotMessageTriggerMode(StrEnum):
     NEVER = "never"
 
 
+class BotAdminConfig(CyreneAISchema):
+    """
+    Bot 管理员配置。
+    """
+
+    user_ids: list[str] = Field(default_factory=_empty_strings)
+
+
 class ApplicationChatRequest(CyreneAISchema):
     """
     应用聊天请求
@@ -498,6 +506,7 @@ __all__ = [
     "ApplicationVectorSearchResult",
     "ApplicationVectorUpsertRequest",
     "ApplicationVectorWriteResult",
+    "BotAdminConfig",
     "BotMessageResponseMode",
     "BotMessageTriggerMode",
     "ChunkStrategy",

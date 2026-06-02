@@ -30,6 +30,7 @@ from cyreneAI.core.plugin.plugin_protocol import (
 from cyreneAI.core.plugin.registry import PluginRegistry
 from cyreneAI.core.provider.factory import ProviderFactory
 from cyreneAI.core.provider.manager import ProviderManager
+from cyreneAI.core.schema.application import BotAdminConfig
 from cyreneAI.core.schema.provider import ProviderConfig
 from cyreneAI.core.skill.manager import SkillManager
 from cyreneAI.core.skill.skill_protocol import SkillRegistryProtocol
@@ -69,6 +70,7 @@ async def build_cyrene_ai_runtime(
     bot_channel_registry: BotChannelRegistryProtocol | None = None,
     bot_session_manager: BotSessionManager | None = None,
     bot_polling_state_store: BotPollingStateStoreProtocol | None = None,
+    bot_admin_config: BotAdminConfig | None = None,
 ) -> CyreneAIRuntime:
     """
     构建只依赖 core protocol/manager 的应用运行时。
@@ -118,6 +120,7 @@ async def build_cyrene_ai_runtime(
         bot_channel_registry=bot_channel_registry,
         bot_session_manager=bot_session_manager,
         bot_polling_state_store=bot_polling_state_store,
+        bot_admin_config=bot_admin_config,
     )
     runtime.plugin_outbox = ApplicationPluginOutbox(runtime)
     if register_builtin_tools:

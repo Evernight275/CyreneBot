@@ -7,6 +7,7 @@ from typing import Any, Literal, cast
 
 from dotenv import load_dotenv
 
+from cyreneAI.core.schema.application import BotAdminConfig
 from cyreneAI.core.schema.provider import ProviderConfig, ProviderType
 from cyreneAI.core.schema.server import ServerSettings
 from cyreneAI.core.schema.tool import MCPStdioServerConfig
@@ -100,6 +101,21 @@ def build_bot_polling_state_database_path_from_env() -> str | None:
     load_dotenv()
 
     return _env_str("CYRENEAI_BOT_POLLING_STATE_DATABASE_PATH")
+
+
+def build_bot_admin_config_from_env() -> BotAdminConfig | None:
+    load_dotenv()
+
+    raw = _env_str("CYRENEAI_BOT_ADMIN_USER_IDS")
+    if raw is None:
+        return None
+    return BotAdminConfig(
+        user_ids=[
+            part.strip()
+            for part in raw.replace(";", ",").split(",")
+            if part.strip()
+        ]
+    )
 
 
 def build_context_database_path_from_env() -> str | None:

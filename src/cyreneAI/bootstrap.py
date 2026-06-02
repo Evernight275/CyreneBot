@@ -23,6 +23,7 @@ from cyreneAI.core.plugin.plugin_protocol import (
     PluginTaskStoreProtocol,
 )
 from cyreneAI.core.schema.plugin import PluginDefinition
+from cyreneAI.core.schema.application import BotAdminConfig
 from cyreneAI.core.provider.factory import ProviderFactory
 from cyreneAI.core.provider.manager import ProviderManager
 from cyreneAI.core.provider.registry import ProviderRegistry
@@ -84,6 +85,7 @@ async def build_cyrene_ai_runtime(
     bot_session_manager: BotSessionManager | None = None,
     bot_polling_state_store: BotPollingStateStoreProtocol | None = None,
     bot_polling_state_database_path: str | Path | None = None,
+    bot_admin_config: BotAdminConfig | None = None,
     plugin_loaders: list[PluginLoaderProtocol] | None = None,
     plugin_paths: Sequence[str | Path] | None = None,
     plugin_storage: PluginStorageProtocol | None = None,
@@ -253,6 +255,7 @@ async def build_cyrene_ai_runtime(
         bot_channel_registry=runtime_bot_channel_registry,
         bot_session_manager=runtime_bot_session_manager,
         bot_polling_state_store=runtime_bot_polling_state_store,
+        bot_admin_config=bot_admin_config,
     )
 
     if runtime.tool_registry is not None and register_builtin_tools:

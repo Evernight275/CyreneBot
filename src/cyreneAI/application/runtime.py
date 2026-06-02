@@ -17,6 +17,7 @@ from cyreneAI.core.plugin.plugin_protocol import (
     PluginStorageProtocol,
 )
 from cyreneAI.core.provider.manager import ProviderManager
+from cyreneAI.core.schema.application import BotAdminConfig
 from cyreneAI.core.skill.manager import SkillManager
 from cyreneAI.core.tool.manager import ToolManager
 from cyreneAI.core.tool.tool_protocol import (
@@ -52,6 +53,7 @@ class CyreneAIRuntime:
     bot_channel_registry: BotChannelRegistryProtocol | None = None
     bot_session_manager: BotSessionManager | None = None
     bot_polling_state_store: BotPollingStateStoreProtocol | None = None
+    bot_admin_config: BotAdminConfig | None = None
 
     async def close(self) -> None:
         """

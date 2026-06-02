@@ -67,6 +67,7 @@ from cyreneAI.server.app import (
     create_app_with_runtime_builder,
 )
 from cyreneAI.server.config import (
+    build_bot_admin_config_from_env,
     ServerSettings,
     build_bot_polling_state_database_path_from_env,
     build_context_database_path_from_env,
@@ -701,6 +702,21 @@ def test_server_builds_telegram_polling_config_from_env(monkeypatch) -> None:
     assert build_telegram_polling_timeout_seconds_from_env() == 20
     assert build_telegram_polling_limit_from_env() == 10
     assert build_bot_polling_state_database_path_from_env() == "data/bot_polling.db"
+
+
+def test_server_builds_bot_admin_config_from_env(monkeypatch) -> None:
+    monkeypatch.setenv("CYRENEAI_BOT_ADMIN_USER_IDS", "123456789, 987654321;42")
+
+    config = build_bot_admin_config_from_env()
+
+    assert config is not None
+    assert config.user_ids == ["123456789", "987654321", "42"]
+
+
+def test_server_disables_bot_admin_config_by_default(monkeypatch) -> None:
+    monkeypatch.delenv("CYRENEAI_BOT_ADMIN_USER_IDS", raising=False)
+
+    assert build_bot_admin_config_from_env() is None
 
 
 def test_server_builds_context_database_path_from_env(monkeypatch) -> None:

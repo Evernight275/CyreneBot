@@ -57,6 +57,7 @@ class BotOrchestrator:
         """
         处理一次标准化 bot 事件。
         """
+        request = _request_with_bot_admin_metadata(request, self._runtime)
         plugin_event_actions = await self._dispatch_plugin_event(request)
 
         if should_parse_bot_command(request.event):
@@ -362,6 +363,47 @@ def _metadata_is_admin(value: object) -> bool:
     if isinstance(value, str):
         return value.casefold() == "true"
     return False
+
+
+def _request_with_bot_admin_metadata(
+    request: ApplicationBotRequest,
+    runtime: CyreneAIRuntime,
+) -> ApplicationBotRequest:
+    if not _is_bot_admin_request(request, runtime):
+        return request
+    if _metadata_is_admin(request.metadata.get("is_admin")):
+        return request
+    return request.model_copy(
+        update={
+            "metadata": {
+                **request.metadata,
+                "is_admin": True,
+            }
+        }
+    )
+
+
+def _is_bot_admin_request(
+    request: ApplicationBotRequest,
+    runtime: CyreneAIRuntime,
+) -> bool:
+    if _metadata_is_admin(request.metadata.get("is_admin")):
+        return True
+
+    user_id = request.event.user_id
+    if user_id is None:
+        return False
+
+    config = runtime.bot_admin_config
+    if config is None:
+        return False
+
+    normalized_user_id = str(user_id).strip()
+    return any(
+        normalized_user_id == configured_user_id.strip()
+        for configured_user_id in config.user_ids
+        if configured_user_id.strip()
+    )
 
 
 def _known_plugin_command_names(plugin_manager: PluginManager | None) -> set[str] | None:

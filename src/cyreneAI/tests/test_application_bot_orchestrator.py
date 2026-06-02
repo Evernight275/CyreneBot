@@ -30,6 +30,7 @@ from cyreneAI.core.provider.factory import ProviderFactory
 from cyreneAI.core.provider.manager import ProviderManager
 from cyreneAI.core.schema.chat import ChatFinishReason, ChatRequest, ChatResponse
 from cyreneAI.core.schema.application import (
+    BotAdminConfig,
     BotMessageResponseMode,
     BotMessageTriggerMode,
 )
@@ -181,7 +182,11 @@ class FailingPluginEventExecutor:
         raise RuntimeError("event failed")
 
 
-async def _build_runtime(provider: FakeChatProvider) -> CyreneAIRuntime:
+async def _build_runtime(
+    provider: FakeChatProvider,
+    *,
+    bot_admin_config: BotAdminConfig | None = None,
+) -> CyreneAIRuntime:
     factory = ProviderFactory()
 
     async def build_provider(config: ProviderConfig) -> FakeChatProvider:
@@ -193,6 +198,7 @@ async def _build_runtime(provider: FakeChatProvider) -> CyreneAIRuntime:
     runtime = CyreneAIRuntime(
         provider_manager=provider_manager,
         context_builder=ContextWindowBuilder(),
+        bot_admin_config=bot_admin_config,
     )
     plugin_registry = PluginRegistry()
     runtime.plugin_manager = PluginManager(plugin_registry)
@@ -652,6 +658,77 @@ def test_bot_orchestrator_rejects_status_command_without_admin() -> None:
         assert result.actions[0].message.content == _content(
             "Command /status requires admin permission."
         )
+
+    asyncio.run(run())
+
+
+def test_bot_orchestrator_runs_status_command_for_whitelisted_user() -> None:
+    async def run() -> None:
+        provider = FakeChatProvider(
+            ChatResponse(
+                provider_id="provider-1",
+                message=_chat_message(MessageRole.ASSISTANT, "unused"),
+            )
+        )
+        runtime = await _build_runtime(
+            provider,
+            bot_admin_config=BotAdminConfig(user_ids=["user-1"]),
+        )
+
+        result = await BotOrchestrator(runtime).handle(
+            ApplicationBotRequest(
+                event=_bot_event("/status"),
+                provider_id="provider-1",
+                model="fake-model",
+            )
+        )
+
+        assert provider.requests == []
+        assert result.actions[0].message is not None
+        assert result.actions[0].message.content == _content(
+            "\n".join(
+                [
+                    "CyreneAI status:",
+                    "providers: 1",
+                    "bot_channels: 0",
+                    "skills: disabled",
+                    "tools: disabled",
+                    "polling_state: disabled",
+                ]
+            )
+        )
+        assert result.metadata["is_admin"] is True
+
+    asyncio.run(run())
+
+
+def test_bot_orchestrator_rejects_status_command_for_non_whitelisted_user() -> None:
+    async def run() -> None:
+        provider = FakeChatProvider(
+            ChatResponse(
+                provider_id="provider-1",
+                message=_chat_message(MessageRole.ASSISTANT, "unused"),
+            )
+        )
+        runtime = await _build_runtime(
+            provider,
+            bot_admin_config=BotAdminConfig(user_ids=["another-user"]),
+        )
+
+        result = await BotOrchestrator(runtime).handle(
+            ApplicationBotRequest(
+                event=_bot_event("/status"),
+                provider_id="provider-1",
+                model="fake-model",
+            )
+        )
+
+        assert provider.requests == []
+        assert result.actions[0].message is not None
+        assert result.actions[0].message.content == _content(
+            "Command /status requires admin permission."
+        )
+        assert "is_admin" not in result.metadata
 
     asyncio.run(run())
 
