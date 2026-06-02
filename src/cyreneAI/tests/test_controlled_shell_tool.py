@@ -34,6 +34,12 @@ def test_controlled_shell_allows_safe_builtin_commands(tmp_path) -> None:
         assert payload["decision"] == "allow"
         assert payload["stdout"].splitlines() == ["hello", "world"]
 
+        result = await manager.execute(_call({"command": "ls -la"}))
+        payload = json.loads(result.content or "{}")
+
+        assert result.success is True
+        assert "note.txt" in payload["stdout"].splitlines()
+
     asyncio.run(run())
 
 

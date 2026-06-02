@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import cast
 from uuid import uuid4
 
@@ -11,6 +12,7 @@ from cyreneAI.application.tools.execution_policy import (
 from cyreneAI.application.tools.execution_context import use_tool_execution_context
 from cyreneAI.core.context.context_protocol import ContextBuilderProtocol
 from cyreneAI.core.errors.base import StateError, UnsupportedError
+from cyreneAI.core.errors.tool import ToolExecutionError
 from cyreneAI.core.provider.provider_protocol import ChatProviderProtocol
 from cyreneAI.core.schema.application import ApplicationChatRequest, ApplicationChatResult
 from cyreneAI.core.schema.chat import ChatRequest, ChatResponse
@@ -274,12 +276,14 @@ class ChatOrchestrator:
                 model=request.model,
                 metadata=request.metadata,
             ):
-                results.append(
-                    await self._runtime.tool_manager.execute(
+                try:
+                    result = await self._runtime.tool_manager.execute(
                         call,
                         policy=tool_execution_policy,
                     )
-                )
+                except ToolExecutionError as exc:
+                    result = _tool_execution_error_result(call, exc)
+                results.append(result)
         return results
 
 
@@ -424,6 +428,29 @@ def _tool_result_to_message(result: ToolResult) -> Message:
                 text=content_text,
             )
         ],
+    )
+
+
+def _tool_execution_error_result(call: ToolCall, error: ToolExecutionError) -> ToolResult:
+    error_type = error.__class__.__name__
+    message = str(error)
+    return ToolResult(
+        call_id=call.id,
+        name=call.name,
+        content=json.dumps(
+            {
+                "success": False,
+                "error": message,
+                "error_type": error_type,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        ),
+        success=False,
+        error=message,
+        metadata={
+            "error_type": error_type,
+        },
     )
 
 

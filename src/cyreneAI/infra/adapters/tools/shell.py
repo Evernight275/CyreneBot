@@ -380,7 +380,7 @@ def _execute_builtin(
     if command == "pwd":
         return _builtin_result(call, str(cwd), argv=argv, cwd=cwd, metadata=metadata)
     if command == "ls":
-        target = _safe_path(argv[1] if len(argv) > 1 else ".", cwd=cwd, root=root)
+        target = _safe_path(_ls_path_arg(argv), cwd=cwd, root=root)
         if not target.is_dir():
             raise ToolExecutionError("ls target must be a directory")
         names = [
@@ -416,6 +416,35 @@ def _execute_builtin(
             metadata=metadata,
         )
     return None
+
+
+def _ls_path_arg(argv: list[str]) -> str:
+    path_arg = "."
+    option_parsing = True
+    for arg in argv[1:]:
+        if option_parsing and arg == "--":
+            option_parsing = False
+            continue
+        if option_parsing and arg.startswith("-") and arg != "-":
+            _validate_ls_option(arg)
+            continue
+        if path_arg != ".":
+            raise ToolExecutionError("ls supports at most one path")
+        path_arg = arg
+    return path_arg
+
+
+def _validate_ls_option(value: str) -> None:
+    if value in {"--all", "--almost-all", "--long", "--human-readable"}:
+        return
+    if value.startswith("--"):
+        raise ToolExecutionError(f"unsupported ls option: {value}")
+    supported_short_options = set("aAlhF1p")
+    unsupported_options = [
+        option for option in value[1:] if option not in supported_short_options
+    ]
+    if unsupported_options:
+        raise ToolExecutionError(f"unsupported ls option: -{unsupported_options[0]}")
 
 
 def _head_tail_args(argv: list[str]) -> tuple[int, str]:

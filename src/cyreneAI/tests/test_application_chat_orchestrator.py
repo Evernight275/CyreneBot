@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import timedelta
 
 import pytest
@@ -14,7 +15,6 @@ from cyreneAI.core.context.builder import ContextWindowBuilder
 from cyreneAI.core.context.manager import ContextManager
 from cyreneAI.core.provider.factory import ProviderFactory
 from cyreneAI.core.provider.manager import ProviderManager
-from cyreneAI.core.errors.tool import ToolExecutionError
 from cyreneAI.core.plugin.manager import PluginManager
 from cyreneAI.core.plugin.registry import PluginRegistry
 from cyreneAI.core.schema.chat import ChatFinishReason, ChatRequest, ChatResponse
@@ -487,18 +487,26 @@ def test_chat_orchestrator_runs_plugin_llm_middlewares() -> None:
 
 async def _run_chat_orchestrator_rejects_disallowed_tool_call() -> None:
     provider = FakeChatProvider(
-        ChatResponse(
-            provider_id="provider-1",
-            model="fake-model",
-            tool_calls=[
-                ToolCall(
-                    id="call-1",
-                    name="delete",
-                    arguments="{\"key\":\"value\"}",
-                )
-            ],
-            finish_reason=ChatFinishReason.TOOL_CALLS,
-        )
+        [
+            ChatResponse(
+                provider_id="provider-1",
+                model="fake-model",
+                tool_calls=[
+                    ToolCall(
+                        id="call-1",
+                        name="delete",
+                        arguments="{\"key\":\"value\"}",
+                    )
+                ],
+                finish_reason=ChatFinishReason.TOOL_CALLS,
+            ),
+            ChatResponse(
+                provider_id="provider-1",
+                model="fake-model",
+                message=_message(MessageRole.ASSISTANT, "tool failed"),
+                finish_reason=ChatFinishReason.STOP,
+            ),
+        ]
     )
     provider_manager = await _build_provider_manager(provider)
     skill_registry = SkillRegistry()
@@ -529,20 +537,32 @@ async def _run_chat_orchestrator_rejects_disallowed_tool_call() -> None:
         tool_manager=ToolManager(tool_registry),
     )
 
-    with pytest.raises(ToolExecutionError):
-        await ChatOrchestrator(runtime).chat(
-            ApplicationChatRequest(
-                session_id="session-1",
-                provider_id="provider-1",
-                model="fake-model",
-                messages=[_message(MessageRole.USER, "Use memory.")],
-            )
+    result = await ChatOrchestrator(runtime).chat(
+        ApplicationChatRequest(
+            session_id="session-1",
+            provider_id="provider-1",
+            model="fake-model",
+            messages=[_message(MessageRole.USER, "Use memory.")],
         )
+    )
 
     assert delete_executor.calls == []
-    assert len(provider.requests) == 1
+    assert len(provider.requests) == 2
     assert provider.requests[0].tools is not None
     assert [tool.name for tool in provider.requests[0].tools] == ["lookup"]
+    assert len(result.tool_results) == 1
+    assert result.tool_results[0].success is False
+    assert result.tool_results[0].name == "delete"
+    assert result.tool_results[0].error is not None
+    assert "not allowed" in result.tool_results[0].error
+
+    feedback_message = provider.requests[1].messages[-1]
+    assert feedback_message.role == MessageRole.TOOL
+    assert feedback_message.tool_call_id == "call-1"
+    assert feedback_message.content is not None
+    payload = json.loads(feedback_message.content[0].text or "{}")
+    assert payload["success"] is False
+    assert payload["error_type"] == "ToolPolicyError"
 
 
 def test_chat_orchestrator_rejects_disallowed_tool_call() -> None:
