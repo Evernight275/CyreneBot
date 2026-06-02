@@ -75,22 +75,30 @@ async def follow_up(
     session_id = request.payload["session_id"]
     state = await storage.get(f"last_message_{session_id}", default={})
     template = (await assets.read_text("prompts/follow_up.txt")).strip()
-    prompt = template.format(last_text=state.get("text", ""))
-    text = await agent.chat(
-        prompt,
-        provider_id=_payload_string(request, "provider_id"),
-        model=_payload_string(request, "model"),
-        session_id=session_id,
-        max_steps=4,
-        metadata={
-            "kind": "proactive_follow_up",
-            "source": "proactive_reply_demo",
-        },
-    )
+    prompt = _follow_up_text(template, state)
+    provider_id = _payload_string(request, "provider_id")
+    model = _payload_string(request, "model")
+    message_metadata = {"kind": "proactive_follow_up"}
+
+    if provider_id is None or model is None:
+        text = prompt
+        message_metadata["fallback"] = "canned"
+    else:
+        text = await agent.chat(
+            prompt,
+            provider_id=provider_id,
+            model=model,
+            session_id=session_id,
+            max_steps=4,
+            metadata={
+                "kind": "proactive_follow_up",
+                "source": "proactive_reply_demo",
+            },
+        )
     await outbox.send(
         session_id,
         text=text,
-        metadata={"kind": "proactive_follow_up"},
+        metadata=message_metadata,
     )
 
 
@@ -110,6 +118,15 @@ def _payload_string(request, key: str) -> str | None:
     if isinstance(value, str) and value:
         return value
     return None
+
+
+def _follow_up_text(template: str, state: object) -> str:
+    if not isinstance(state, dict):
+        return "我先记着这条消息。等你回来我们接着聊。"
+    last_text = state.get("text")
+    if not isinstance(last_text, str) or not last_text:
+        return "我先记着这条消息。等你回来我们接着聊。"
+    return template.format(last_text=last_text)
 
 
 router.include_router(commands)

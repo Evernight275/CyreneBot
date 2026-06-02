@@ -404,3 +404,75 @@ def test_proactive_reply_demo_telegram_follow_up_calls_tool_before_send(
             await runtime.close()
 
     asyncio.run(run())
+
+
+def test_proactive_reply_demo_telegram_follow_up_uses_canned_reply_without_provider(
+    tmp_path,
+) -> None:
+    async def run() -> None:
+        events: list[str] = []
+        telegram_client = RecordingTelegramClient(events)
+        telegram_channel = TelegramBotChannel(bot_client=telegram_client)
+        channel_registry = BotChannelRegistry()
+        channel_registry.register(
+            BotChannelDefinition(
+                channel_id="telegram",
+                name="Telegram",
+            ),
+            telegram_channel,
+        )
+
+        plugin_assets = FileSystemPluginAssets()
+        runtime = await build_cyrene_ai_runtime(
+            plugin_assets=plugin_assets,
+            plugin_storage=FileSystemPluginStorage(tmp_path / "plugin_storage"),
+            plugin_loaders=[
+                FileSystemPluginLoader(
+                    DEMO_PLUGIN_PATH,
+                    plugin_assets=plugin_assets,
+                )
+            ],
+            bot_channel_registry=channel_registry,
+            bot_session_manager=BotSessionManager(InMemoryBotSessionStore()),
+            register_builtin_plugins=False,
+            register_builtin_tools=False,
+        )
+        try:
+            await ChannelWebhookHandler(runtime).handle(
+                ApplicationChannelWebhookRequest(
+                    channel_id="telegram",
+                    payload={
+                        "update_id": 1002,
+                        "message": {
+                            "message_id": 8,
+                            "from": {"id": 42},
+                            "chat": {"id": 99, "type": "private"},
+                            "text": "我去吃饭了",
+                        },
+                    },
+                    provider_id="",
+                    model="",
+                    message_trigger_mode=BotMessageTriggerMode.NEVER,
+                    metadata={
+                        "follow_up_delay_seconds": 0.05,
+                        "follow_up_cooldown_seconds": 0.2,
+                    },
+                )
+            )
+
+            for _ in range(30):
+                if telegram_client.sent_messages:
+                    break
+                await asyncio.sleep(0.02)
+
+            assert events == ["telegram:send"]
+            assert telegram_client.sent_messages == [
+                {
+                    "chat_id": "99",
+                    "text": "刚刚你说「我去吃饭了」，我先记着。等你回来我们接着聊。",
+                }
+            ]
+        finally:
+            await runtime.close()
+
+    asyncio.run(run())

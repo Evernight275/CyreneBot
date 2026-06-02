@@ -43,5 +43,14 @@ async def follow_up(request, agent=Depends("agent"), outbox=Depends("outbox")):
     await outbox.send(request.payload["session_id"], text=text)
 ```
 
+For local development, the task has an explicit canned-reply fallback. If the
+scheduled task does not receive both `provider_id` and `model`, it skips
+`agent.chat(...)` and sends the rendered `assets/prompts/follow_up.txt` template
+through the same outbox path instead:
+
+```text
+刚刚你说「{last_text}」，我先记着。等你回来我们接着聊。
+```
+
 The plugin only sees `PluginEvent.session_id`; the host resolves channel/user/thread
 from the bot session store.
