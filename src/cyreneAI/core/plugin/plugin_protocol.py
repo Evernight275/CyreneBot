@@ -8,6 +8,8 @@ from cyreneAI.core.schema.application import (
     ApplicationImageGenerationRequest,
     ApplicationImageGenerationResult,
 )
+from cyreneAI.core.schema.agent import AgentRunResult
+from cyreneAI.core.schema.tool import ToolChoice, ToolDefinition, ToolExecutionPolicy
 from cyreneAI.core.schema.plugin import (
     PluginCommandDefinition,
     PluginCommandRequest,
@@ -35,7 +37,6 @@ from cyreneAI.core.schema.plugin import (
 from cyreneAI.core.schema.chat import ChatResponse
 from cyreneAI.core.schema.provider import ProviderInfo, ProviderModel
 from cyreneAI.core.schema.skill import SkillDefinition
-from cyreneAI.core.schema.tool import ToolDefinition
 from cyreneAI.core.tool.tool_protocol import ToolExecutorProtocol
 
 
@@ -131,6 +132,54 @@ class PluginLLMNamespaceProtocol(Protocol):
         ...
 
 
+class PluginAgentNamespaceProtocol(Protocol):
+    """
+    单个插件的受控 Agent 命名空间。
+    """
+
+    async def chat(
+        self,
+        prompt: str,
+        *,
+        provider_id: str | None = None,
+        model: str | None = None,
+        system: str | None = None,
+        session_id: str | None = None,
+        max_steps: int = 4,
+        allowed_tool_names: list[str] | None = None,
+        tool_execution_policy: ToolExecutionPolicy | None = None,
+        tool_choice: ToolChoice | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> str:
+        """
+        以最小文本输入运行 Agent Loop，并返回最终文本回复。
+        """
+        ...
+
+    async def result(
+        self,
+        prompt: str,
+        *,
+        provider_id: str | None = None,
+        model: str | None = None,
+        system: str | None = None,
+        session_id: str | None = None,
+        max_steps: int = 4,
+        allowed_tool_names: list[str] | None = None,
+        tool_execution_policy: ToolExecutionPolicy | None = None,
+        tool_choice: ToolChoice | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> AgentRunResult:
+        """
+        运行 Agent Loop 并返回完整结果。
+        """
+        ...
+
+
 class PluginRuntimeContextProtocol(Protocol):
     """
     第三方插件运行时上下文协议。
@@ -167,6 +216,13 @@ class PluginRuntimeContextProtocol(Protocol):
     def llm(self) -> PluginLLMNamespaceProtocol:
         """
         当前插件的受控 LLM 命名空间。
+        """
+        ...
+
+    @property
+    def agent(self) -> PluginAgentNamespaceProtocol:
+        """
+        当前插件的受控 Agent 命名空间。
         """
         ...
 

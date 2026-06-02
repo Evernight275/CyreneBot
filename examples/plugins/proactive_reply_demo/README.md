@@ -3,7 +3,8 @@
 Minimal proactive reply plugin for CyreneAI.
 
 It demonstrates the active-reply path without global context, raw database access,
-manual `asyncio.create_task`, or channel/platform adapters in plugin code.
+manual `asyncio.create_task`, or channel/platform adapters in plugin code. The
+delayed follow-up runs through the host-managed agent loop before sending.
 
 ```text
 proactive_reply_demo/
@@ -32,12 +33,14 @@ async def remember_message(event, storage=Depends("storage"), tasks=Depends("tas
     )
 ```
 
-The delayed task sends through the host-managed outbox:
+The delayed task runs an agent-mode follow-up and sends through the host-managed
+outbox:
 
 ```python
 @router.task("follow_up")
-async def follow_up(request, outbox=Depends("outbox")):
-    await outbox.send(request.payload["session_id"], text="...")
+async def follow_up(request, agent=Depends("agent"), outbox=Depends("outbox")):
+    text = await agent.chat("...", session_id=request.payload["session_id"])
+    await outbox.send(request.payload["session_id"], text=text)
 ```
 
 The plugin only sees `PluginEvent.session_id`; the host resolves channel/user/thread

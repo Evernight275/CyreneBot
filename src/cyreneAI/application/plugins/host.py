@@ -5,6 +5,7 @@ import uuid
 from contextlib import suppress
 from datetime import UTC, datetime
 
+from cyreneAI.application.agent.orchestrator import AgentOrchestrator, AgentRunRequest
 from cyreneAI.application.chat.orchestrator import ChatOrchestrator
 from cyreneAI.application.generation.image_orchestrator import ImageGenerationOrchestrator
 from cyreneAI.application.runtime import CyreneAIRuntime
@@ -38,6 +39,7 @@ from cyreneAI.core.schema.application import (
     ApplicationImageGenerationRequest,
     ApplicationImageGenerationResult,
 )
+from cyreneAI.core.schema.agent import AgentRunResult
 from cyreneAI.core.schema.message import ContentPart, ContentPartType, Message, MessageRole
 from cyreneAI.core.schema.plugin import (
     PluginCapability,
@@ -63,7 +65,7 @@ from cyreneAI.core.schema.plugin import (
 )
 from cyreneAI.core.schema.provider import ProviderInfo, ProviderModel
 from cyreneAI.core.schema.skill import SkillDefinition
-from cyreneAI.core.schema.tool import ToolDefinition
+from cyreneAI.core.schema.tool import ToolChoice, ToolDefinition, ToolExecutionPolicy
 from cyreneAI.core.skill.skill_protocol import SkillRegistryProtocol
 from cyreneAI.core.tool.tool_protocol import ToolExecutorProtocol
 
@@ -351,6 +353,7 @@ class ApplicationPluginRuntimeContext:
         self._plugin_id = plugin_id
         self._permissions = permissions
         self._chat_orchestrator = ChatOrchestrator(runtime)
+        self._agent_orchestrator = AgentOrchestrator(runtime)
         self._image_orchestrator = ImageGenerationOrchestrator(runtime)
 
     def require_permission(self, permission: PluginPermission) -> None:
@@ -417,6 +420,33 @@ class ApplicationPluginRuntimeContext:
         self.require_permission(PluginPermission.LLM)
         return ApplicationPluginLLMNamespace(
             chat_orchestrator=self._chat_orchestrator,
+            plugin_id=self._plugin_id,
+            default_provider_id=_request_metadata_str(request, "provider_id"),
+            default_model=_request_metadata_str(request, "model"),
+            default_session_id=_request_session_id(request),
+            default_metadata=_request_metadata(request),
+        )
+
+    @property
+    def agent(self) -> "ApplicationPluginAgentNamespace":
+        self.require_permission(PluginPermission.LLM)
+        return ApplicationPluginAgentNamespace(
+            agent_orchestrator=self._agent_orchestrator,
+            plugin_id=self._plugin_id,
+        )
+
+    def agent_for_request(
+        self,
+        request: (
+            PluginCommandRequest
+            | PluginTaskRequest
+            | PluginEventRequest
+            | PluginMiddlewareRequest
+        ),
+    ) -> "ApplicationPluginAgentNamespace":
+        self.require_permission(PluginPermission.LLM)
+        return ApplicationPluginAgentNamespace(
+            agent_orchestrator=self._agent_orchestrator,
             plugin_id=self._plugin_id,
             default_provider_id=_request_metadata_str(request, "provider_id"),
             default_model=_request_metadata_str(request, "model"),
@@ -539,6 +569,110 @@ class ApplicationPluginLLMNamespace:
                 provider_id=resolved_provider_id,
                 model=resolved_model,
                 messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                metadata={
+                    **self._default_metadata,
+                    **(metadata or {}),
+                    "plugin_id": self._plugin_id,
+                },
+            )
+        )
+
+
+class ApplicationPluginAgentNamespace:
+    """
+    application 暴露给插件的受控 Agent 命名空间。
+    """
+
+    def __init__(
+        self,
+        *,
+        agent_orchestrator: AgentOrchestrator,
+        plugin_id: str,
+        default_provider_id: str | None = None,
+        default_model: str | None = None,
+        default_session_id: str | None = None,
+        default_metadata: dict[str, object] | None = None,
+    ) -> None:
+        self._agent_orchestrator = agent_orchestrator
+        self._plugin_id = plugin_id
+        self._default_provider_id = default_provider_id
+        self._default_model = default_model
+        self._default_session_id = default_session_id
+        self._default_metadata = default_metadata or {}
+
+    async def chat(
+        self,
+        prompt: str,
+        *,
+        provider_id: str | None = None,
+        model: str | None = None,
+        system: str | None = None,
+        session_id: str | None = None,
+        max_steps: int = 4,
+        allowed_tool_names: list[str] | None = None,
+        tool_execution_policy: ToolExecutionPolicy | None = None,
+        tool_choice: ToolChoice | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        metadata: dict[str, object] | None = None,
+    ) -> str:
+        result = await self.result(
+            prompt,
+            provider_id=provider_id,
+            model=model,
+            system=system,
+            session_id=session_id,
+            max_steps=max_steps,
+            allowed_tool_names=allowed_tool_names,
+            tool_execution_policy=tool_execution_policy,
+            tool_choice=tool_choice,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            metadata=metadata,
+        )
+        return _chat_response_text(result.response.message)
+
+    async def result(
+        self,
+        prompt: str,
+        *,
+        provider_id: str | None = None,
+        model: str | None = None,
+        system: str | None = None,
+        session_id: str | None = None,
+        max_steps: int = 4,
+        allowed_tool_names: list[str] | None = None,
+        tool_execution_policy: ToolExecutionPolicy | None = None,
+        tool_choice: ToolChoice | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        metadata: dict[str, object] | None = None,
+    ) -> AgentRunResult:
+        resolved_provider_id = provider_id or self._default_provider_id
+        resolved_model = model or self._default_model
+        if not resolved_provider_id or not resolved_model:
+            raise PluginConfigurationError(
+                "agent.chat requires provider_id and model when no bot defaults are available"
+            )
+
+        messages: list[Message] = []
+        if system:
+            messages.append(_text_message(MessageRole.SYSTEM, system))
+        messages.append(_text_message(MessageRole.USER, prompt))
+        return await self._agent_orchestrator.run(
+            AgentRunRequest(
+                session_id=session_id
+                or self._default_session_id
+                or f"plugin:{self._plugin_id}",
+                provider_id=resolved_provider_id,
+                model=resolved_model,
+                messages=messages,
+                max_steps=max_steps,
+                allowed_tool_names=allowed_tool_names,
+                tool_execution_policy=tool_execution_policy,
+                tool_choice=tool_choice,
                 temperature=temperature,
                 max_tokens=max_tokens,
                 metadata={
@@ -857,7 +991,10 @@ def _text_message(role: MessageRole, text: str) -> Message:
 
 
 def _chat_result_text(result: ApplicationChatResult) -> str:
-    message = result.response.message
+    return _chat_response_text(result.response.message)
+
+
+def _chat_response_text(message: Message | None) -> str:
     if message is None or not message.content:
         return ""
     return "".join(
@@ -887,6 +1024,10 @@ def _request_metadata_str(
         if isinstance(value, str) and value:
             return value
         return None
+    if isinstance(request, PluginTaskRequest):
+        value = request.payload.get(key)
+        if isinstance(value, str) and value:
+            return value
     value = request.metadata.get(key)
     if isinstance(value, str) and value:
         return value
@@ -923,6 +1064,10 @@ def _request_session_id(
         return request.event.session_id
     if isinstance(request, PluginEventRequest):
         return request.event.session_id
+    if isinstance(request, PluginTaskRequest):
+        value = request.payload.get("session_id")
+        if isinstance(value, str) and value:
+            return value
     return _request_metadata_str(request, "session_id")
 
 

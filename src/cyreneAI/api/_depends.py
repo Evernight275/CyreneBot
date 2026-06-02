@@ -5,6 +5,7 @@ from typing import Any, Literal, overload
 
 from cyreneAI.core.errors.plugin import PluginConfigurationError
 from cyreneAI.core.plugin.plugin_protocol import (
+    PluginAgentNamespaceProtocol,
     PluginAssetsNamespaceProtocol,
     PluginLLMNamespaceProtocol,
     PluginOutboxNamespaceProtocol,
@@ -46,6 +47,10 @@ def Depends(
 
 @overload
 def Depends(name: Literal["llm"]) -> PluginLLMNamespaceProtocol: ...
+
+
+@overload
+def Depends(name: Literal["agent"]) -> PluginAgentNamespaceProtocol: ...
 
 
 @overload
@@ -119,6 +124,12 @@ def _resolve_dependency(
         if llm_for_request is not None and request is not None:
             return llm_for_request(request)
         return runtime_context.llm
+    if dependency.name == "agent":
+        runtime_context.require_permission(PluginPermission.LLM)
+        agent_for_request = getattr(runtime_context, "agent_for_request", None)
+        if agent_for_request is not None and request is not None:
+            return agent_for_request(request)
+        return runtime_context.agent
     if dependency.name in {"image", "generate_image"}:
         runtime_context.require_permission(PluginPermission.IMAGE)
         return runtime_context.generate_image

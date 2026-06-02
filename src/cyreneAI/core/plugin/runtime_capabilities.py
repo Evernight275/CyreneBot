@@ -16,8 +16,8 @@ def list_plugin_runtime_permissions() -> list[PluginRuntimePermissionInfo]:
         PluginRuntimePermissionInfo(
             permission=PluginPermission.LLM,
             status=PluginRuntimeCapabilityStatus.SUPPORTED,
-            dependencies=["llm"],
-            description="Allows plugins to call the host-managed LLM namespace.",
+            dependencies=["llm", "agent"],
+            description="Allows plugins to call host-managed LLM and agent namespaces.",
         ),
         PluginRuntimePermissionInfo(
             permission=PluginPermission.CHAT,
@@ -131,6 +131,12 @@ def list_plugin_runtime_dependencies() -> list[PluginRuntimeDependencyInfo]:
             status=PluginRuntimeCapabilityStatus.SUPPORTED,
             permission=PluginPermission.LLM,
             description="Host-managed LLM namespace.",
+        ),
+        PluginRuntimeDependencyInfo(
+            name="agent",
+            status=PluginRuntimeCapabilityStatus.SUPPORTED,
+            permission=PluginPermission.LLM,
+            description="Host-managed Agent loop namespace.",
         ),
         PluginRuntimeDependencyInfo(
             name="generate_image",

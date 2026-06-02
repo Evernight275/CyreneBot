@@ -55,7 +55,11 @@ async def on_message(request, storage=Depends("storage"), tasks=Depends("tasks")
             "follow_up_delay_seconds",
             DEFAULT_FOLLOW_UP_DELAY_SECONDS,
         ),
-        payload={"session_id": event.session_id},
+        payload={
+            "session_id": event.session_id,
+            "provider_id": request.metadata.get("provider_id"),
+            "model": request.metadata.get("model"),
+        },
         key=task_key,
     )
 
@@ -65,14 +69,27 @@ async def follow_up(
     request,
     storage=Depends("storage"),
     assets=Depends("assets"),
+    agent=Depends("agent"),
     outbox=Depends("outbox"),
 ):
     session_id = request.payload["session_id"]
     state = await storage.get(f"last_message_{session_id}", default={})
     template = (await assets.read_text("prompts/follow_up.txt")).strip()
+    prompt = template.format(last_text=state.get("text", ""))
+    text = await agent.chat(
+        prompt,
+        provider_id=_payload_string(request, "provider_id"),
+        model=_payload_string(request, "model"),
+        session_id=session_id,
+        max_steps=4,
+        metadata={
+            "kind": "proactive_follow_up",
+            "source": "proactive_reply_demo",
+        },
+    )
     await outbox.send(
         session_id,
-        text=template.format(last_text=state.get("text", "")),
+        text=text,
         metadata={"kind": "proactive_follow_up"},
     )
 
@@ -83,6 +100,16 @@ def _metadata_float(request, key: str, default: float) -> float:
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+def _payload_string(request, key: str) -> str | None:
+    value = request.payload.get(key)
+    if isinstance(value, str) and value:
+        return value
+    value = request.metadata.get(key)
+    if isinstance(value, str) and value:
+        return value
+    return None
 
 
 router.include_router(commands)

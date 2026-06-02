@@ -1001,7 +1001,7 @@ def test_server_lists_plugin_runtime_capabilities() -> None:
         for item in response.json()["permissions"]
     }
     assert permissions["llm"]["status"] == "supported"
-    assert permissions["llm"]["dependencies"] == ["llm"]
+    assert permissions["llm"]["dependencies"] == ["llm", "agent"]
     assert permissions["chat"]["status"] == "reserved"
     assert permissions["tool"]["status"] == "supported"
     assert permissions["tool"]["setup_apis"] == ["register_tool"]
@@ -1012,6 +1012,7 @@ def test_server_lists_plugin_runtime_capabilities() -> None:
         for item in response.json()["dependencies"]
     }
     assert dependencies["llm"]["permission"] == "llm"
+    assert dependencies["agent"]["permission"] == "llm"
     assert dependencies["storage"]["permission"] == "storage"
 
 

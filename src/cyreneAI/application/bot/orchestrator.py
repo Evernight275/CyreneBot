@@ -177,7 +177,11 @@ class BotOrchestrator:
         try:
             results = await plugin_manager.dispatch_event(
                 _bot_event_to_plugin_event(request.event),
-                metadata=request.metadata,
+                metadata={
+                    **request.metadata,
+                    "provider_id": request.provider_id,
+                    "model": request.model,
+                },
             )
         except CyreneAIError:
             logger.exception(

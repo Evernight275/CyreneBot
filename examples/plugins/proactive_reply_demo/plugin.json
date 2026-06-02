@@ -2,13 +2,13 @@
   "plugin_id": "demo.proactive_reply",
   "name": "Proactive Reply Demo",
   "version": "0.1.0",
-  "description": "A minimal proactive reply plugin built on event router, tasks, storage, assets, and outbox.",
+  "description": "A minimal proactive reply plugin built on event router, tasks, storage, agent follow-ups, and outbox.",
   "entrypoint": "main.py",
   "author": "CyreneAI",
   "license": "MIT",
   "keywords": ["demo", "proactive", "reply"],
   "capabilities": ["bot_command", "event", "task"],
-  "permissions": ["storage", "assets", "task", "message_send"],
+  "permissions": ["storage", "assets", "task", "llm", "message_send"],
   "metadata": {
     "follow_up_delay_seconds": 30,
     "follow_up_cooldown_seconds": 300

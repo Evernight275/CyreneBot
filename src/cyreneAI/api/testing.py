@@ -158,6 +158,7 @@ class PluginTestClient:
             "tasks": self.scheduler,
             "task": self.scheduler,
             "scheduler": self.scheduler,
+            "agent": _PluginTestAgent(),
             **(dependencies or {}),
         }
         self._runtime = _PluginTestRuntimeContext(
@@ -377,6 +378,17 @@ class _PluginTestRuntimeContext:
             return for_request(request)
         return value
 
+    @property
+    def agent(self) -> Any:
+        return self._dependency("agent")
+
+    def agent_for_request(self, request: Any) -> Any:
+        value = self.agent
+        for_request = getattr(value, "for_request", None)
+        if callable(for_request):
+            return for_request(request)
+        return value
+
     async def generate_image(self, request: Any) -> Any:
         value = self._dependency("generate_image", "image")
         if callable(value):
@@ -513,6 +525,19 @@ class _PluginTestMessages:
             accepted=True,
             metadata=dict(metadata or {}),
         )
+
+
+class _PluginTestAgent:
+    def __init__(self) -> None:
+        self.requests: list[dict[str, Any]] = []
+
+    async def chat(self, prompt: str, **kwargs: Any) -> str:
+        self.requests.append({"prompt": prompt, **kwargs})
+        return prompt
+
+    async def result(self, prompt: str, **kwargs: Any) -> Any:
+        self.requests.append({"prompt": prompt, **kwargs})
+        return prompt
 
 
 class _PluginTestTasks:
