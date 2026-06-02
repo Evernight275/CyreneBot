@@ -32,6 +32,38 @@ from cyreneAI.core.schema.tool import ToolChoice, ToolExecutionPolicy, ToolResul
 from cyreneAI.core.schema.vector import VectorRecord, VectorSearchResult
 
 
+def _empty_context_segments() -> list[ContextSegment]:
+    return []
+
+
+def _empty_tool_results() -> list[ToolResult]:
+    return []
+
+
+def _empty_document_chunks() -> list[DocumentChunk]:
+    return []
+
+
+def _empty_vector_records() -> list[VectorRecord]:
+    return []
+
+
+def _empty_bot_actions() -> list[BotAction]:
+    return []
+
+
+def _empty_bot_dispatch_results() -> list["ApplicationBotDispatchResult"]:
+    return []
+
+
+def _empty_bot_events() -> list[BotEvent]:
+    return []
+
+
+def _empty_strings() -> list[str]:
+    return []
+
+
 class ChunkStrategy(StrEnum):
     """
     文档切块策略
@@ -87,7 +119,9 @@ class ApplicationChatRequest(CyreneAISchema):
     context_budget: ContextBudget | None = None
     required_skill_names: list[str] = Field(default_factory=list)
     max_skills: int | None = None
-    additional_context_segments: list[ContextSegment] = []
+    additional_context_segments: list[ContextSegment] = Field(
+        default_factory=_empty_context_segments
+    )
 
     temperature: float | None = None
     max_tokens: int | None = None
@@ -108,7 +142,7 @@ class ApplicationChatResult(CyreneAISchema):
     response: ChatResponse
     context_snapshot: ContextSnapshot
     skill_bundle: SkillInstructionBundle | None = None
-    tool_results: list[ToolResult] = []
+    tool_results: list[ToolResult] = Field(default_factory=_empty_tool_results)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -184,8 +218,8 @@ class ApplicationIndexingResult(CyreneAISchema):
     应用索引结果
     """
 
-    chunks: list[DocumentChunk] = []
-    records: list[VectorRecord] = []
+    chunks: list[DocumentChunk] = Field(default_factory=_empty_document_chunks)
+    records: list[VectorRecord] = Field(default_factory=_empty_vector_records)
     embedding_response: EmbeddingResponse
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -221,7 +255,7 @@ class ApplicationVectorUpsertRequest(CyreneAISchema):
     应用向量写入请求
     """
 
-    records: list[VectorRecord] = []
+    records: list[VectorRecord] = Field(default_factory=_empty_vector_records)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -289,8 +323,8 @@ class ApplicationBotRequest(CyreneAISchema):
     agent_memory_retrieval: AgentMemoryRetrievalConfig | None = None
     message_response_mode: BotMessageResponseMode = BotMessageResponseMode.CHAT
     message_trigger_mode: BotMessageTriggerMode = BotMessageTriggerMode.ALWAYS
-    message_trigger_keywords: list[str] = []
-    message_trigger_mentions: list[str] = []
+    message_trigger_keywords: list[str] = Field(default_factory=_empty_strings)
+    message_trigger_mentions: list[str] = Field(default_factory=_empty_strings)
 
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -300,10 +334,10 @@ class ApplicationBotResult(CyreneAISchema):
     应用 bot 结果。
     """
 
-    actions: list[BotAction] = []
+    actions: list[BotAction] = Field(default_factory=_empty_bot_actions)
     chat_result: ApplicationChatResult | None = None
     agent_result: AgentRunResult | None = None
-    tool_results: list[ToolResult] = []
+    tool_results: list[ToolResult] = Field(default_factory=_empty_tool_results)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -313,7 +347,7 @@ class ApplicationBotDispatchResult(CyreneAISchema):
     """
 
     bot_result: ApplicationBotResult
-    sent_actions: list[BotAction] = []
+    sent_actions: list[BotAction] = Field(default_factory=_empty_bot_actions)
     session_state: BotConversationState | None = None
 
 
@@ -322,7 +356,7 @@ class ApplicationChannelEventsRequest(CyreneAISchema):
     应用 channel 事件批处理请求。
     """
 
-    events: list[BotEvent] = []
+    events: list[BotEvent] = Field(default_factory=_empty_bot_events)
     provider_id: str
     model: str
 
@@ -343,8 +377,8 @@ class ApplicationChannelEventsRequest(CyreneAISchema):
     agent_memory_retrieval: AgentMemoryRetrievalConfig | None = None
     message_response_mode: BotMessageResponseMode = BotMessageResponseMode.CHAT
     message_trigger_mode: BotMessageTriggerMode = BotMessageTriggerMode.ALWAYS
-    message_trigger_keywords: list[str] = []
-    message_trigger_mentions: list[str] = []
+    message_trigger_keywords: list[str] = Field(default_factory=_empty_strings)
+    message_trigger_mentions: list[str] = Field(default_factory=_empty_strings)
 
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -354,7 +388,9 @@ class ApplicationChannelEventsResult(CyreneAISchema):
     应用 channel 事件批处理结果。
     """
 
-    dispatch_results: list[ApplicationBotDispatchResult] = []
+    dispatch_results: list[ApplicationBotDispatchResult] = Field(
+        default_factory=_empty_bot_dispatch_results
+    )
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -385,8 +421,8 @@ class ApplicationChannelWebhookRequest(CyreneAISchema):
     agent_memory_retrieval: AgentMemoryRetrievalConfig | None = None
     message_response_mode: BotMessageResponseMode = BotMessageResponseMode.CHAT
     message_trigger_mode: BotMessageTriggerMode = BotMessageTriggerMode.ALWAYS
-    message_trigger_keywords: list[str] = []
-    message_trigger_mentions: list[str] = []
+    message_trigger_keywords: list[str] = Field(default_factory=_empty_strings)
+    message_trigger_mentions: list[str] = Field(default_factory=_empty_strings)
 
     metadata: dict[str, Any] = Field(default_factory=dict)
 

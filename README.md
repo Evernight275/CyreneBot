@@ -294,6 +294,119 @@ runtime = await build_cyrene_ai_runtime(
 await runtime.close()
 ```
 
+## Agent 使用入口
+
+Agent 可以从 HTTP、bot 自动回复和插件命名空间进入，三个入口最终都会构造同一个 `AgentRunRequest`，再交给 application 层的 `AgentOrchestrator` 执行。
+
+### HTTP `/agents/run`
+
+```json
+{
+  "provider_id": "openai-compatible",
+  "model": "gpt-4o-mini",
+  "goal": "查一下当前时间，并结合项目记忆给出下一步建议。",
+  "messages": [
+    {"role": "user", "content": "需要一版 agent smoke 结论"}
+  ],
+  "max_steps": 1,
+  "required_skill_names": ["project_status"],
+  "max_skills": 2,
+  "planning": {
+    "enabled": true,
+    "instructions": "优先使用已注入 skill 和检索到的 memory。",
+    "max_objectives": 3
+  },
+  "tool_selection": {
+    "allowed_tool_names": ["get_current_time", "search_memory"],
+    "denied_tool_names": []
+  },
+  "memory_retrieval": {
+    "enabled": true,
+    "query": "project agent smoke status",
+    "namespace": "project",
+    "top_k": 3
+  },
+  "temperature": 0,
+  "max_tokens": 256
+}
+```
+
+`required_skill_names` 会要求运行前选择指定 skill，`max_skills` 限制最多注入多少个 skill。`tool_selection` 用于限制运行期可见工具；如果配置了 skill 的工具白名单，最终可用工具还会继续受 skill policy 约束。`memory_retrieval` 会在首轮模型调用前检索记忆，并以 memory context 注入窗口。`max_steps=1` 时，如果模型产生工具调用，Agent 会执行工具后再发起一次 finalization 请求，让模型基于工具结果收束回答。
+
+`planning` 当前是运行提示，也就是 `runtime_hint`：它会进入 Agent plan metadata 和 prompt 注入，帮助模型按目标行动；它还不是独立 planner。若后续需要真实规划，应新增独立 planner step，而不是继续扩展静态 plan 构造。
+
+### bot `AGENT` 模式
+
+channel webhook 和 channel event 可以把普通 bot 回复切到 Agent 模式：
+
+```json
+{
+  "provider_id": "openai-compatible",
+  "model": "gpt-4o-mini",
+  "payload": {
+    "text": "帮我查当前时间并参考项目记忆回复",
+    "user_id": "u1",
+    "chat_id": "c1"
+  },
+  "message_response_mode": "agent",
+  "max_agent_steps": 1,
+  "required_skill_names": ["project_status"],
+  "max_skills": 2,
+  "agent_planning": {
+    "enabled": true,
+    "instructions": "按 bot 消息目标给出直接回复。"
+  },
+  "agent_tool_selection": {
+    "allowed_tool_names": ["get_current_time", "search_memory"]
+  },
+  "agent_memory_retrieval": {
+    "enabled": true,
+    "query": "bot project status",
+    "namespace": "project",
+    "top_k": 2
+  }
+}
+```
+
+bot 的字段名带 `agent_` 前缀，用于和普通 chat 参数区分；进入 application 后会被转换成同一份 Agent request。
+
+### plugin `agent.chat/result`
+
+插件可以通过受控 Agent 命名空间调用同一条 Agent 路径：
+
+```python
+from cyreneAI.core.schema.agent import (
+    AgentMemoryRetrievalConfig,
+    AgentPlanningConfig,
+    AgentToolSelectionConfig,
+)
+
+
+async def handle(ctx) -> str:
+    result = await ctx.agent.result(
+        "查当前时间，并结合项目记忆总结状态。",
+        max_steps=1,
+        required_skill_names=["project_status"],
+        max_skills=2,
+        planning=AgentPlanningConfig(
+            enabled=True,
+            instructions="优先使用插件请求里的目标和 skill。",
+        ),
+        tool_selection=AgentToolSelectionConfig(
+            allowed_tool_names=["get_current_time", "search_memory"],
+        ),
+        memory_retrieval=AgentMemoryRetrievalConfig(
+            enabled=True,
+            query="plugin agent project status",
+            namespace="project",
+            top_k=2,
+        ),
+    )
+    return result
+```
+
+`ctx.agent.chat(...)` 返回 `Message`，`ctx.agent.result(...)` 返回文本结果；参数与 `/agents/run` 保持同语义。
+
 ## 定义 Python 工具
 
 `cyreneAI.adapters.tools` 提供轻量工具 helper，只负责创建 `ToolDefinition` 和 executor；注册仍由 runtime 的 tool registry 完成：

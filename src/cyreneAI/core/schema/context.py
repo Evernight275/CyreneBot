@@ -9,6 +9,18 @@ from cyreneAI.core.schema.base import CyreneAISchema
 from cyreneAI.core.schema.message import Message
 
 
+def _empty_context_items() -> list["ContextItem"]:
+    return []
+
+
+def _empty_context_segments() -> list["ContextSegment"]:
+    return []
+
+
+def _empty_messages() -> list[Message]:
+    return []
+
+
 class ContextBase(CyreneAISchema):
     """
     所有与上下文管理有关的schema应该继承这个schema
@@ -96,7 +108,7 @@ class ContextSegment(ContextBase):
 
     segment_id: str
     role: ContextSegmentRole
-    items: list[ContextItem] = []
+    items: list[ContextItem] = Field(default_factory=_empty_context_items)
     token_count: int | None = Field(default=None, ge=0)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -107,7 +119,9 @@ class ContextWindow(ContextBase):
     """
 
     window_id: str
-    segments: list[ContextSegment] = []
+    segments: list[ContextSegment] = Field(
+        default_factory=_empty_context_segments
+    )
     budget: ContextBudget | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -129,7 +143,7 @@ class ContextBuildRequest(ContextBase):
     """
 
     session_id: str
-    messages: list[Message] = []
+    messages: list[Message] = Field(default_factory=_empty_messages)
     budget: ContextBudget | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -140,5 +154,7 @@ class ContextBuildResult(ContextBase):
     """
 
     window: ContextWindow
-    dropped_items: list[ContextItem] = []
+    dropped_items: list[ContextItem] = Field(
+        default_factory=_empty_context_items
+    )
     metadata: dict[str, Any] = Field(default_factory=dict)

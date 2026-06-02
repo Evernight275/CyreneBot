@@ -394,6 +394,58 @@ flowchart LR
   class provider_instance,vector_store,context_store,channel_instance,plugin_persistence,tool_executor infra;
 ```
 
+## Agent 主路径
+
+Agent 入口有三类，但运行时只保留一条 application 编排路径：
+
+```text
+/agents/run
+  -> server.routes.agents
+  -> build_agent_run_request
+  -> AgentOrchestrator
+
+bot AGENT 模式
+  -> channel webhook / channel events
+  -> ApplicationBotRequest(message_response_mode="agent")
+  -> BotOrchestrator
+  -> build_agent_run_request
+  -> AgentOrchestrator
+
+plugin agent.chat/result
+  -> PluginContext.agent
+  -> build_agent_run_request
+  -> AgentOrchestrator
+```
+
+这些入口都会携带同一组 Agent 运行参数：
+
+```text
+required_skill_names
+max_skills
+planning
+tool_selection
+memory_retrieval
+```
+
+其中 bot 请求为了和普通 chat 参数区分，字段名使用 `agent_planning`、`agent_tool_selection`、`agent_memory_retrieval`，进入 application 后会转换为 `AgentRunRequest.planning`、`tool_selection`、`memory_retrieval`。
+
+`AgentOrchestrator` 的职责是应用层编排，不直接理解 provider 差异：
+
+```text
+AgentRunRequest
+  -> 读取 session history
+  -> 选择并注入 skill bundle
+  -> 注入 planning runtime hint
+  -> 执行 memory retrieval 并注入 memory context
+  -> 依据 tool_selection 和 skill policy 过滤工具
+  -> 调用 provider manager
+  -> 执行工具调用
+  -> 达到 max_steps 时发起 finalization 请求
+  -> 持久化上下文快照
+```
+
+`planning` 目前是运行提示，plan metadata 中的模式为 `runtime_hint`。它用于把目标、skill 和 memory 等提示组织进上下文，不负责独立拆解任务、评估步骤或动态改写工具策略。若后续需要真正的 planner，应新增独立 planner step 和对应 schema，让 planner 先产出可审计计划，再由 Agent loop 执行；不要继续扩大静态 `_build_agent_plan`，也不要把 provider 专属规划能力泄漏到 `core` 或 `application`。
+
 ## RAG 主路径
 
 当前 RAG 主路径完全由 `application` 层编排：
