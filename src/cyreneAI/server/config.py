@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 
 from cyreneAI.core.schema.provider import ProviderConfig, ProviderType
 from cyreneAI.core.schema.server import ServerSettings
+from cyreneAI.core.schema.tool import MCPStdioServerConfig
 
 
 def build_server_settings_from_env() -> ServerSettings:
@@ -158,6 +159,52 @@ def build_tool_sandbox_timeout_seconds_from_env() -> float | None:
     raw = _env_str("CYRENEAI_TOOL_SANDBOX_TIMEOUT_SECONDS")
     if raw is None:
         return None
+    return float(raw)
+
+
+def build_mcp_stdio_servers_from_env() -> list[MCPStdioServerConfig]:
+    load_dotenv()
+
+    raw = _env_str("CYRENEAI_MCP_STDIO_SERVERS_JSON")
+    if raw is None:
+        return []
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError("CYRENEAI_MCP_STDIO_SERVERS_JSON must be valid JSON") from exc
+    if not isinstance(parsed, list):
+        raise ValueError("CYRENEAI_MCP_STDIO_SERVERS_JSON must be a JSON array")
+    return [
+        MCPStdioServerConfig.model_validate(item)
+        for item in parsed
+        if isinstance(item, dict)
+    ]
+
+
+def build_web_search_url_template_from_env() -> str | None:
+    load_dotenv()
+
+    return _env_str("CYRENEAI_WEB_SEARCH_URL_TEMPLATE")
+
+
+def build_web_search_api_key_from_env() -> str | None:
+    load_dotenv()
+
+    return _env_str("CYRENEAI_WEB_SEARCH_API_KEY")
+
+
+def build_web_search_api_key_header_from_env() -> str:
+    load_dotenv()
+
+    return _env_str("CYRENEAI_WEB_SEARCH_API_KEY_HEADER") or "Authorization"
+
+
+def build_web_search_timeout_seconds_from_env() -> float:
+    load_dotenv()
+
+    raw = _env_str("CYRENEAI_WEB_SEARCH_TIMEOUT_SECONDS")
+    if raw is None:
+        return 10.0
     return float(raw)
 
 

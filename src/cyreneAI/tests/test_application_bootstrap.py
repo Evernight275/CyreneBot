@@ -65,6 +65,10 @@ async def _run_build_runtime(tmp_path) -> None:
         "ping",
         "echo",
         "status",
+        "tool ls",
+        "tool on",
+        "tool off",
+        "tool off_all",
     ]
 
     bundle = runtime.skill_manager.build_instruction_bundle(

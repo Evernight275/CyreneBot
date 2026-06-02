@@ -300,7 +300,7 @@ class AgentOrchestrator:
     ) -> list[ToolDefinition]:
         if self._runtime.tool_registry is None:
             return []
-        definitions = self._runtime.tool_registry.list_definitions()
+        definitions = self._runtime.tool_registry.list_enabled_definitions()
         return filter_tool_definitions_for_policy(
             definitions=definitions,
             policy=tool_execution_policy,

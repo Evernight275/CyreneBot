@@ -9,6 +9,7 @@ from cyreneAI.core.schema.plugin import (
     PluginTaskResult,
 )
 from cyreneAI.core.schema.chat import ChatResponse
+from cyreneAI.core.schema.tool import ToolResult
 
 
 PluginCommandHandlerResult: TypeAlias = str | PluginCommandResult
@@ -40,4 +41,9 @@ PluginMiddlewareNext = Callable[..., Awaitable[ChatResponse]]
 PluginMiddlewareHandler = Callable[
     ...,
     ChatResponse | Awaitable[ChatResponse],
+]
+PluginToolHandlerResult: TypeAlias = str | dict[str, Any] | ToolResult
+PluginToolHandler = Callable[
+    ...,
+    PluginToolHandlerResult | Awaitable[PluginToolHandlerResult],
 ]

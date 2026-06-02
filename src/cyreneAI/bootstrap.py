@@ -27,6 +27,7 @@ from cyreneAI.core.provider.factory import ProviderFactory
 from cyreneAI.core.provider.manager import ProviderManager
 from cyreneAI.core.provider.registry import ProviderRegistry
 from cyreneAI.core.schema.provider import ProviderConfig
+from cyreneAI.core.schema.tool import MCPStdioServerConfig
 from cyreneAI.core.skill.manager import SkillManager
 from cyreneAI.core.skill.registry import SkillRegistry
 from cyreneAI.core.tool.tool_protocol import (
@@ -49,6 +50,11 @@ from cyreneAI.infra.adapters.tools.sandbox import (
     InProcessToolSandboxRunner,
     SubprocessToolSandboxRunner,
 )
+from cyreneAI.infra.adapters.tools.mcp_stdio import register_mcp_stdio_tools
+from cyreneAI.infra.adapters.tools.python_code import (
+    register_python_code_interpreter_tool,
+)
+from cyreneAI.infra.adapters.tools.web_search import register_web_search_tool
 from cyreneAI.infra.adapters.vector_stores.sqlite.builder import (
     create_sqlite_vector_store,
 )
@@ -94,6 +100,11 @@ async def build_cyrene_ai_runtime(
     tool_sandbox_mode: Literal["in_process", "subprocess"] | None = None,
     tool_sandbox_commands: Mapping[str, Sequence[str]] | None = None,
     tool_sandbox_timeout_seconds: float | None = None,
+    mcp_stdio_servers: Sequence[MCPStdioServerConfig | Mapping[str, object]] | None = None,
+    web_search_url_template: str | None = None,
+    web_search_api_key: str | None = None,
+    web_search_api_key_header: str = "Authorization",
+    web_search_timeout_seconds: float = 10.0,
 ) -> CyreneAIRuntime:
     """
     构建带默认 infra 适配的 CyreneAI 运行时。
@@ -221,7 +232,7 @@ async def build_cyrene_ai_runtime(
     if runtime_bot_session_manager is None and runtime_bot_channel_registry is not None:
         runtime_bot_session_manager = BotSessionManager(InMemoryBotSessionStore())
 
-    return await build_application_runtime(
+    runtime = await build_application_runtime(
         provider_manager=provider_manager,
         context_builder=context_builder,
         context_manager=context_manager,
@@ -243,6 +254,29 @@ async def build_cyrene_ai_runtime(
         bot_session_manager=runtime_bot_session_manager,
         bot_polling_state_store=runtime_bot_polling_state_store,
     )
+
+    if runtime.tool_registry is not None and register_builtin_tools:
+        if web_search_url_template:
+            register_web_search_tool(
+                runtime.tool_registry,
+                url_template=web_search_url_template,
+                api_key=web_search_api_key,
+                api_key_header=web_search_api_key_header,
+                timeout_seconds=web_search_timeout_seconds,
+            )
+        if runtime_tool_sandbox_runner is not None:
+            register_python_code_interpreter_tool(
+                runtime.tool_registry,
+                timeout_seconds=tool_sandbox_timeout_seconds or 10.0,
+            )
+
+    if runtime.tool_registry is not None and mcp_stdio_servers:
+        await register_mcp_stdio_tools(
+            runtime.tool_registry,
+            [_mcp_stdio_config(config) for config in mcp_stdio_servers],
+        )
+
+    return runtime
 
 
 def load_filesystem_plugins(
@@ -308,6 +342,14 @@ def _resolve_project_relative_path(path: str | Path) -> Path:
     if project_candidate.exists():
         return project_candidate
     return candidate
+
+
+def _mcp_stdio_config(
+    config: MCPStdioServerConfig | Mapping[str, object],
+) -> MCPStdioServerConfig:
+    if isinstance(config, MCPStdioServerConfig):
+        return config
+    return MCPStdioServerConfig.model_validate(dict(config))
 
 
 __all__ = ["build_cyrene_ai_runtime", "load_filesystem_plugins"]

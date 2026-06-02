@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any, cast
 
-from cyreneAI.core.errors.tool import ToolExecutionError, ToolResultError
+from cyreneAI.core.errors.tool import ToolExecutionError, ToolPolicyError, ToolResultError
 from cyreneAI.core.schema.tool import (
     ToolCall,
     ToolDefinition,
@@ -48,6 +48,8 @@ class ToolManager:
         执行工具调用
         """
         definition = self._registry.get_definition(call.name)
+        if not self._registry.is_enabled(call.name):
+            raise ToolPolicyError(f"Tool {call.name} is disabled")
         execution_policy = policy or self._default_policy
         sandbox_available = self._sandbox_runner is not None
         enforce_tool_execution_policy(

@@ -16,12 +16,14 @@ from cyreneAI.api._executors import (
     _EventHandlerExecutor,
     _MiddlewareHandlerExecutor,
     _TaskHandlerExecutor,
+    _ToolHandlerExecutor,
 )
 from cyreneAI.api._types import (
     PluginCommandHandler,
     PluginEventHandler,
     PluginMiddlewareHandler,
     PluginTaskHandler,
+    PluginToolHandler,
 )
 from cyreneAI.core.errors.plugin import PluginConfigurationError
 from cyreneAI.core.plugin.plugin_protocol import PluginSetupContextProtocol
@@ -34,6 +36,7 @@ from cyreneAI.core.schema.plugin import (
     PluginMiddlewareType,
     PluginTaskDefinition,
 )
+from cyreneAI.core.schema.tool import ToolCall, ToolDefinition, ToolSafetyProfile
 
 
 class CyreneBot:
@@ -75,6 +78,10 @@ class CyreneBot:
     @property
     def middlewares(self) -> tuple[PluginMiddlewareDefinition, ...]:
         return self._router.middlewares
+
+    @property
+    def tools(self) -> tuple[ToolDefinition, ...]:
+        return self._router.tools
 
     def configure(self, manifest: PluginManifest) -> "CyreneBot":
         """
@@ -199,6 +206,34 @@ class CyreneBot:
         """
         return cast(Any, self._router.middleware(*args, **kwargs))
 
+    @overload
+    def tool(
+        self,
+        name: PluginToolHandler,
+        *,
+        description: str | None = None,
+        parameters_schema: dict[str, Any] | None = None,
+        safety_profile: ToolSafetyProfile | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> PluginToolHandler: ...
+
+    @overload
+    def tool(
+        self,
+        name: str | None = None,
+        *,
+        description: str | None = None,
+        parameters_schema: dict[str, Any] | None = None,
+        safety_profile: ToolSafetyProfile | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> Callable[[PluginToolHandler], PluginToolHandler]: ...
+
+    def tool(self, *args: Any, **kwargs: Any) -> Any:
+        """
+        注册 LLM 工具 handler。
+        """
+        return cast(Any, self._router.tool(*args, **kwargs))
+
     def include_router(self, router: "CyreneRouter") -> None:
         """
         挂载子 router。
@@ -233,6 +268,11 @@ class CyreneBot:
                 route.definition,
                 _MiddlewareHandlerExecutor(route.handler, context.runtime),
             )
+        for route in self._router.tool_routes:
+            context.register_tool(
+                route.definition,
+                _ToolHandlerExecutor(route.handler, context.runtime),
+            )
 
 
 class CyreneRouter:
@@ -256,6 +296,7 @@ class CyreneRouter:
         self._tasks: list[_TaskRoute] = []
         self._events: list[_EventRoute] = []
         self._middlewares: list[_MiddlewareRoute] = []
+        self._tools: list[_ToolRoute] = []
 
     @property
     def routes(self) -> tuple[PluginCommandDefinition, ...]:
@@ -288,6 +329,14 @@ class CyreneRouter:
     @property
     def middleware_routes(self) -> tuple["_MiddlewareRoute", ...]:
         return tuple(self._middlewares)
+
+    @property
+    def tools(self) -> tuple[ToolDefinition, ...]:
+        return tuple(route.definition for route in self._tools)
+
+    @property
+    def tool_routes(self) -> tuple["_ToolRoute", ...]:
+        return tuple(self._tools)
 
     @overload
     def command(
@@ -600,6 +649,79 @@ class CyreneRouter:
 
         return decorator
 
+    @overload
+    def tool(
+        self,
+        name: PluginToolHandler,
+        *,
+        description: str | None = None,
+        parameters_schema: dict[str, Any] | None = None,
+        safety_profile: ToolSafetyProfile | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> PluginToolHandler: ...
+
+    @overload
+    def tool(
+        self,
+        name: str | None = None,
+        *,
+        description: str | None = None,
+        parameters_schema: dict[str, Any] | None = None,
+        safety_profile: ToolSafetyProfile | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> Callable[[PluginToolHandler], PluginToolHandler]: ...
+
+    def tool(
+        self,
+        name: str | PluginToolHandler | None = None,
+        *,
+        description: str | None = None,
+        parameters_schema: dict[str, Any] | None = None,
+        safety_profile: ToolSafetyProfile | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> PluginToolHandler | Callable[[PluginToolHandler], PluginToolHandler]:
+        """
+        注册 LLM 工具 handler。
+        """
+        if callable(name):
+            return self.tool(
+                None,
+                description=description,
+                parameters_schema=parameters_schema,
+                safety_profile=safety_profile,
+                metadata=metadata,
+            )(name)
+
+        configured_name = name
+
+        def decorator(handler: PluginToolHandler) -> PluginToolHandler:
+            tool_name = _join_tool_names(
+                self._prefix,
+                configured_name or _handler_tool_name(handler),
+            )
+            if not tool_name:
+                raise PluginConfigurationError("插件工具 name 必须包含工具名")
+
+            tool_description = description
+            if tool_description is None:
+                tool_description = _handler_description(handler)
+
+            definition = ToolDefinition(
+                name=tool_name,
+                description=tool_description,
+                parameters_schema=parameters_schema
+                or _parameters_schema_from_handler(handler),
+                safety_profile=safety_profile or ToolSafetyProfile(),
+                metadata={
+                    **self._metadata,
+                    **(metadata or {}),
+                },
+            )
+            self._tools.append(_ToolRoute(definition, handler))
+            return handler
+
+        return decorator
+
     def include_router(self, router: "CyreneRouter") -> None:
         """
         挂载子 router。
@@ -651,6 +773,17 @@ class CyreneRouter:
                     route.handler,
                 )
             )
+        for route in router.tool_routes:
+            self._tools.append(
+                _ToolRoute(
+                    _merge_router_tool_definition(
+                        route.definition,
+                        prefix=self._prefix,
+                        metadata=self._metadata,
+                    ),
+                    route.handler,
+                )
+            )
 
 
 class _CommandRoute:
@@ -693,6 +826,16 @@ class _MiddlewareRoute:
         self.handler = handler
 
 
+class _ToolRoute:
+    def __init__(
+        self,
+        definition: ToolDefinition,
+        handler: PluginToolHandler,
+    ) -> None:
+        self.definition = definition
+        self.handler = handler
+
+
 def _normalize_command_name(value: str) -> str:
     return _normalize_command_path(value)
 
@@ -704,6 +847,61 @@ def _join_command_paths(prefix: str, path: str) -> str:
 
 def _handler_command_path(handler: Callable[..., Any]) -> str:
     return str(getattr(handler, "__name__", "")).strip("_").replace("_", " ")
+
+
+def _handler_tool_name(handler: Callable[..., Any]) -> str:
+    return str(getattr(handler, "__name__", "")).strip("_")
+
+
+def _join_tool_names(prefix: str, name: str) -> str:
+    normalized_name = _normalize_tool_name(name)
+    if not prefix:
+        return normalized_name
+    normalized_prefix = _normalize_tool_name(prefix.replace(" ", "_"))
+    return "_".join(part for part in (normalized_prefix, normalized_name) if part)
+
+
+def _normalize_tool_name(value: str) -> str:
+    return "_".join(value.strip().replace("/", " ").replace("-", "_").split()).lower()
+
+
+def _parameters_schema_from_handler(handler: Callable[..., Any]) -> dict[str, Any]:
+    handler_signature = signature(handler)
+    type_hints = _handler_type_hints(handler)
+    properties: dict[str, Any] = {}
+    required: list[str] = []
+    for name, parameter in handler_signature.parameters.items():
+        annotation = type_hints.get(name, parameter.annotation)
+        if name in {"call", "tool_call", "ctx", "context", "runtime"}:
+            continue
+        if annotation is ToolCall:
+            continue
+        properties[name] = _json_schema_for_annotation(annotation)
+        if parameter.default is parameter.empty:
+            required.append(name)
+
+    schema: dict[str, Any] = {
+        "type": "object",
+        "properties": properties,
+        "additionalProperties": False,
+    }
+    if required:
+        schema["required"] = required
+    return schema
+
+
+def _json_schema_for_annotation(annotation: Any) -> dict[str, Any]:
+    if annotation is int:
+        return {"type": "integer"}
+    if annotation is float:
+        return {"type": "number"}
+    if annotation is bool:
+        return {"type": "boolean"}
+    if annotation is dict:
+        return {"type": "object"}
+    if annotation is list:
+        return {"type": "array"}
+    return {"type": "string"}
 
 
 def _handler_event_type(handler: Callable[..., Any]) -> str:
@@ -810,6 +1008,26 @@ def _merge_router_middleware_definition(
     return definition.model_copy(
         update={
             "enabled": enabled and definition.enabled,
+            "metadata": {**metadata, **definition.metadata},
+        }
+    )
+
+
+def _merge_router_tool_definition(
+    definition: ToolDefinition,
+    *,
+    prefix: str,
+    metadata: dict[str, Any],
+) -> ToolDefinition:
+    if not prefix:
+        return definition.model_copy(
+            update={
+                "metadata": {**metadata, **definition.metadata},
+            }
+        )
+    return definition.model_copy(
+        update={
+            "name": _join_tool_names(prefix, definition.name),
             "metadata": {**metadata, **definition.metadata},
         }
     )

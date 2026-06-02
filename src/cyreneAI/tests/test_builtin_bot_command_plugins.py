@@ -42,6 +42,10 @@ def test_builtin_bot_command_plugin_is_registered_by_default() -> None:
             "ping",
             "echo",
             "status",
+            "tool ls",
+            "tool on",
+            "tool off",
+            "tool off_all",
         ]
 
         await runtime.close()

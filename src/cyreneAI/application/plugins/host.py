@@ -731,6 +731,7 @@ class ApplicationPluginSetupContext:
         self._tasks: list[PluginTaskDefinition] = list(manifest.tasks)
         self._events: list[PluginEventDefinition] = list(manifest.events)
         self._middlewares: list[PluginMiddlewareDefinition] = list(manifest.middlewares)
+        self._tools: list[ToolDefinition] = list(manifest.tools)
         self._command_executors: dict[str, PluginExecutorProtocol] = {}
         self._event_executors: dict[str, PluginEventExecutorProtocol] = {}
         self._middleware_executors: dict[str, PluginMiddlewareExecutorProtocol] = {}
@@ -819,6 +820,7 @@ class ApplicationPluginSetupContext:
         self._ensure_capability(PluginCapability.TOOL)
         if self._runtime.tool_registry is None:
             raise PluginStateError("runtime 未配置 tool registry")
+        self._register_tool_definition(definition)
         self._runtime.tool_registry.register(definition, executor)
         self._tool_names.add(definition.name)
 
@@ -850,12 +852,18 @@ class ApplicationPluginSetupContext:
                 raise PluginConfigurationError(
                     f"插件中间件 {middleware.middleware_type} 未注册执行器"
                 )
+        for tool in self._tools:
+            if tool.name not in self._tool_names:
+                raise PluginConfigurationError(
+                    f"插件工具 {tool.name} 未注册执行器"
+                )
         return definition.model_copy(
             update={
                 "commands": list(self._commands),
                 "tasks": list(self._tasks),
                 "events": list(self._events),
                 "middlewares": list(self._middlewares),
+                "tools": list(self._tools),
             }
         )
 
@@ -942,6 +950,12 @@ class ApplicationPluginSetupContext:
         if definition_name in existing_names:
             return
         self._middlewares.append(definition)
+
+    def _register_tool_definition(self, definition: ToolDefinition) -> None:
+        existing_names = {tool.name for tool in self._tools}
+        if definition.name in existing_names:
+            return
+        self._tools.append(definition)
 
 
 class _PluginCommandRouter:

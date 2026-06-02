@@ -41,6 +41,14 @@ def _empty_tool_names() -> list[str]:
     return []
 
 
+def _empty_mcp_args() -> list[str]:
+    return []
+
+
+def _empty_mcp_env() -> dict[str, str]:
+    return {}
+
+
 class ToolSafetyProfile(CyreneAISchema):
     """
     Tool safety metadata used before dispatching execution.
@@ -76,7 +84,7 @@ class ToolDefinition(CyreneAISchema):
     description: str
     parameters_schema: dict[str, Any] | None = None
     safety_profile: ToolSafetyProfile = Field(default_factory=ToolSafetyProfile)
-
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class ToolCall(CyreneAISchema):
@@ -109,3 +117,16 @@ class ToolChoice(CyreneAISchema):
 
     mode: Literal["auto", "none", "required", "tool"] = "auto"
     name: str | None = None
+
+
+class MCPStdioServerConfig(CyreneAISchema):
+    """
+    MCP stdio server configuration used by infra adapters.
+    """
+
+    name: str
+    command: str
+    args: list[str] = Field(default_factory=_empty_mcp_args)
+    env: dict[str, str] = Field(default_factory=_empty_mcp_env)
+    enabled: bool = True
+    timeout_seconds: float = Field(default=30, gt=0)

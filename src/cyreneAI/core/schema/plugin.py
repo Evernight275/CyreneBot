@@ -9,6 +9,7 @@ from pydantic import Field
 from cyreneAI.core.schema.base import CyreneAISchema
 from cyreneAI.core.schema.bot import BotAction, BotCommand, BotEvent
 from cyreneAI.core.schema.chat import ChatRequest
+from cyreneAI.core.schema.tool import ToolDefinition
 
 
 class PluginBase(CyreneAISchema):
@@ -249,6 +250,7 @@ class PluginDefinition(PluginBase):
     tasks: list[PluginTaskDefinition] = []
     events: list[PluginEventDefinition] = []
     middlewares: list[PluginMiddlewareDefinition] = []
+    tools: list[ToolDefinition] = []
     enabled: bool = True
     builtin: bool = False
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -347,6 +349,7 @@ class PluginManifest(PluginBase):
     tasks: list[PluginTaskDefinition] = []
     events: list[PluginEventDefinition] = []
     middlewares: list[PluginMiddlewareDefinition] = []
+    tools: list[ToolDefinition] = []
     enabled: bool = True
     builtin: bool = False
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -371,6 +374,7 @@ class PluginManifest(PluginBase):
             tasks=list(self.tasks),
             events=list(self.events),
             middlewares=list(self.middlewares),
+            tools=list(self.tools),
             enabled=self.enabled,
             builtin=self.builtin,
             metadata=dict(self.metadata),

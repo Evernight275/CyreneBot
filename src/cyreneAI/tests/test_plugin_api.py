@@ -13,6 +13,7 @@ from cyreneAI.core.errors.plugin import (
 from cyreneAI.core.schema.bot import BotCommand, BotEvent, BotEventType, BotMessage
 from cyreneAI.core.schema.message import ContentPart, ContentPartType
 from cyreneAI.core.schema.plugin import (
+    PluginCapability,
     PluginCommandRequest,
     PluginCommandResult,
     PluginEventRequest,
@@ -20,9 +21,11 @@ from cyreneAI.core.schema.plugin import (
     PluginEventType,
     PluginManifest,
     PluginMiddlewareType,
+    PluginPermission,
     PluginTaskRequest,
     PluginTaskResult,
 )
+from cyreneAI.core.schema.tool import ToolCall, ToolDefinition
 from typing import Annotated
 
 from cyreneAI.api import (
@@ -118,6 +121,62 @@ def test_cyrene_bot_command_decorator_can_infer_path_with_parentheses() -> None:
 
     assert route.name == "repeat"
     assert route.usage == "/repeat <word> [count:int=1]"
+
+
+def test_cyrene_bot_tool_decorator_registers_tool_executor() -> None:
+    plugin = CyreneBot(
+        PluginManifest(
+            plugin_id="demo.tools",
+            name="Tools",
+            description="Tool plugin.",
+            entrypoint="main.py",
+            capabilities=[PluginCapability.TOOL],
+            permissions=[PluginPermission.TOOL],
+        )
+    )
+
+    @plugin.tool("lookup")
+    async def lookup(key: str):
+        """Lookup a value."""
+        return {"value": key}
+
+    class FakeRuntime:
+        def require_permission(self, permission):
+            assert permission == PluginPermission.TOOL
+
+    class FakeSetupContext:
+        manifest = plugin.manifest
+        runtime = FakeRuntime()
+
+        def __init__(self) -> None:
+            self.tools: list[tuple[ToolDefinition, object]] = []
+
+        def register_tool(self, definition, executor):
+            self.tools.append((definition, executor))
+
+    context = FakeSetupContext()
+    plugin.setup(context)
+
+    definition, executor = context.tools[0]
+    assert definition.name == "lookup"
+    assert definition.description == "Lookup a value."
+    assert definition.parameters_schema == {
+        "type": "object",
+        "properties": {"key": {"type": "string"}},
+        "additionalProperties": False,
+        "required": ["key"],
+    }
+
+    result = asyncio.run(
+        executor.execute(
+            ToolCall(
+                id="call-1",
+                name="lookup",
+                arguments='{"key":"answer"}',
+            )
+        )
+    )
+    assert result.content == '{"value": "answer"}'
 
 
 def test_cyrene_bot_command_decorator_records_argument_schema_and_usage() -> None:

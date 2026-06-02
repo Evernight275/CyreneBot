@@ -57,9 +57,27 @@ class ToolRegistryProtocol(Protocol):
         """
         ...
 
+    def set_enabled(self, name: str, enabled: bool) -> ToolDefinition:
+        """
+        启用或禁用工具。
+        """
+        ...
+
+    def is_enabled(self, name: str) -> bool:
+        """
+        判断工具是否启用。
+        """
+        ...
+
     def list_definitions(self) -> list[ToolDefinition]:
         """
         列出工具定义
+        """
+        ...
+
+    def list_enabled_definitions(self) -> list[ToolDefinition]:
+        """
+        列出当前启用工具定义。
         """
         ...
 

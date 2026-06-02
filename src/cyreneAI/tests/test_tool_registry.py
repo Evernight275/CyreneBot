@@ -39,6 +39,7 @@ def test_tool_registry_registers_and_lists_tools() -> None:
     assert registry.get_definition("lookup") is definition
     assert registry.get_executor("lookup") is executor
     assert registry.list_definitions() == [definition]
+    assert registry.list_enabled_definitions() == [definition]
 
 
 def test_tool_registry_rejects_duplicate_tools() -> None:
@@ -70,3 +71,20 @@ def test_tool_registry_unregisters_tools() -> None:
     registry.unregister("lookup")
 
     assert not registry.exists("lookup")
+
+
+def test_tool_registry_enables_and_disables_tools() -> None:
+    registry = ToolRegistry()
+    definition = _definition()
+
+    registry.register(definition, FakeToolExecutor())
+    registry.set_enabled("lookup", False)
+
+    assert registry.is_enabled("lookup") is False
+    assert registry.list_definitions() == [definition]
+    assert registry.list_enabled_definitions() == []
+
+    registry.set_enabled("lookup", True)
+
+    assert registry.is_enabled("lookup") is True
+    assert registry.list_enabled_definitions() == [definition]

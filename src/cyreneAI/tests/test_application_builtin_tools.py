@@ -22,7 +22,11 @@ async def _run_builtin_tools_are_registered_by_default() -> None:
             "calculate",
             "json_get",
             "text_search",
+            "create_todo",
+            "list_todos",
+            "complete_todo",
         }.issubset(tool_names)
+        assert "code_interpreter" not in tool_names
     finally:
         await runtime.close()
 
@@ -119,6 +123,36 @@ async def _run_core_builtin_tools_execute() -> None:
         search_payload = json.loads(search_result.content or "{}")
         assert search_payload["match_count"] == 2
         assert search_payload["matches"][0]["match"] == "tools"
+
+        create_todo_result = await runtime.tool_manager.execute(
+            ToolCall(
+                id="call-create-todo",
+                name="create_todo",
+                arguments=json.dumps({"title": "Ship tools"}),
+            )
+        )
+        todo_payload = json.loads(create_todo_result.content or "{}")
+        todo_id = todo_payload["todo"]["todo_id"]
+
+        list_todos_result = await runtime.tool_manager.execute(
+            ToolCall(
+                id="call-list-todos",
+                name="list_todos",
+                arguments=json.dumps({}),
+            )
+        )
+        list_payload = json.loads(list_todos_result.content or "{}")
+        assert list_payload["todos"][0]["todo_id"] == todo_id
+
+        complete_todo_result = await runtime.tool_manager.execute(
+            ToolCall(
+                id="call-complete-todo",
+                name="complete_todo",
+                arguments=json.dumps({"todo_id": todo_id}),
+            )
+        )
+        complete_payload = json.loads(complete_todo_result.content or "{}")
+        assert complete_payload["todo"]["completed"] is True
     finally:
         await runtime.close()
 
@@ -147,3 +181,19 @@ async def _run_calculate_rejects_unsafe_expression() -> None:
 
 def test_calculate_rejects_unsafe_expression() -> None:
     asyncio.run(_run_calculate_rejects_unsafe_expression())
+
+
+async def _run_code_interpreter_requires_sandbox_registration() -> None:
+    runtime = await build_cyrene_ai_runtime(
+        register_builtin_plugins=False,
+        tool_sandbox_mode="in_process",
+    )
+    try:
+        assert runtime.tool_registry is not None
+        assert runtime.tool_registry.exists("code_interpreter")
+    finally:
+        await runtime.close()
+
+
+def test_code_interpreter_requires_sandbox_registration() -> None:
+    asyncio.run(_run_code_interpreter_requires_sandbox_registration())

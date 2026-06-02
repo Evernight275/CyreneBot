@@ -73,6 +73,14 @@ class BuiltinBotCommandExecutor:
             text = command.args_text or "(empty)"
         elif command.name == "status":
             text = self._render_status()
+        elif command.name == "tool ls":
+            text = self._render_tool_list()
+        elif command.name == "tool on":
+            text = self._set_tool_enabled(command.args, enabled=True)
+        elif command.name == "tool off":
+            text = self._set_tool_enabled(command.args, enabled=False)
+        elif command.name == "tool off_all":
+            text = self._disable_all_tools()
         else:
             text = _render_unknown_command(command.name)
 
@@ -118,6 +126,55 @@ class BuiltinBotCommandExecutor:
         ]
         return "\n".join(lines)
 
+    def _render_tool_list(self) -> str:
+        registry = self._runtime.tool_registry
+        if registry is None:
+            return "Tools are disabled."
+
+        definitions = sorted(
+            registry.list_definitions(),
+            key=lambda definition: definition.name,
+        )
+        if not definitions:
+            return "No tools registered."
+
+        lines = ["Tools:"]
+        for definition in definitions:
+            enabled = registry.is_enabled(definition.name)
+            status = "on" if enabled else "off"
+            source = definition.metadata.get("source")
+            source_suffix = f" source={source}" if isinstance(source, str) else ""
+            risk = definition.safety_profile.risk_level.value
+            lines.append(
+                f"- {definition.name} [{status}] risk={risk}{source_suffix}: "
+                f"{definition.description}"
+            )
+        return "\n".join(lines)
+
+    def _set_tool_enabled(self, args: tuple[str, ...], *, enabled: bool) -> str:
+        registry = self._runtime.tool_registry
+        if registry is None:
+            return "Tools are disabled."
+        if not args:
+            return "Usage: /tool on <name>" if enabled else "Usage: /tool off <name>"
+        name = args[0]
+        if not registry.exists(name):
+            return f"Unknown tool: {name}"
+        registry.set_enabled(name, enabled)
+        status = "enabled" if enabled else "disabled"
+        return f"Tool {name} {status}."
+
+    def _disable_all_tools(self) -> str:
+        registry = self._runtime.tool_registry
+        if registry is None:
+            return "Tools are disabled."
+        count = 0
+        for definition in registry.list_definitions():
+            if registry.is_enabled(definition.name):
+                registry.set_enabled(definition.name, False)
+                count += 1
+        return f"Disabled {count} tool(s)."
+
 
 def _builtin_bot_commands_definition() -> PluginDefinition:
     return PluginDefinition(
@@ -128,6 +185,7 @@ def _builtin_bot_commands_definition() -> PluginDefinition:
         capabilities=[
             PluginCapability.BOT_COMMAND,
             PluginCapability.STATUS,
+            PluginCapability.TOOL,
         ],
         commands=[
             PluginCommandDefinition(
@@ -154,6 +212,30 @@ def _builtin_bot_commands_definition() -> PluginDefinition:
                 name="status",
                 description="Show runtime status.",
                 usage="/status",
+                admin_required=True,
+            ),
+            PluginCommandDefinition(
+                name="tool ls",
+                description="List runtime tools.",
+                usage="/tool ls",
+                admin_required=True,
+            ),
+            PluginCommandDefinition(
+                name="tool on",
+                description="Enable a runtime tool.",
+                usage="/tool on <name>",
+                admin_required=True,
+            ),
+            PluginCommandDefinition(
+                name="tool off",
+                description="Disable a runtime tool.",
+                usage="/tool off <name>",
+                admin_required=True,
+            ),
+            PluginCommandDefinition(
+                name="tool off_all",
+                description="Disable all runtime tools.",
+                usage="/tool off_all",
                 admin_required=True,
             ),
         ],

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from inspect import isawaitable, signature
 from typing import Any
 
@@ -14,8 +15,10 @@ from cyreneAI.api._types import (
     PluginEventHandler,
     PluginMiddlewareHandler,
     PluginTaskHandler,
+    PluginToolHandler,
 )
 from cyreneAI.core.errors.plugin import PluginError, PluginExecutionError
+from cyreneAI.core.errors.tool import ToolExecutionError, ToolInputError
 from cyreneAI.core.schema.plugin import (
     PluginCommandDefinition,
     PluginCommandRequest,
@@ -26,6 +29,7 @@ from cyreneAI.core.schema.plugin import (
     PluginTaskRequest,
     PluginTaskResult,
 )
+from cyreneAI.core.schema.tool import ToolCall, ToolResult
 
 
 class _CommandHandlerExecutor:
@@ -198,3 +202,117 @@ class _MiddlewareHandlerExecutor:
                 cause=exc,
             ) from exc
         return result
+
+
+class _ToolHandlerExecutor:
+    def __init__(
+        self,
+        handler: PluginToolHandler,
+        runtime_context: Any,
+    ) -> None:
+        self._handler = handler
+        self._runtime_context = runtime_context
+        self._signature = signature(handler)
+        self._type_hints = _handler_type_hints(handler)
+
+    async def execute(self, call: ToolCall) -> ToolResult:
+        try:
+            arguments = _parse_tool_arguments(call.arguments)
+            args, kwargs = _build_tool_handler_arguments(
+                self._signature,
+                self._type_hints,
+                arguments,
+                call,
+                self._runtime_context,
+            )
+            result = self._handler(*args, **kwargs)
+            if isawaitable(result):
+                result = await result
+        except (PluginError, ToolExecutionError):
+            raise
+        except Exception as exc:
+            raise ToolExecutionError(
+                f"插件工具 {call.name} 执行失败",
+                cause=exc,
+            ) from exc
+
+        return _coerce_tool_handler_result(call, result)
+
+
+def _parse_tool_arguments(arguments: str | None) -> dict[str, Any]:
+    if not arguments:
+        return {}
+    try:
+        parsed = json.loads(arguments)
+    except json.JSONDecodeError as exc:
+        raise ToolInputError("Tool arguments must be valid JSON", cause=exc) from exc
+    if not isinstance(parsed, dict):
+        raise ToolInputError("Tool arguments must be a JSON object")
+    return parsed
+
+
+def _build_tool_handler_arguments(
+    handler_signature,
+    type_hints: dict[str, Any],
+    arguments: dict[str, Any],
+    call: ToolCall,
+    runtime_context: Any,
+) -> tuple[list[Any], dict[str, Any]]:
+    args: list[Any] = []
+    kwargs: dict[str, Any] = {}
+    for name, parameter in handler_signature.parameters.items():
+        annotation = type_hints.get(name, parameter.annotation)
+        value_set = False
+        value: Any = None
+        if name in {"call", "tool_call"} or annotation is ToolCall:
+            value = call
+            value_set = True
+        elif name in {"ctx", "context", "runtime"}:
+            value = runtime_context
+            value_set = True
+        elif name in arguments:
+            value = _coerce_tool_argument(arguments[name], annotation)
+            value_set = True
+
+        if not value_set:
+            if parameter.default is not parameter.empty:
+                continue
+            raise ToolInputError(f"{name} is required")
+
+        if parameter.kind in (
+            parameter.POSITIONAL_ONLY,
+            parameter.POSITIONAL_OR_KEYWORD,
+        ):
+            args.append(value)
+        elif parameter.kind == parameter.KEYWORD_ONLY:
+            kwargs[name] = value
+        else:
+            raise ToolInputError(f"Unsupported tool handler parameter: {name}")
+    return args, kwargs
+
+
+def _coerce_tool_argument(value: Any, annotation: Any) -> Any:
+    if annotation in {str, int, float, bool}:
+        if annotation is bool and not isinstance(value, bool):
+            raise ToolInputError("value must be a boolean")
+        if annotation is int and (not isinstance(value, int) or isinstance(value, bool)):
+            raise ToolInputError("value must be an integer")
+        if annotation is float and (
+            not isinstance(value, (int, float)) or isinstance(value, bool)
+        ):
+            raise ToolInputError("value must be a number")
+        if annotation is str and not isinstance(value, str):
+            raise ToolInputError("value must be a string")
+    return value
+
+
+def _coerce_tool_handler_result(call: ToolCall, result: Any) -> ToolResult:
+    if isinstance(result, ToolResult):
+        return result.model_copy(update={"call_id": call.id, "name": call.name})
+    if isinstance(result, dict):
+        content = json.dumps(result, ensure_ascii=False, sort_keys=True)
+    elif result is None:
+        content = ""
+    else:
+        content = str(result)
+    return ToolResult(call_id=call.id, name=call.name, content=content)
