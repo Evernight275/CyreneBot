@@ -13,6 +13,7 @@ from cyreneAI.core.plugin.manager import PluginManager
 from cyreneAI.core.plugin.plugin_protocol import (
     PluginAssetsProtocol,
     PluginOutboxProtocol,
+    PluginPythonEnvironmentManagerProtocol,
     PluginTaskSchedulerProtocol,
     PluginStorageProtocol,
 )
@@ -45,6 +46,7 @@ class CyreneAIRuntime:
     plugin_host: PluginHost | None = None
     plugin_storage: PluginStorageProtocol | None = None
     plugin_assets: PluginAssetsProtocol | None = None
+    plugin_python_environment_manager: PluginPythonEnvironmentManagerProtocol | None = None
     plugin_outbox: PluginOutboxProtocol | None = None
     plugin_task_scheduler: PluginTaskSchedulerProtocol | None = None
     tool_registry: ToolRegistryProtocol | None = None

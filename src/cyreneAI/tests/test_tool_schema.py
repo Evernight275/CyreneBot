@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from cyreneAI.core.schema.provider import ProviderConfig, ProviderType
 from cyreneAI.core.schema.tool import (
+    ShellCommandDecision,
+    ShellCommandPolicy,
+    ShellCommandRule,
     ToolDefinition,
     ToolPermission,
     ToolResult,
@@ -43,6 +46,22 @@ def test_tool_definition_has_trusted_safety_profile_by_default() -> None:
         description="Lookup another value.",
     )
     assert next_definition.safety_profile.permissions == []
+
+
+def test_shell_command_policy_defaults_and_rules() -> None:
+    policy = ShellCommandPolicy(
+        rules=[
+            ShellCommandRule(
+                command="rg",
+                decision=ShellCommandDecision.ALLOW,
+            )
+        ]
+    )
+
+    assert policy.default_decision == ShellCommandDecision.DENY
+    assert policy.rules[0].command == "rg"
+    assert policy.rules[0].decision == ShellCommandDecision.ALLOW
+    assert "&&" in policy.blocked_tokens
 
 
 def test_provider_config_repr_hides_api_key() -> None:

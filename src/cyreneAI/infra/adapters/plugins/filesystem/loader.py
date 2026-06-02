@@ -14,6 +14,9 @@ from cyreneAI.core.plugin.project import (
     load_plugin_manifest,
     resolve_plugin_entrypoint,
 )
+from cyreneAI.core.plugin.plugin_protocol import (
+    PluginPythonEnvironmentManagerProtocol,
+)
 from cyreneAI.core.schema.plugin import (
     PluginManifest,
     PluginSignatureStatus,
@@ -33,9 +36,11 @@ class FileSystemPluginLoader:
         path: str | Path,
         *,
         plugin_assets: FileSystemPluginAssets | None = None,
+        python_environment_manager: PluginPythonEnvironmentManagerProtocol | None = None,
     ) -> None:
         self._path = Path(path)
         self._plugin_assets = plugin_assets
+        self._python_environment_manager = python_environment_manager
 
     def load(self) -> list[Any]:
         """
@@ -47,7 +52,11 @@ class FileSystemPluginLoader:
             )
 
         return [
-            _load_plugin_project(path, plugin_assets=self._plugin_assets)
+            _load_plugin_project(
+                path,
+                plugin_assets=self._plugin_assets,
+                python_environment_manager=self._python_environment_manager,
+            )
             for path in _plugin_project_paths(self._path)
         ]
 
@@ -62,6 +71,7 @@ class FileSystemPluginLoader:
         return _load_plugin_project(
             Path(source.path),
             plugin_assets=self._plugin_assets,
+            python_environment_manager=self._python_environment_manager,
         )
 
 
@@ -92,17 +102,46 @@ def _load_plugin_project(
     project_path: Path,
     *,
     plugin_assets: FileSystemPluginAssets | None,
+    python_environment_manager: PluginPythonEnvironmentManagerProtocol | None,
 ) -> Any:
     manifest = _load_manifest(project_path / "plugin.json")
     if plugin_assets is not None:
         plugin_assets.register(manifest.plugin_id, project_path / "assets")
 
     entrypoint = _resolve_entrypoint(project_path, manifest)
+    source_info = _build_source_info(project_path, manifest, entrypoint)
+    import_paths = [project_path.resolve()]
+    if python_environment_manager is not None:
+        environment = python_environment_manager.ensure(
+            project_path=project_path,
+            manifest=manifest,
+            content_hash=source_info.content_hash or "",
+        )
+        if environment is not None:
+            import_paths.extend(environment.site_paths)
+            source_info = source_info.model_copy(
+                update={
+                    "metadata": {
+                        **source_info.metadata,
+                        "python_environment": {
+                            "env_path": str(environment.env_path),
+                            "site_paths": [
+                                str(path)
+                                for path in environment.site_paths
+                            ],
+                            "created": environment.metadata.get("created", False),
+                            "environment_key": environment.metadata.get(
+                                "environment_key"
+                            ),
+                        },
+                    }
+                }
+            )
+    _install_import_paths(import_paths)
 
     module = _load_entrypoint_module(
         entrypoint=entrypoint,
         plugin_id=manifest.plugin_id,
-        project_path=project_path,
     )
     plugin = getattr(module, "plugin", None)
     if plugin is None:
@@ -116,12 +155,15 @@ def _load_plugin_project(
             f"Plugin {manifest.plugin_id} object must support configure(manifest)"
         )
     configure(manifest)
-    source_info = _build_source_info(project_path, manifest, entrypoint)
     setattr(plugin, "__cyreneai_plugin_source__", source_info)
     setattr(
         plugin,
         "__cyreneai_plugin_reloader__",
-        FileSystemPluginLoader(project_path, plugin_assets=plugin_assets),
+        FileSystemPluginLoader(
+            project_path,
+            plugin_assets=plugin_assets,
+            python_environment_manager=python_environment_manager,
+        ),
     )
     return plugin
 
@@ -144,7 +186,6 @@ def _load_entrypoint_module(
     *,
     entrypoint: Path,
     plugin_id: str,
-    project_path: Path,
 ) -> ModuleType:
     module_name = _module_name(plugin_id, entrypoint)
     spec = importlib.util.spec_from_file_location(module_name, entrypoint)
@@ -154,8 +195,6 @@ def _load_entrypoint_module(
         )
 
     module = importlib.util.module_from_spec(spec)
-    project_path_text = str(project_path.resolve())
-    sys.path.insert(0, project_path_text)
     sys.modules[module_name] = module
     try:
         spec.loader.exec_module(module)
@@ -166,9 +205,15 @@ def _load_entrypoint_module(
         ) from exc
     finally:
         sys.modules.pop(module_name, None)
-        with suppress(ValueError):
-            sys.path.remove(project_path_text)
     return module
+
+
+def _install_import_paths(paths: list[Path]) -> None:
+    for path in reversed(paths):
+        path_text = str(path.resolve())
+        with suppress(ValueError):
+            sys.path.remove(path_text)
+        sys.path.insert(0, path_text)
 
 
 def _module_name(plugin_id: str, entrypoint: Path) -> str:

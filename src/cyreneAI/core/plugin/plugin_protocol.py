@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 from typing import Any, Protocol
 
 from cyreneAI.core.schema.application import (
@@ -685,6 +686,24 @@ class PluginLoaderProtocol(Protocol):
     def load(self) -> list[PluginModuleProtocol]:
         """
         加载插件入口模块。
+        """
+        ...
+
+
+class PluginPythonEnvironmentManagerProtocol(Protocol):
+    """
+    Ensures Python import environments for filesystem plugins.
+    """
+
+    def ensure(
+        self,
+        *,
+        project_path: Path,
+        manifest: PluginManifest,
+        content_hash: str,
+    ) -> Any:
+        """
+        Ensure the plugin's declared Python dependencies are importable.
         """
         ...
 

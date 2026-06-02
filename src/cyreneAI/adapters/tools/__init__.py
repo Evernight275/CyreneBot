@@ -12,6 +12,10 @@ from cyreneAI.infra.adapters.tools.sandbox import (
     InProcessToolSandboxRunner,
     SubprocessToolSandboxRunner,
 )
+from cyreneAI.infra.adapters.tools.shell import (
+    default_shell_command_policy,
+    register_controlled_shell_tool,
+)
 from cyreneAI.infra.adapters.tools.subprocess.executor import SubprocessToolExecutor
 from cyreneAI.infra.adapters.tools.web_search import register_web_search_tool
 from cyreneAI.adapters.tools.python import define_python_tool
@@ -23,6 +27,8 @@ __all__ = [
     "SubprocessToolSandboxRunner",
     "SubprocessToolExecutor",
     "define_python_tool",
+    "default_shell_command_policy",
+    "register_controlled_shell_tool",
     "register_mcp_stdio_tools",
     "register_python_code_interpreter_tool",
     "register_web_search_tool",

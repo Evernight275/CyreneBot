@@ -244,6 +244,7 @@ class PluginDefinition(PluginBase):
     homepage: str | None = None
     repository: str | None = None
     keywords: list[str] = Field(default_factory=list)
+    python_dependencies: list[str] = Field(default_factory=list)
     capabilities: list[PluginCapability] = []
     permissions: list[PluginPermission] = []
     commands: list[PluginCommandDefinition] = []
@@ -343,6 +344,7 @@ class PluginManifest(PluginBase):
     homepage: str | None = None
     repository: str | None = None
     keywords: list[str] = Field(default_factory=list)
+    python_dependencies: list[str] = Field(default_factory=list)
     capabilities: list[PluginCapability] = []
     permissions: list[PluginPermission] = []
     commands: list[PluginCommandDefinition] = []
@@ -368,6 +370,7 @@ class PluginManifest(PluginBase):
             homepage=self.homepage,
             repository=self.repository,
             keywords=list(self.keywords),
+            python_dependencies=list(self.python_dependencies),
             capabilities=list(self.capabilities),
             permissions=list(self.permissions),
             commands=list(self.commands),

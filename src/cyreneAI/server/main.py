@@ -6,9 +6,13 @@ from cyreneAI.server.config import (
     build_bot_admin_config_from_env,
     build_bot_polling_state_database_path_from_env,
     build_context_database_path_from_env,
+    build_controlled_shell_enabled_from_env,
     build_disabled_plugin_ids_from_env,
     build_mcp_stdio_servers_from_env,
     build_plugin_paths_from_env,
+    build_plugin_python_dependency_auto_install_from_env,
+    build_plugin_python_dependency_install_timeout_seconds_from_env,
+    build_plugin_python_environment_root_path_from_env,
     build_plugin_storage_path_from_env,
     build_plugin_task_database_path_from_env,
     build_provider_configs_from_env,
@@ -24,6 +28,9 @@ from cyreneAI.server.config import (
     build_tool_sandbox_commands_from_env,
     build_tool_sandbox_mode_from_env,
     build_tool_sandbox_timeout_seconds_from_env,
+    build_shell_command_policy_from_env,
+    build_shell_cwd_root_path_from_env,
+    build_shell_timeout_seconds_from_env,
     build_vector_database_path_from_env,
     build_web_search_api_key_from_env,
     build_web_search_api_key_header_from_env,
@@ -49,10 +56,23 @@ async def _build_runtime():
         bot_polling_state_database_path=build_bot_polling_state_database_path_from_env(),
         bot_admin_config=build_bot_admin_config_from_env(),
         plugin_storage_path=build_plugin_storage_path_from_env(),
+        plugin_python_environment_root_path=(
+            build_plugin_python_environment_root_path_from_env()
+        ),
+        plugin_python_dependency_auto_install=(
+            build_plugin_python_dependency_auto_install_from_env()
+        ),
+        plugin_python_dependency_install_timeout_seconds=(
+            build_plugin_python_dependency_install_timeout_seconds_from_env()
+        ),
         plugin_task_database_path=build_plugin_task_database_path_from_env(),
         disabled_plugin_ids=build_disabled_plugin_ids_from_env(),
         plugin_fail_fast=False,
         plugin_paths=build_plugin_paths_from_env(),
+        controlled_shell_enabled=build_controlled_shell_enabled_from_env(),
+        shell_command_policy=build_shell_command_policy_from_env(),
+        shell_cwd_root_path=build_shell_cwd_root_path_from_env(),
+        shell_timeout_seconds=build_shell_timeout_seconds_from_env(),
     )
 
 

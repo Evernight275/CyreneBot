@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 from cyreneAI.core.schema.application import BotAdminConfig
 from cyreneAI.core.schema.provider import ProviderConfig, ProviderType
 from cyreneAI.core.schema.server import ServerSettings
-from cyreneAI.core.schema.tool import MCPStdioServerConfig
+from cyreneAI.core.schema.tool import MCPStdioServerConfig, ShellCommandPolicy
 
 
 def build_server_settings_from_env() -> ServerSettings:
@@ -178,6 +178,42 @@ def build_tool_sandbox_timeout_seconds_from_env() -> float | None:
     return float(raw)
 
 
+def build_controlled_shell_enabled_from_env() -> bool:
+    load_dotenv()
+
+    return _env_bool("CYRENEAI_CONTROLLED_SHELL_ENABLED", default=False)
+
+
+def build_shell_command_policy_from_env() -> ShellCommandPolicy | None:
+    load_dotenv()
+
+    raw = _env_str("CYRENEAI_SHELL_COMMAND_POLICY_JSON")
+    if raw is None:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError("CYRENEAI_SHELL_COMMAND_POLICY_JSON must be valid JSON") from exc
+    if not isinstance(parsed, dict):
+        raise ValueError("CYRENEAI_SHELL_COMMAND_POLICY_JSON must be a JSON object")
+    return ShellCommandPolicy.model_validate(parsed)
+
+
+def build_shell_cwd_root_path_from_env() -> str | None:
+    load_dotenv()
+
+    return _env_str("CYRENEAI_SHELL_CWD_ROOT_PATH")
+
+
+def build_shell_timeout_seconds_from_env() -> float:
+    load_dotenv()
+
+    raw = _env_str("CYRENEAI_SHELL_TIMEOUT_SECONDS")
+    if raw is None:
+        return 10.0
+    return float(raw)
+
+
 def build_mcp_stdio_servers_from_env() -> list[MCPStdioServerConfig]:
     load_dotenv()
 
@@ -242,6 +278,29 @@ def build_plugin_storage_path_from_env() -> str | None:
     load_dotenv()
 
     return _env_str("CYRENEAI_PLUGIN_STORAGE_PATH")
+
+
+def build_plugin_python_environment_root_path_from_env() -> str | None:
+    load_dotenv()
+
+    return _env_str("CYRENEAI_PLUGIN_PYTHON_ENVIRONMENT_ROOT_PATH") or (
+        "data/plugin_venvs"
+    )
+
+
+def build_plugin_python_dependency_auto_install_from_env() -> bool:
+    load_dotenv()
+
+    return _env_bool("CYRENEAI_PLUGIN_PYTHON_AUTO_INSTALL", default=True)
+
+
+def build_plugin_python_dependency_install_timeout_seconds_from_env() -> float:
+    load_dotenv()
+
+    raw = _env_str("CYRENEAI_PLUGIN_PYTHON_INSTALL_TIMEOUT_SECONDS")
+    if raw is None:
+        return 300.0
+    return float(raw)
 
 
 def build_plugin_task_database_path_from_env() -> str | None:

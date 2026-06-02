@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import json
 from textwrap import dedent
+from dataclasses import dataclass
+from pathlib import Path
 
 import pytest
 
@@ -73,6 +75,39 @@ def _write_hello_plugin(path) -> None:
     )
 
 
+@dataclass(frozen=True)
+class _FakePluginPythonEnvironment:
+    env_path: Path
+    site_paths: tuple[Path, ...]
+    metadata: dict
+
+
+class _FakePluginPythonEnvironmentManager:
+    def __init__(self, site_path: Path) -> None:
+        self.site_path = site_path
+        self.calls = []
+
+    def ensure(self, *, project_path, manifest, content_hash):
+        self.calls.append(
+            {
+                "project_path": project_path,
+                "plugin_id": manifest.plugin_id,
+                "content_hash": content_hash,
+                "dependencies": list(manifest.python_dependencies),
+            }
+        )
+        if not manifest.python_dependencies:
+            return None
+        return _FakePluginPythonEnvironment(
+            env_path=self.site_path / ".venv",
+            site_paths=(self.site_path,),
+            metadata={
+                "created": True,
+                "environment_key": "fake-env-key",
+            },
+        )
+
+
 def test_filesystem_plugin_loader_loads_plugin_json_project(tmp_path) -> None:
     async def run() -> None:
         plugin_path = tmp_path / "demo_hello"
@@ -116,6 +151,54 @@ def test_filesystem_plugin_loader_loads_plugin_json_project(tmp_path) -> None:
             await runtime.close()
 
     asyncio.run(run())
+
+
+def test_filesystem_plugin_loader_uses_python_environment_import_paths(tmp_path) -> None:
+    plugin_path = tmp_path / "demo_dep"
+    dependency_path = tmp_path / "dependency_site"
+    plugin_path.mkdir()
+    dependency_path.mkdir()
+    (dependency_path / "demo_dependency.py").write_text(
+        "VALUE = 'from managed env'\n",
+        encoding="utf-8",
+    )
+    (plugin_path / "plugin.json").write_text(
+        json.dumps(
+            {
+                "plugin_id": "demo.dep",
+                "name": "Dependency Demo",
+                "description": "Uses a managed dependency path.",
+                "entrypoint": "main.py",
+                "python_dependencies": ["demo-dependency==1.0"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (plugin_path / "main.py").write_text(
+        dedent(
+            """
+            from cyreneAI.api import CyreneBot
+            import demo_dependency
+
+            plugin = CyreneBot()
+            plugin.plugin_value = demo_dependency.VALUE
+            """
+        ),
+        encoding="utf-8",
+    )
+    manager = _FakePluginPythonEnvironmentManager(dependency_path)
+
+    plugin = FileSystemPluginLoader(
+        plugin_path,
+        python_environment_manager=manager,
+    ).load()[0]
+    source = getattr(plugin, "__cyreneai_plugin_source__")
+
+    assert plugin.plugin_value == "from managed env"
+    assert manager.calls[0]["plugin_id"] == "demo.dep"
+    assert manager.calls[0]["dependencies"] == ["demo-dependency==1.0"]
+    assert source.metadata["python_environment"]["created"] is True
+    assert source.metadata["python_environment"]["environment_key"] == "fake-env-key"
 
 
 def test_filesystem_plugin_loader_reloads_tracked_source(tmp_path) -> None:

@@ -22,6 +22,7 @@ from cyreneAI.core.plugin.manager import PluginManager
 from cyreneAI.core.plugin.plugin_protocol import (
     PluginAssetsProtocol,
     PluginLoaderProtocol,
+    PluginPythonEnvironmentManagerProtocol,
     PluginRegistryProtocol,
     PluginStorageProtocol,
     PluginTaskSchedulerProtocol,
@@ -58,6 +59,7 @@ async def build_cyrene_ai_runtime(
     plugin_loaders: list[PluginLoaderProtocol] | None = None,
     plugin_storage: PluginStorageProtocol | None = None,
     plugin_assets: PluginAssetsProtocol | None = None,
+    plugin_python_environment_manager: PluginPythonEnvironmentManagerProtocol | None = None,
     plugin_task_scheduler: PluginTaskSchedulerProtocol | None = None,
     plugin_task_store: PluginTaskStoreProtocol | None = None,
     disabled_plugin_ids: list[str] | None = None,
@@ -110,6 +112,7 @@ async def build_cyrene_ai_runtime(
         plugin_manager=runtime_plugin_manager,
         plugin_storage=plugin_storage,
         plugin_assets=plugin_assets,
+        plugin_python_environment_manager=plugin_python_environment_manager,
         plugin_task_scheduler=runtime_plugin_task_scheduler,
         tool_registry=runtime_tool_registry,
         tool_manager=ToolManager(

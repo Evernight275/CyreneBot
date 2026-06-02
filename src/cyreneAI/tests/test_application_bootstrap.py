@@ -251,6 +251,38 @@ def test_build_cyrene_ai_runtime_wires_subprocess_tool_sandbox() -> None:
     asyncio.run(_run_build_runtime_wires_subprocess_tool_sandbox())
 
 
+async def _run_build_runtime_registers_controlled_shell_tool(tmp_path) -> None:
+    runtime = await build_cyrene_ai_runtime(
+        controlled_shell_enabled=True,
+        shell_cwd_root_path=tmp_path,
+        register_builtin_plugins=False,
+    )
+    try:
+        assert runtime.tool_registry is not None
+        assert runtime.tool_manager is not None
+        assert runtime.tool_registry.exists("shell")
+
+        result = await runtime.tool_manager.execute(
+            ToolCall(
+                id="call-shell",
+                name="shell",
+                arguments=json.dumps({"command": "pwd"}),
+            )
+        )
+        payload = json.loads(result.content or "{}")
+
+        assert result.success is True
+        assert payload["exit_code"] == 0
+        assert payload["decision"] == "allow"
+        assert payload["stdout"] == str(tmp_path.resolve())
+    finally:
+        await runtime.close()
+
+
+def test_build_cyrene_ai_runtime_registers_controlled_shell_tool(tmp_path) -> None:
+    asyncio.run(_run_build_runtime_registers_controlled_shell_tool(tmp_path))
+
+
 async def _run_build_runtime_rejects_duplicate_tool_sandbox_config() -> None:
     runtime = await build_cyrene_ai_runtime(
         tool_sandbox_mode="in_process",

@@ -46,6 +46,7 @@ def test_plugin_definition_defaults() -> None:
     assert definition.homepage is None
     assert definition.repository is None
     assert definition.keywords == []
+    assert definition.python_dependencies == []
     assert definition.capabilities == []
     assert definition.permissions == []
     assert definition.commands == []
@@ -221,6 +222,7 @@ def test_plugin_manifest_converts_to_definition() -> None:
         homepage="https://example.com",
         repository="https://example.com/repo.git",
         keywords=["demo", "hello"],
+        python_dependencies=["numpy>=2"],
         capabilities=[PluginCapability.BOT_COMMAND],
         permissions=[PluginPermission.LLM, PluginPermission.MESSAGE_SEND],
         commands=[command],
@@ -240,6 +242,7 @@ def test_plugin_manifest_converts_to_definition() -> None:
     assert definition.homepage == "https://example.com"
     assert definition.repository == "https://example.com/repo.git"
     assert definition.keywords == ["demo", "hello"]
+    assert definition.python_dependencies == ["numpy>=2"]
     assert definition.capabilities == [PluginCapability.BOT_COMMAND]
     assert definition.permissions == [
         PluginPermission.LLM,

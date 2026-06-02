@@ -18,6 +18,7 @@ from cyreneAI.core.context.manager import ContextManager
 from cyreneAI.core.plugin.plugin_protocol import (
     PluginAssetsProtocol,
     PluginLoaderProtocol,
+    PluginPythonEnvironmentManagerProtocol,
     PluginStorageProtocol,
     PluginTaskSchedulerProtocol,
     PluginTaskStoreProtocol,
@@ -28,7 +29,7 @@ from cyreneAI.core.provider.factory import ProviderFactory
 from cyreneAI.core.provider.manager import ProviderManager
 from cyreneAI.core.provider.registry import ProviderRegistry
 from cyreneAI.core.schema.provider import ProviderConfig
-from cyreneAI.core.schema.tool import MCPStdioServerConfig
+from cyreneAI.core.schema.tool import MCPStdioServerConfig, ShellCommandPolicy
 from cyreneAI.core.skill.manager import SkillManager
 from cyreneAI.core.skill.registry import SkillRegistry
 from cyreneAI.core.tool.tool_protocol import (
@@ -45,6 +46,7 @@ from cyreneAI.infra.adapters.plugins.filesystem import (
     FileSystemPluginLoader,
     FileSystemPluginStorage,
 )
+from cyreneAI.infra.adapters.plugins.python_env import PluginPythonEnvironmentManager
 from cyreneAI.infra.adapters.plugins.sqlite import create_sqlite_plugin_task_store
 from cyreneAI.infra.adapters.bot_sessions.memory import InMemoryBotSessionStore
 from cyreneAI.infra.adapters.tools.sandbox import (
@@ -55,6 +57,7 @@ from cyreneAI.infra.adapters.tools.mcp_stdio import register_mcp_stdio_tools
 from cyreneAI.infra.adapters.tools.python_code import (
     register_python_code_interpreter_tool,
 )
+from cyreneAI.infra.adapters.tools.shell import register_controlled_shell_tool
 from cyreneAI.infra.adapters.tools.web_search import register_web_search_tool
 from cyreneAI.infra.adapters.vector_stores.sqlite.builder import (
     create_sqlite_vector_store,
@@ -91,6 +94,10 @@ async def build_cyrene_ai_runtime(
     plugin_storage: PluginStorageProtocol | None = None,
     plugin_storage_path: str | Path | None = None,
     plugin_assets: PluginAssetsProtocol | None = None,
+    plugin_python_environment_manager: PluginPythonEnvironmentManagerProtocol | None = None,
+    plugin_python_environment_root_path: str | Path | None = "data/plugin_venvs",
+    plugin_python_dependency_auto_install: bool = True,
+    plugin_python_dependency_install_timeout_seconds: float = 300.0,
     plugin_task_scheduler: PluginTaskSchedulerProtocol | None = None,
     plugin_task_store: PluginTaskStoreProtocol | None = None,
     plugin_task_database_path: str | Path | None = None,
@@ -107,6 +114,10 @@ async def build_cyrene_ai_runtime(
     web_search_api_key: str | None = None,
     web_search_api_key_header: str = "Authorization",
     web_search_timeout_seconds: float = 10.0,
+    controlled_shell_enabled: bool = False,
+    shell_command_policy: ShellCommandPolicy | None = None,
+    shell_cwd_root_path: str | Path | None = None,
+    shell_timeout_seconds: float = 10.0,
 ) -> CyreneAIRuntime:
     """
     构建带默认 infra 适配的 CyreneAI 运行时。
@@ -176,6 +187,25 @@ async def build_cyrene_ai_runtime(
         runtime_plugin_storage = FileSystemPluginStorage(plugin_storage_path)
 
     runtime_plugin_assets = plugin_assets
+    runtime_plugin_python_environment_manager = plugin_python_environment_manager
+    if (
+        runtime_plugin_python_environment_manager is not None
+        and plugin_python_environment_root_path is not None
+    ):
+        raise ValueError(
+            "plugin_python_environment_manager and "
+            "plugin_python_environment_root_path cannot both be set"
+        )
+    if (
+        runtime_plugin_python_environment_manager is None
+        and plugin_python_environment_root_path is not None
+    ):
+        runtime_plugin_python_environment_manager = PluginPythonEnvironmentManager(
+            _resolve_project_relative_path(plugin_python_environment_root_path),
+            auto_install=plugin_python_dependency_auto_install,
+            install_timeout_seconds=plugin_python_dependency_install_timeout_seconds,
+        )
+
     runtime_plugin_loaders = list(plugin_loaders or [])
     if plugin_paths:
         if runtime_plugin_assets is None:
@@ -188,6 +218,7 @@ async def build_cyrene_ai_runtime(
             FileSystemPluginLoader(
                 _resolve_project_relative_path(path),
                 plugin_assets=runtime_plugin_assets,
+                python_environment_manager=runtime_plugin_python_environment_manager,
             )
             for path in plugin_paths
         )
@@ -243,6 +274,7 @@ async def build_cyrene_ai_runtime(
         plugin_loaders=runtime_plugin_loaders,
         plugin_storage=runtime_plugin_storage,
         plugin_assets=runtime_plugin_assets,
+        plugin_python_environment_manager=runtime_plugin_python_environment_manager,
         plugin_task_scheduler=plugin_task_scheduler,
         plugin_task_store=runtime_plugin_task_store,
         disabled_plugin_ids=disabled_plugin_ids,
@@ -272,6 +304,15 @@ async def build_cyrene_ai_runtime(
                 runtime.tool_registry,
                 timeout_seconds=tool_sandbox_timeout_seconds or 10.0,
             )
+        if controlled_shell_enabled:
+            register_controlled_shell_tool(
+                runtime.tool_registry,
+                policy=shell_command_policy,
+                cwd_root=_resolve_project_relative_path(shell_cwd_root_path)
+                if shell_cwd_root_path is not None
+                else None,
+                timeout_seconds=shell_timeout_seconds,
+            )
 
     if runtime.tool_registry is not None and mcp_stdio_servers:
         await register_mcp_stdio_tools(
@@ -285,6 +326,8 @@ async def build_cyrene_ai_runtime(
 def load_filesystem_plugins(
     runtime: CyreneAIRuntime,
     plugin_paths: Sequence[str | Path],
+    *,
+    python_environment_manager: PluginPythonEnvironmentManagerProtocol | None = None,
 ) -> list[PluginDefinition]:
     """
     通过默认文件系统适配器向已运行 runtime 安装插件。
@@ -299,12 +342,16 @@ def load_filesystem_plugins(
         )
 
     definitions: list[PluginDefinition] = []
+    runtime_python_environment_manager = (
+        python_environment_manager or runtime.plugin_python_environment_manager
+    )
     for path in plugin_paths:
         definitions.extend(
             runtime.plugin_host.load(
                 FileSystemPluginLoader(
                     _resolve_project_relative_path(path),
                     plugin_assets=runtime.plugin_assets,
+                    python_environment_manager=runtime_python_environment_manager,
                 )
             )
         )

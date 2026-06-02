@@ -33,12 +33,41 @@ class ToolRiskLevel(StrEnum):
     PROCESS = "process"
 
 
+class ShellCommandDecision(StrEnum):
+    """
+    Controlled shell command policy decision.
+    """
+
+    ALLOW = "allow"
+    REVIEW = "review"
+    DENY = "deny"
+
+
 def _empty_tool_permissions() -> list[ToolPermission]:
     return []
 
 
 def _empty_tool_names() -> list[str]:
     return []
+
+
+def _empty_shell_command_rules() -> list["ShellCommandRule"]:
+    return []
+
+
+def _empty_shell_blocked_tokens() -> list[str]:
+    return [
+        "|",
+        "||",
+        "&",
+        "&&",
+        ";",
+        ">",
+        ">>",
+        "<",
+        "`",
+        "$(",
+    ]
 
 
 def _empty_mcp_args() -> list[str]:
@@ -73,6 +102,26 @@ class ToolExecutionPolicy(CyreneAISchema):
     max_risk_level: ToolRiskLevel | None = None
     allow_sandbox_bypass: bool = False
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ShellCommandRule(CyreneAISchema):
+    """
+    A first-token command rule for controlled shell execution.
+    """
+
+    command: str
+    decision: ShellCommandDecision
+    subcommands: list[str] | None = None
+
+
+class ShellCommandPolicy(CyreneAISchema):
+    """
+    Controlled shell policy for allow/review/deny command classes.
+    """
+
+    rules: list[ShellCommandRule] = Field(default_factory=_empty_shell_command_rules)
+    default_decision: ShellCommandDecision = ShellCommandDecision.DENY
+    blocked_tokens: list[str] = Field(default_factory=_empty_shell_blocked_tokens)
 
 
 class ToolDefinition(CyreneAISchema):

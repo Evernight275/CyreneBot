@@ -71,8 +71,12 @@ from cyreneAI.server.config import (
     ServerSettings,
     build_bot_polling_state_database_path_from_env,
     build_context_database_path_from_env,
+    build_controlled_shell_enabled_from_env,
     build_disabled_plugin_ids_from_env,
     build_plugin_paths_from_env,
+    build_plugin_python_dependency_auto_install_from_env,
+    build_plugin_python_dependency_install_timeout_seconds_from_env,
+    build_plugin_python_environment_root_path_from_env,
     build_plugin_storage_path_from_env,
     build_plugin_task_database_path_from_env,
     build_provider_configs_from_env,
@@ -87,6 +91,9 @@ from cyreneAI.server.config import (
     build_tool_sandbox_commands_from_env,
     build_tool_sandbox_mode_from_env,
     build_tool_sandbox_timeout_seconds_from_env,
+    build_shell_command_policy_from_env,
+    build_shell_cwd_root_path_from_env,
+    build_shell_timeout_seconds_from_env,
     build_vector_database_path_from_env,
 )
 
@@ -782,6 +789,47 @@ def test_server_rejects_invalid_tool_sandbox_commands(monkeypatch) -> None:
         build_tool_sandbox_commands_from_env()
 
 
+def test_server_builds_controlled_shell_config_from_env(monkeypatch) -> None:
+    monkeypatch.setenv("CYRENEAI_CONTROLLED_SHELL_ENABLED", "true")
+    monkeypatch.setenv(
+        "CYRENEAI_SHELL_COMMAND_POLICY_JSON",
+        json.dumps(
+            {
+                "rules": [
+                    {
+                        "command": "echo",
+                        "decision": "allow",
+                    }
+                ],
+                "default_decision": "deny",
+            }
+        ),
+    )
+    monkeypatch.setenv("CYRENEAI_SHELL_CWD_ROOT_PATH", "D:/workspace")
+    monkeypatch.setenv("CYRENEAI_SHELL_TIMEOUT_SECONDS", "15")
+
+    policy = build_shell_command_policy_from_env()
+
+    assert build_controlled_shell_enabled_from_env() is True
+    assert policy is not None
+    assert policy.rules[0].command == "echo"
+    assert policy.rules[0].decision == "allow"
+    assert build_shell_cwd_root_path_from_env() == "D:/workspace"
+    assert build_shell_timeout_seconds_from_env() == 15
+
+
+def test_server_disables_controlled_shell_by_default(monkeypatch) -> None:
+    monkeypatch.delenv("CYRENEAI_CONTROLLED_SHELL_ENABLED", raising=False)
+    monkeypatch.delenv("CYRENEAI_SHELL_COMMAND_POLICY_JSON", raising=False)
+    monkeypatch.delenv("CYRENEAI_SHELL_CWD_ROOT_PATH", raising=False)
+    monkeypatch.delenv("CYRENEAI_SHELL_TIMEOUT_SECONDS", raising=False)
+
+    assert build_controlled_shell_enabled_from_env() is False
+    assert build_shell_command_policy_from_env() is None
+    assert build_shell_cwd_root_path_from_env() is None
+    assert build_shell_timeout_seconds_from_env() == 10
+
+
 def test_server_builds_plugin_paths_from_env(monkeypatch) -> None:
     monkeypatch.setenv(
         "CYRENEAI_PLUGIN_PATH",
@@ -804,6 +852,19 @@ def test_server_builds_plugin_storage_path_from_env(monkeypatch) -> None:
     monkeypatch.setenv("CYRENEAI_PLUGIN_STORAGE_PATH", "data/plugin_storage")
 
     assert build_plugin_storage_path_from_env() == "data/plugin_storage"
+
+
+def test_server_builds_plugin_python_environment_config_from_env(monkeypatch) -> None:
+    monkeypatch.setenv(
+        "CYRENEAI_PLUGIN_PYTHON_ENVIRONMENT_ROOT_PATH",
+        "data/plugin_envs",
+    )
+    monkeypatch.setenv("CYRENEAI_PLUGIN_PYTHON_AUTO_INSTALL", "false")
+    monkeypatch.setenv("CYRENEAI_PLUGIN_PYTHON_INSTALL_TIMEOUT_SECONDS", "120")
+
+    assert build_plugin_python_environment_root_path_from_env() == "data/plugin_envs"
+    assert build_plugin_python_dependency_auto_install_from_env() is False
+    assert build_plugin_python_dependency_install_timeout_seconds_from_env() == 120
 
 
 def test_server_builds_plugin_task_database_path_from_env(monkeypatch) -> None:
