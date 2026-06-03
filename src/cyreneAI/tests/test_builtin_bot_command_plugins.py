@@ -82,6 +82,7 @@ def test_builtin_bot_command_plugin_is_registered_by_default() -> None:
             "session new",
             "session use",
             "session rename",
+            "session clear",
             "session delete",
             "reset",
             "status",
@@ -144,6 +145,7 @@ def test_builtin_help_command_lists_registered_commands() -> None:
                 "/session new <name> - Create and select a session.",
                 "/session use <name> - Select a session.",
                 "/session rename <old> <new> - Rename a session.",
+                "/session clear <name> - Clear session context.",
                 "/session delete <name> - Delete a session.",
                 "/reset [session] - Reset current session context.",
             ]
@@ -277,8 +279,8 @@ def test_builtin_session_commands_manage_conversations_and_reset_context() -> No
         assert listed.actions[0].message.content[0].text == "\n".join(
             [
                 "Sessions:",
-                "- default",
-                "* work",
+                "- default id=default context=memory:user-1:conversation:default",
+                "* work id=work context=memory:user-1:conversation:work",
             ]
         )
         assert selected_default.actions[0].message is not None
@@ -303,6 +305,69 @@ def test_builtin_session_commands_manage_conversations_and_reset_context() -> No
         )
         assert await store.list_snapshots(default_session_id) == []
         assert await store.list_snapshots(work_session_id) == []
+
+        await runtime.close()
+
+    asyncio.run(run())
+
+
+def test_builtin_session_clear_keeps_conversation() -> None:
+    async def run() -> None:
+        store = FakeContextStore()
+        runtime = await build_cyrene_ai_runtime(
+            bot_session_manager=BotSessionManager(InMemoryBotSessionStore()),
+            context_manager=ContextManager(store),
+        )
+        assert runtime.plugin_manager is not None
+
+        event = _event("/session")
+        await runtime.plugin_manager.execute_command(
+            PluginCommandRequest(
+                command=BotCommand(
+                    raw_text="/session new work",
+                    name="session new",
+                    args=("work",),
+                    args_text="work",
+                ),
+                event=event,
+            )
+        )
+        work_session_id = "memory:user-1:conversation:work"
+        await store.save_snapshot(
+            ContextSnapshot(
+                snapshot_id="work-snapshot",
+                session_id=work_session_id,
+                window=ContextWindow(window_id="work-window"),
+            )
+        )
+
+        cleared = await runtime.plugin_manager.execute_command(
+            PluginCommandRequest(
+                command=BotCommand(
+                    raw_text="/session clear work",
+                    name="session clear",
+                    args=("work",),
+                    args_text="work",
+                ),
+                event=event,
+            )
+        )
+        listed = await runtime.plugin_manager.execute_command(
+            PluginCommandRequest(
+                command=BotCommand(raw_text="/session ls", name="session ls"),
+                event=event,
+            )
+        )
+
+        assert cleared.actions[0].message is not None
+        assert cleared.actions[0].message.content[0].text == (
+            "Session work cleared. Context snapshots deleted: 1."
+        )
+        assert await store.list_snapshots(work_session_id) == []
+        assert listed.actions[0].message is not None
+        assert "* work id=work context=memory:user-1:conversation:work" in (
+            listed.actions[0].message.content[0].text
+        )
 
         await runtime.close()
 

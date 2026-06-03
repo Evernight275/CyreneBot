@@ -696,6 +696,7 @@ def test_bot_orchestrator_treats_slash_message_as_command() -> None:
                     "/session new <name> - Create and select a session.",
                     "/session use <name> - Select a session.",
                     "/session rename <old> <new> - Rename a session.",
+                    "/session clear <name> - Clear session context.",
                     "/session delete <name> - Delete a session.",
                     "/reset [session] - Reset current session context.",
                 ]

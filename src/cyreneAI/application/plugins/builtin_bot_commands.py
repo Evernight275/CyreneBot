@@ -87,6 +87,8 @@ class BuiltinBotCommandExecutor:
             text = await self._use_session_conversation(request)
         elif command.name == "session rename":
             text = await self._rename_session_conversation(request)
+        elif command.name == "session clear":
+            text = await self._clear_session_conversation_context(request)
         elif command.name == "session delete":
             text = await self._delete_session_conversation(request)
         elif command.name == "reset":
@@ -233,8 +235,16 @@ class BuiltinBotCommandExecutor:
         conversations = await manager.list_conversations(event)
         lines = ["Sessions:"]
         for conversation in conversations:
-            marker = "*" if conversation.conversation_id == active.conversation_id else "-"
-            lines.append(f"{marker} {conversation.name}")
+            marker = (
+                "*"
+                if conversation.conversation_id == active.conversation_id
+                else "-"
+            )
+            lines.append(
+                f"{marker} {conversation.name} "
+                f"id={conversation.conversation_id} "
+                f"context={conversation.context_session_id}"
+            )
         return "\n".join(lines)
 
     async def _create_session_conversation(
@@ -296,6 +306,34 @@ class BuiltinBotCommandExecutor:
         except CyreneAIError as exc:
             return f"Session rename failed: {exc}"
         return f"Session renamed to {conversation.name}."
+
+    async def _clear_session_conversation_context(
+        self,
+        request: PluginCommandRequest,
+    ) -> str:
+        manager = self._runtime.bot_session_manager
+        if manager is None:
+            return "Bot sessions are disabled."
+        name = request.command.args_text
+        if not name:
+            return "Usage: /session clear <name>"
+        try:
+            conversation = await manager.get_conversation(
+                _request_event(request),
+                name,
+            )
+        except CyreneAIError as exc:
+            return f"Session clear failed: {exc}"
+
+        deleted_count = await self._clear_context_session(
+            conversation.context_session_id
+        )
+        if deleted_count is None:
+            return "Context manager is not configured."
+        return (
+            f"Session {conversation.name} cleared. "
+            f"Context snapshots deleted: {deleted_count}."
+        )
 
     async def _delete_session_conversation(
         self,
@@ -592,6 +630,11 @@ def _builtin_bot_commands_definition() -> PluginDefinition:
                 name="session rename",
                 description="Rename a session.",
                 usage="/session rename <old> <new>",
+            ),
+            PluginCommandDefinition(
+                name="session clear",
+                description="Clear session context.",
+                usage="/session clear <name>",
             ),
             PluginCommandDefinition(
                 name="session delete",

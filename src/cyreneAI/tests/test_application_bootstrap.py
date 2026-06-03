@@ -70,6 +70,7 @@ async def _run_build_runtime(tmp_path) -> None:
         "session new",
         "session use",
         "session rename",
+        "session clear",
         "session delete",
         "reset",
         "status",
