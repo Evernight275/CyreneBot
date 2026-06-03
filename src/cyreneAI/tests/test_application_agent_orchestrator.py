@@ -265,6 +265,13 @@ async def _run_agent_executes_tool_and_returns_final_response() -> None:
     assert result.steps[0].tool_results[0].content == "executed:lookup"
     assert result.context_snapshot.session_id == "session-1"
     assert result.context_snapshot.window.segments[-1].role == ContextSegmentRole.WORKING
+    assert result.context_snapshot.metadata["completed"] is True
+    assert result.context_snapshot.metadata["stop_reason"] == "final_response"
+    assert result.context_snapshot.metadata["step_count"] == 2
+    assert result.context_snapshot.metadata["tool_call_count"] == 1
+    assert result.context_snapshot.metadata["tool_result_count"] == 1
+    assert result.context_snapshot.metadata["tool_error_count"] == 0
+    assert result.context_snapshot.metadata["tool_names"] == ["lookup"]
     assert executor.calls == [tool_call]
 
     first_request = provider.requests[0]

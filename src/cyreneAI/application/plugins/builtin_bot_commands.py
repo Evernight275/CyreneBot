@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import cast
+
 from cyreneAI.application.runtime import CyreneAIRuntime
 from cyreneAI.core.errors.base import CyreneAIError, NotFoundError
 from cyreneAI.core.errors.plugin import PluginInputError
@@ -11,7 +13,8 @@ from cyreneAI.core.schema.bot import (
     BotEvent,
     BotMessage,
 )
-from cyreneAI.core.schema.message import ContentPart, ContentPartType
+from cyreneAI.core.schema.context import ContextItem, ContextItemType, ContextSnapshot
+from cyreneAI.core.schema.message import ContentPart, ContentPartType, MessageRole
 from cyreneAI.core.schema.plugin import (
     PluginCommandArgumentDefinition,
     PluginCommandArgumentKind,
@@ -97,6 +100,8 @@ class BuiltinBotCommandExecutor:
             text = await self._reset_context(request)
         elif command.name == "status":
             text = self._render_status()
+        elif command.name == "agent trace":
+            text = await self._render_agent_trace(request)
         elif command.name == "tool ls":
             text = self._render_tool_list()
         elif command.name == "tool on":
@@ -458,6 +463,51 @@ class BuiltinBotCommandExecutor:
         if manager is None:
             return None
         return await manager.clear_session(context_session_id)
+
+    async def _render_agent_trace(self, request: PluginCommandRequest) -> str:
+        manager = self._runtime.context_manager
+        if manager is None:
+            return "Context manager is not configured."
+        try:
+            context_session_id = await self._resolve_agent_trace_context_session_id(
+                request
+            )
+        except CyreneAIError as exc:
+            return f"Agent trace failed: {exc}"
+
+        snapshots = await manager.list_by_session(context_session_id)
+        snapshots = [
+            snapshot
+            for snapshot in snapshots
+            if _is_agent_trace_snapshot(snapshot)
+        ]
+        if not snapshots:
+            return f"No agent trace found for session {context_session_id}."
+        return _render_agent_trace_snapshot(snapshots[-1])
+
+    async def _resolve_agent_trace_context_session_id(
+        self,
+        request: PluginCommandRequest,
+    ) -> str:
+        name_or_session_id = request.command.args_text
+        bot_session_manager = self._runtime.bot_session_manager
+        if name_or_session_id:
+            if bot_session_manager is None:
+                return name_or_session_id
+            conversation = await bot_session_manager.get_conversation(
+                _request_event(request),
+                name_or_session_id,
+            )
+            return conversation.context_session_id
+        if bot_session_manager is not None:
+            conversation = await bot_session_manager.get_active_conversation(
+                _request_event(request)
+            )
+            return conversation.context_session_id
+        return (
+            _metadata_string(request.metadata.get("context_session_id"))
+            or _request_event(request).session_id
+        )
 
     async def _render_provider_list(self) -> str:
         running_configs = {
@@ -871,6 +921,12 @@ def _builtin_bot_commands_definition() -> PluginDefinition:
                 admin_required=True,
             ),
             PluginCommandDefinition(
+                name="agent trace",
+                description="Show latest agent trace summary.",
+                usage="/agent trace [session]",
+                admin_required=True,
+            ),
+            PluginCommandDefinition(
                 name="tool ls",
                 description="List runtime tools.",
                 usage="/tool ls",
@@ -1043,6 +1099,94 @@ def _provider_api_key_status(config: ProviderConfig) -> str:
     if config.api_key:
         return "set"
     return "missing"
+
+
+def _is_agent_trace_snapshot(snapshot: ContextSnapshot) -> bool:
+    if snapshot.metadata.get("agent_loop") == "minimal":
+        return True
+    return bool(_agent_trace_items(snapshot))
+
+
+def _render_agent_trace_snapshot(snapshot: ContextSnapshot) -> str:
+    metadata = snapshot.metadata
+    trace_items = _agent_trace_items(snapshot)
+    lines = [
+        "Agent trace:",
+        f"session_id: {snapshot.session_id}",
+        f"snapshot_id: {snapshot.snapshot_id}",
+        f"completed: {_metadata_value(metadata.get('completed'), '-')}",
+        f"stop_reason: {_metadata_value(metadata.get('stop_reason'), '-')}",
+        f"steps: {_metadata_value(metadata.get('step_count'), 0)}",
+        f"tool_calls: {_metadata_value(metadata.get('tool_call_count'), 0)}",
+        f"tool_results: {_metadata_value(metadata.get('tool_result_count'), 0)}",
+        f"tool_errors: {_metadata_value(metadata.get('tool_error_count'), 0)}",
+        f"tools: {_render_metadata_strings(metadata.get('tool_names'))}",
+        f"trace_items: {len(trace_items)}",
+    ]
+    last_assistant_text = _last_assistant_trace_text(trace_items)
+    if last_assistant_text:
+        lines.append(f"last_assistant: {_truncate_line(last_assistant_text, 160)}")
+    return "\n".join(lines)
+
+
+def _agent_trace_items(snapshot: ContextSnapshot) -> list[ContextItem]:
+    return [
+        item
+        for segment in snapshot.window.segments
+        for item in segment.items
+        if (
+            item.type == ContextItemType.TOOL_TRACE
+            or "agent_trace_index" in item.metadata
+        )
+    ]
+
+
+def _last_assistant_trace_text(items: list[ContextItem]) -> str | None:
+    for item in reversed(items):
+        message = item.message
+        if message is None or message.role != MessageRole.ASSISTANT:
+            continue
+        text = _message_text(message.content)
+        if text:
+            return text
+    return None
+
+
+def _message_text(content: list[ContentPart] | None) -> str:
+    if not content:
+        return ""
+    return "".join(
+        part.text or ""
+        for part in content
+        if part.type == ContentPartType.TEXT
+    )
+
+
+def _metadata_value(value: object, default: object) -> str:
+    if value is None:
+        value = default
+    if isinstance(value, bool):
+        return str(value).lower()
+    return str(value)
+
+
+def _render_metadata_strings(value: object) -> str:
+    if not isinstance(value, list):
+        return "-"
+    items = cast(list[object], value)
+    names = [item for item in items if isinstance(item, str) and item]
+    if not names:
+        return "-"
+    return ",".join(names)
+
+
+def _truncate_line(text: str, max_chars: int) -> str:
+    normalized = " ".join(text.split())
+    if len(normalized) <= max_chars:
+        return normalized
+    if max_chars <= 3:
+        return normalized[:max_chars]
+    return f"{normalized[: max_chars - 3]}..."
 
 
 def _metadata_string(value: object) -> str | None:

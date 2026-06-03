@@ -9,8 +9,21 @@ from cyreneAI.application.plugins.builtin_bot_commands import (
 from cyreneAI.core.bot.session_manager import BotSessionManager
 from cyreneAI.core.context.manager import ContextManager
 from cyreneAI.core.schema.bot import BotCommand, BotEvent, BotEventType, BotMessage
-from cyreneAI.core.schema.context import ContextSnapshot, ContextWindow
-from cyreneAI.core.schema.message import ContentPart, ContentPartType
+from cyreneAI.core.schema.context import (
+    ContextItem,
+    ContextItemSource,
+    ContextItemType,
+    ContextSegment,
+    ContextSegmentRole,
+    ContextSnapshot,
+    ContextWindow,
+)
+from cyreneAI.core.schema.message import (
+    ContentPart,
+    ContentPartType,
+    Message,
+    MessageRole,
+)
 from cyreneAI.core.schema.plugin import (
     PluginCommandDefinition,
     PluginCommandRequest,
@@ -99,6 +112,7 @@ def test_builtin_bot_command_plugin_is_registered_by_default() -> None:
             "session delete",
             "reset",
             "status",
+            "agent trace",
             "tool ls",
             "tool on",
             "tool off",
@@ -446,6 +460,95 @@ def test_builtin_reset_command_reports_missing_context_manager() -> None:
     asyncio.run(run())
 
 
+def test_builtin_agent_trace_command_shows_latest_trace_summary() -> None:
+    async def run() -> None:
+        store = FakeContextStore()
+        runtime = await build_cyrene_ai_runtime(
+            bot_session_manager=BotSessionManager(InMemoryBotSessionStore()),
+            context_manager=ContextManager(store),
+        )
+        assert runtime.plugin_manager is not None
+        session_id = "memory:user-1:conversation:default"
+        await store.save_snapshot(
+            ContextSnapshot(
+                snapshot_id="agent-snapshot",
+                session_id=session_id,
+                window=ContextWindow(
+                    window_id="agent-window",
+                    segments=[
+                        ContextSegment(
+                            segment_id="agent-trace",
+                            role=ContextSegmentRole.WORKING,
+                            items=[
+                                ContextItem(
+                                    item_id="trace-1",
+                                    type=ContextItemType.TOOL_TRACE,
+                                    source=ContextItemSource.TOOL,
+                                    metadata={"agent_trace_index": 0},
+                                ),
+                                ContextItem(
+                                    item_id="trace-2",
+                                    type=ContextItemType.MESSAGE,
+                                    source=ContextItemSource.ASSISTANT,
+                                    message=Message(
+                                        role=MessageRole.ASSISTANT,
+                                        content=[
+                                            ContentPart(
+                                                type=ContentPartType.TEXT,
+                                                text="final answer",
+                                            )
+                                        ],
+                                    ),
+                                    metadata={"agent_trace_index": 1},
+                                ),
+                            ],
+                        )
+                    ],
+                ),
+                metadata={
+                    "agent_loop": "minimal",
+                    "completed": True,
+                    "stop_reason": "final_response",
+                    "step_count": 2,
+                    "tool_call_count": 1,
+                    "tool_result_count": 1,
+                    "tool_error_count": 0,
+                    "tool_names": ["lookup"],
+                },
+            )
+        )
+
+        result = await runtime.plugin_manager.execute_command(
+            PluginCommandRequest(
+                command=BotCommand(raw_text="/agent trace", name="agent trace"),
+                event=_event("/agent trace"),
+                is_admin=True,
+            )
+        )
+
+        assert result.actions[0].message is not None
+        assert result.actions[0].message.content[0].text == "\n".join(
+            [
+                "Agent trace:",
+                "session_id: memory:user-1:conversation:default",
+                "snapshot_id: agent-snapshot",
+                "completed: true",
+                "stop_reason: final_response",
+                "steps: 2",
+                "tool_calls: 1",
+                "tool_results: 1",
+                "tool_errors: 0",
+                "tools: lookup",
+                "trace_items: 2",
+                "last_assistant: final answer",
+            ]
+        )
+
+        await runtime.close()
+
+    asyncio.run(run())
+
+
 def test_builtin_help_command_lists_admin_commands_for_admin() -> None:
     async def run() -> None:
         runtime = await build_cyrene_ai_runtime()
@@ -463,6 +566,7 @@ def test_builtin_help_command_lists_admin_commands_for_admin() -> None:
         text = result.actions[0].message.content[0].text
         assert "Admin:" in text
         assert "/status - Show runtime status. [admin]" in text
+        assert "/agent trace [session] - Show latest agent trace summary. [admin]" in text
         assert "/plugin commands [plugin_id] - List plugin commands. [admin]" in text
 
         await runtime.close()

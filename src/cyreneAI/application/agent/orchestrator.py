@@ -158,12 +158,21 @@ class AgentOrchestrator:
             )
 
             if not tool_calls:
+                run_metadata = _build_run_metadata(
+                    request=request,
+                    context_result=context_result,
+                    steps=steps,
+                    stop_reason=AgentStopReason.FINAL_RESPONSE,
+                    completed=True,
+                    memory_metadata=memory_metadata,
+                )
                 context_snapshot = _build_context_snapshot(
                     request=request,
                     context_window=_append_agent_trace_segment(
                         context_window=context_window,
                         steps=steps,
                     ),
+                    metadata=run_metadata,
                 )
                 if self._runtime.context_manager is not None:
                     await self._runtime.context_manager.save(context_snapshot)
@@ -175,14 +184,7 @@ class AgentOrchestrator:
                     context_snapshot=context_snapshot,
                     completed=True,
                     stop_reason=AgentStopReason.FINAL_RESPONSE,
-                    metadata=_build_run_metadata(
-                        request=request,
-                        context_result=context_result,
-                        steps=steps,
-                        stop_reason=AgentStopReason.FINAL_RESPONSE,
-                        completed=True,
-                        memory_metadata=memory_metadata,
-                    ),
+                    metadata=run_metadata,
                 )
 
             current_request = _append_tool_feedback_messages(
@@ -213,12 +215,21 @@ class AgentOrchestrator:
                         ),
                     )
                 )
+                run_metadata = _build_run_metadata(
+                    request=request,
+                    context_result=context_result,
+                    steps=steps,
+                    stop_reason=AgentStopReason.TOOL_LIMIT,
+                    completed=False,
+                    memory_metadata=memory_metadata,
+                )
                 context_snapshot = _build_context_snapshot(
                     request=request,
                     context_window=_append_agent_trace_segment(
                         context_window=context_window,
                         steps=steps,
                     ),
+                    metadata=run_metadata,
                 )
                 if self._runtime.context_manager is not None:
                     await self._runtime.context_manager.save(context_snapshot)
@@ -230,14 +241,7 @@ class AgentOrchestrator:
                     context_snapshot=context_snapshot,
                     completed=False,
                     stop_reason=AgentStopReason.TOOL_LIMIT,
-                    metadata=_build_run_metadata(
-                        request=request,
-                        context_result=context_result,
-                        steps=steps,
-                        stop_reason=AgentStopReason.TOOL_LIMIT,
-                        completed=False,
-                        memory_metadata=memory_metadata,
-                    ),
+                    metadata=run_metadata,
                 )
 
         if response is None:
@@ -260,12 +264,21 @@ class AgentOrchestrator:
                 )
             )
 
+        run_metadata = _build_run_metadata(
+            request=request,
+            context_result=context_result,
+            steps=steps,
+            stop_reason=AgentStopReason.MAX_STEPS,
+            completed=False,
+            memory_metadata=memory_metadata,
+        )
         context_snapshot = _build_context_snapshot(
             request=request,
             context_window=_append_agent_trace_segment(
                 context_window=context_window,
                 steps=steps,
             ),
+            metadata=run_metadata,
         )
         if self._runtime.context_manager is not None:
             await self._runtime.context_manager.save(context_snapshot)
@@ -277,14 +290,7 @@ class AgentOrchestrator:
             context_snapshot=context_snapshot,
             completed=False,
             stop_reason=AgentStopReason.MAX_STEPS,
-            metadata=_build_run_metadata(
-                request=request,
-                context_result=context_result,
-                steps=steps,
-                stop_reason=AgentStopReason.MAX_STEPS,
-                completed=False,
-                memory_metadata=memory_metadata,
-            ),
+            metadata=run_metadata,
         )
 
     async def _build_context(
