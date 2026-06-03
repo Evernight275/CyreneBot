@@ -118,11 +118,12 @@ def test_plugin_registry_rejects_duplicate_commands_and_aliases() -> None:
 
     registry.register(_definition(command_name="help"), _FakePluginExecutor())
 
-    with pytest.raises(ConflictError):
+    with pytest.raises(ConflictError) as caught:
         registry.register(
             _definition(plugin_id="builtin.status", command_name="status", aliases=["help"]),
             _FakePluginExecutor(),
         )
+    assert str(caught.value) == "该插件命令 help 已由 builtin.help 注册"
 
 
 def test_plugin_registry_ignores_disabled_plugin_commands() -> None:

@@ -50,8 +50,11 @@ class PluginRegistry:
 
         command_names = self._enabled_command_names(definition)
         for command_name in command_names:
-            if command_name in self._command_to_plugin:
-                raise ConflictError(f"该插件命令 {command_name} 已注册")
+            owner_plugin_id = self._command_to_plugin.get(command_name)
+            if owner_plugin_id is not None:
+                raise ConflictError(
+                    f"该插件命令 {command_name} 已由 {owner_plugin_id} 注册"
+                )
 
         self._definitions[definition.plugin_id] = definition
         self.record_status(_status_from_definition(definition))
@@ -126,7 +129,9 @@ class PluginRegistry:
             for command_name in command_names:
                 owner_plugin_id = self._command_to_plugin.get(command_name)
                 if owner_plugin_id is not None and owner_plugin_id != plugin_id:
-                    raise ConflictError(f"该插件命令 {command_name} 已注册")
+                    raise ConflictError(
+                        f"该插件命令 {command_name} 已由 {owner_plugin_id} 注册"
+                    )
             for command_name in command_names:
                 self._command_to_plugin[command_name] = plugin_id
 

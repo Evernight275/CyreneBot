@@ -7,6 +7,7 @@ import pytest
 from cyreneAI.application.bootstrap import build_cyrene_ai_runtime
 from cyreneAI.core.bot.registry import BotChannelRegistry
 from cyreneAI.core.bot.session_manager import BotSessionManager
+from cyreneAI.core.errors.base import ConflictError
 from cyreneAI.core.errors.plugin import (
     PluginAuthorizationError,
     PluginConfigurationError,
@@ -281,6 +282,49 @@ def test_plugin_host_loads_third_party_command_from_loader() -> None:
             assert not hasattr(plugin.runtime_context, "provider_manager")
         finally:
             await runtime.close()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    ("command_name", "aliases", "conflict_name"),
+    [
+        ("help", [], "help"),
+        ("custom-reset", ["reset"], "reset"),
+    ],
+)
+def test_plugin_host_rejects_commands_conflicting_with_builtin_commands(
+    command_name: str,
+    aliases: list[str],
+    conflict_name: str,
+) -> None:
+    class ConflictingPlugin:
+        manifest = PluginManifest(
+            plugin_id=f"thirdparty.{command_name}",
+            name="Conflicting Command",
+            description="Plugin command conflicts with a builtin command.",
+            entrypoint="plugin.py",
+            capabilities=[PluginCapability.BOT_COMMAND],
+        )
+
+        def setup(self, context) -> None:
+            context.register_command(
+                PluginCommandDefinition(
+                    name=command_name,
+                    description="Conflicting command.",
+                    aliases=aliases,
+                ),
+                _HelloExecutor(),
+            )
+
+    async def run() -> None:
+        with pytest.raises(ConflictError) as caught:
+            await build_cyrene_ai_runtime(
+                plugin_loaders=[_FakePluginLoader(ConflictingPlugin())],
+            )
+        assert str(caught.value) == (
+            f"该插件命令 {conflict_name} 已由 builtin.bot_commands 注册"
+        )
 
     asyncio.run(run())
 
