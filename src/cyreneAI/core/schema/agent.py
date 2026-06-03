@@ -42,6 +42,18 @@ def _empty_agent_steps() -> list["AgentStep"]:
     return []
 
 
+def _empty_agent_run_history_items() -> list["AgentRunHistoryItem"]:
+    return []
+
+
+def _empty_agent_run_trace_items() -> list["AgentRunTraceItem"]:
+    return []
+
+
+def _empty_strings() -> list[str]:
+    return []
+
+
 class AgentStopReason(StrEnum):
     """
     Agent 运行停止原因。
@@ -160,12 +172,77 @@ class AgentRunResult(CyreneAISchema):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class AgentRunHistoryItem(CyreneAISchema):
+    """
+    Agent run 历史摘要。
+    """
+
+    snapshot_id: str
+    session_id: str
+    provider_id: str = "-"
+    model: str = "-"
+    finished_at: str = "-"
+    completed: bool | None = None
+    stop_reason: str = "-"
+    step_count: int = Field(default=0, ge=0)
+    tool_call_count: int = Field(default=0, ge=0)
+    tool_result_count: int = Field(default=0, ge=0)
+    tool_error_count: int = Field(default=0, ge=0)
+    tool_names: list[str] = Field(default_factory=_empty_strings)
+    trace_item_count: int = Field(default=0, ge=0)
+    last_assistant: str | None = None
+
+
+class AgentRunHistoryListResult(CyreneAISchema):
+    """
+    Agent run 历史列表。
+    """
+
+    session_id: str
+    limit: int = Field(default=10, ge=1, le=50)
+    runs: list[AgentRunHistoryItem] = Field(
+        default_factory=_empty_agent_run_history_items
+    )
+
+
+class AgentRunTraceItem(CyreneAISchema):
+    """
+    Agent run trace 的紧凑条目。
+    """
+
+    index: int = Field(ge=0)
+    item_id: str
+    item_type: str
+    source: str
+    role: str | None = None
+    name: str | None = None
+    tool_call_id: str | None = None
+    text_preview: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class AgentRunTraceResult(CyreneAISchema):
+    """
+    Agent run trace 详情。
+    """
+
+    run: AgentRunHistoryItem
+    trace_items: list[AgentRunTraceItem] = Field(
+        default_factory=_empty_agent_run_trace_items
+    )
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 __all__ = [
     "AgentMemoryRetrievalConfig",
     "AgentPlan",
     "AgentPlanningConfig",
+    "AgentRunHistoryItem",
+    "AgentRunHistoryListResult",
     "AgentRunRequest",
     "AgentRunResult",
+    "AgentRunTraceItem",
+    "AgentRunTraceResult",
     "AgentStep",
     "AgentStopReason",
     "AgentToolSelectionConfig",

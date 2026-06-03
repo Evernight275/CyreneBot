@@ -15,6 +15,8 @@ from cyreneAI.bootstrap import build_cyrene_ai_runtime
 from cyreneAI.application.runtime import CyreneAIRuntime
 from cyreneAI.core.bot.registry import BotChannelRegistry
 from cyreneAI.core.context.builder import ContextWindowBuilder
+from cyreneAI.core.context.manager import ContextManager
+from cyreneAI.core.errors.context import ContextNotFoundError
 from cyreneAI.core.plugin.manager import PluginManager
 from cyreneAI.core.plugin.registry import PluginRegistry
 from cyreneAI.core.provider.factory import ProviderFactory
@@ -28,6 +30,15 @@ from cyreneAI.core.schema.bot import (
     BotMessage,
 )
 from cyreneAI.core.schema.chat import ChatFinishReason, ChatRequest, ChatResponse
+from cyreneAI.core.schema.context import (
+    ContextItem,
+    ContextItemSource,
+    ContextItemType,
+    ContextSegment,
+    ContextSegmentRole,
+    ContextSnapshot,
+    ContextWindow,
+)
 from cyreneAI.core.schema.image import (
     GeneratedImage,
     ImageGenerationRequest,
@@ -190,6 +201,49 @@ class FakeServerChannel:
         self.actions.append(action)
 
 
+class FakeServerContextStore:
+    def __init__(self, snapshots: list[ContextSnapshot] | None = None) -> None:
+        self.snapshots = snapshots or []
+
+    async def save_snapshot(self, snapshot: ContextSnapshot) -> None:
+        self.snapshots.append(snapshot)
+
+    async def get_snapshot(self, snapshot_id: str) -> ContextSnapshot:
+        for snapshot in self.snapshots:
+            if snapshot.snapshot_id == snapshot_id:
+                return snapshot
+        raise ContextNotFoundError(f"Context snapshot not found: {snapshot_id}")
+
+    async def list_snapshots(self, session_id: str) -> list[ContextSnapshot]:
+        return [
+            snapshot
+            for snapshot in self.snapshots
+            if snapshot.session_id == session_id
+        ]
+
+    async def delete_snapshot(self, snapshot_id: str) -> None:
+        self.snapshots = [
+            snapshot
+            for snapshot in self.snapshots
+            if snapshot.snapshot_id != snapshot_id
+        ]
+
+    async def delete_snapshots_for_session(self, session_id: str) -> int:
+        deleted_count = len(
+            [
+                snapshot
+                for snapshot in self.snapshots
+                if snapshot.session_id == session_id
+            ]
+        )
+        self.snapshots = [
+            snapshot
+            for snapshot in self.snapshots
+            if snapshot.session_id != session_id
+        ]
+        return deleted_count
+
+
 async def _build_fake_runtime(*, channel_id: str = "fake") -> CyreneAIRuntime:
     provider = FakeServerProvider()
     channel = FakeServerChannel(channel_id=channel_id)
@@ -234,6 +288,55 @@ def _client(
             telegram_model=telegram_model,
             telegram_polling_enabled=telegram_polling_enabled,
         )
+    )
+
+
+def _agent_history_client(*snapshots: ContextSnapshot) -> TestClient:
+    runtime = CyreneAIRuntime(
+        provider_manager=ProviderManager(ProviderFactory()),
+        context_builder=ContextWindowBuilder(),
+        context_manager=ContextManager(FakeServerContextStore(list(snapshots))),
+    )
+    return TestClient(
+        create_app(
+            runtime,
+            settings=ServerSettings(auth_enabled=False),
+        )
+    )
+
+
+def _agent_snapshot(
+    snapshot_id: str,
+    *,
+    session_id: str = "session-1",
+    metadata: dict[str, object] | None = None,
+    trace: bool = True,
+) -> ContextSnapshot:
+    segments: list[ContextSegment] = []
+    if trace:
+        segments.append(
+            ContextSegment(
+                segment_id=f"{snapshot_id}:trace",
+                role=ContextSegmentRole.WORKING,
+                items=[
+                    ContextItem(
+                        item_id=f"{snapshot_id}:trace:0",
+                        type=ContextItemType.TOOL_TRACE,
+                        source=ContextItemSource.TOOL,
+                        content="tool output",
+                        metadata={"agent_trace_index": 0},
+                    )
+                ],
+            )
+        )
+    return ContextSnapshot(
+        snapshot_id=snapshot_id,
+        session_id=session_id,
+        window=ContextWindow(
+            window_id=f"{snapshot_id}:window",
+            segments=segments,
+        ),
+        metadata=metadata or {},
     )
 
 
@@ -642,6 +745,108 @@ def test_server_runs_agent() -> None:
     assert data["steps"][0]["request"]["metadata"]["max_tool_calls_per_step"] == 2
     assert data["steps"][0]["request"]["metadata"]["max_total_tool_calls"] == 3
     assert data["steps"][0]["request"]["metadata"]["max_tool_result_chars"] == 256
+
+
+def test_server_lists_agent_runs() -> None:
+    client = _agent_history_client(
+        _agent_snapshot("plain", trace=False),
+        _agent_snapshot(
+            "run-1",
+            metadata={
+                "agent_loop": "minimal",
+                "completed": True,
+                "stop_reason": "final_response",
+                "step_count": 1,
+                "tool_call_count": 0,
+                "tool_error_count": 0,
+            },
+        ),
+        _agent_snapshot(
+            "run-2",
+            metadata={
+                "agent_loop": "minimal",
+                "provider_id": "provider-1",
+                "model": "model-1",
+                "finished_at": "2026-06-04T00:00:00+00:00",
+                "completed": False,
+                "stop_reason": "max_steps",
+                "step_count": 2,
+                "tool_call_count": 1,
+                "tool_result_count": 1,
+                "tool_error_count": 1,
+                "tool_names": ["lookup"],
+            },
+        ),
+    )
+
+    response = client.get(
+        "/agents/runs",
+        params={"session_id": "session-1", "limit": 1},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["session_id"] == "session-1"
+    assert data["limit"] == 1
+    assert [run["snapshot_id"] for run in data["runs"]] == ["run-2"]
+    assert data["runs"][0]["provider_id"] == "provider-1"
+    assert data["runs"][0]["model"] == "model-1"
+    assert data["runs"][0]["finished_at"] == "2026-06-04T00:00:00+00:00"
+    assert data["runs"][0]["tool_names"] == ["lookup"]
+
+
+def test_server_gets_agent_run_trace() -> None:
+    client = _agent_history_client(
+        _agent_snapshot(
+            "run-1",
+            metadata={
+                "agent_loop": "minimal",
+                "completed": True,
+                "stop_reason": "final_response",
+                "step_count": 1,
+            },
+        )
+    )
+
+    response = client.get("/agents/runs/run-1")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["run"]["snapshot_id"] == "run-1"
+    assert data["run"]["trace_item_count"] == 1
+    assert data["trace_items"][0]["item_id"] == "run-1:trace:0"
+    assert data["trace_items"][0]["text_preview"] == "tool output"
+
+
+def test_server_agent_runs_require_context_manager() -> None:
+    response = _client().get(
+        "/agents/runs",
+        params={"session_id": "session-1"},
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Context manager is not configured."
+
+
+def test_server_agent_runs_validate_limit() -> None:
+    response = _agent_history_client().get(
+        "/agents/runs",
+        params={"session_id": "session-1", "limit": 0},
+    )
+
+    assert response.status_code == 422
+
+
+def test_server_agent_run_reports_missing_and_non_agent_snapshots() -> None:
+    client = _agent_history_client(_agent_snapshot("plain", trace=False))
+
+    missing = client.get("/agents/runs/missing")
+    non_agent = client.get("/agents/runs/plain")
+
+    assert missing.status_code == 404
+    assert missing.json()["detail"] == "Agent run not found: missing"
+    assert non_agent.status_code == 404
+    assert non_agent.json()["detail"] == "Agent run not found: plain"
 
 
 def test_server_generates_images() -> None:

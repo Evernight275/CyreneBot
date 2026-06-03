@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import UTC, datetime
 from typing import Any, cast
 from uuid import uuid4
 
@@ -793,6 +794,7 @@ def _build_run_metadata(
         **request.metadata,
         **memory_metadata,
         "session_id": request.session_id,
+        "finished_at": datetime.now(UTC).isoformat(),
         "completed": completed,
         "stop_reason": stop_reason,
         "step_count": len(steps),

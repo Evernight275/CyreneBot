@@ -112,6 +112,8 @@ def test_builtin_bot_command_plugin_is_registered_by_default() -> None:
             "session delete",
             "reset",
             "status",
+            "agent runs",
+            "agent run",
             "agent trace",
             "tool ls",
             "tool on",
@@ -507,6 +509,7 @@ def test_builtin_agent_trace_command_shows_latest_trace_summary() -> None:
                 ),
                 metadata={
                     "agent_loop": "minimal",
+                    "finished_at": "2026-06-04T00:00:00+00:00",
                     "completed": True,
                     "stop_reason": "final_response",
                     "step_count": 2,
@@ -532,6 +535,7 @@ def test_builtin_agent_trace_command_shows_latest_trace_summary() -> None:
                 "Agent trace:",
                 "session_id: memory:user-1:conversation:default",
                 "snapshot_id: agent-snapshot",
+                "finished_at: 2026-06-04T00:00:00+00:00",
                 "completed: true",
                 "stop_reason: final_response",
                 "steps: 2",
@@ -541,7 +545,275 @@ def test_builtin_agent_trace_command_shows_latest_trace_summary() -> None:
                 "tools: lookup",
                 "trace_items: 2",
                 "last_assistant: final answer",
+                "trace:",
+                "- 0 tool name=- tool_call_id=-: -",
+                "- 1 assistant name=- tool_call_id=-: final answer",
             ]
+        )
+
+        await runtime.close()
+
+    asyncio.run(run())
+
+
+def test_builtin_agent_runs_command_lists_active_and_named_session_runs() -> None:
+    async def run() -> None:
+        store = FakeContextStore()
+        runtime = await build_cyrene_ai_runtime(
+            bot_session_manager=BotSessionManager(InMemoryBotSessionStore()),
+            context_manager=ContextManager(store),
+        )
+        assert runtime.plugin_manager is not None
+        event = _event("/agent runs")
+        default_session_id = "memory:user-1:conversation:default"
+        work_session_id = "memory:user-1:conversation:work"
+
+        await store.save_snapshot(
+            ContextSnapshot(
+                snapshot_id="plain-snapshot",
+                session_id=default_session_id,
+                window=ContextWindow(window_id="plain-window"),
+            )
+        )
+        await store.save_snapshot(
+            ContextSnapshot(
+                snapshot_id="default-run",
+                session_id=default_session_id,
+                window=ContextWindow(window_id="default-window"),
+                metadata={
+                    "agent_loop": "minimal",
+                    "completed": True,
+                    "stop_reason": "final_response",
+                    "step_count": 1,
+                    "tool_call_count": 0,
+                    "tool_error_count": 0,
+                },
+            )
+        )
+        active_result = await runtime.plugin_manager.execute_command(
+            PluginCommandRequest(
+                command=BotCommand(raw_text="/agent runs", name="agent runs"),
+                event=event,
+                is_admin=True,
+            )
+        )
+
+        await runtime.plugin_manager.execute_command(
+            PluginCommandRequest(
+                command=BotCommand(
+                    raw_text="/session new work",
+                    name="session new",
+                    args=("work",),
+                    args_text="work",
+                ),
+                event=event,
+            )
+        )
+        await store.save_snapshot(
+            ContextSnapshot(
+                snapshot_id="work-run",
+                session_id=work_session_id,
+                window=ContextWindow(window_id="work-window"),
+                metadata={
+                    "agent_loop": "minimal",
+                    "completed": False,
+                    "stop_reason": "max_steps",
+                    "step_count": 5,
+                    "tool_call_count": 2,
+                    "tool_error_count": 1,
+                    "tool_names": ["lookup", "search"],
+                },
+            )
+        )
+        named_result = await runtime.plugin_manager.execute_command(
+            PluginCommandRequest(
+                command=BotCommand(
+                    raw_text="/agent runs work 5",
+                    name="agent runs",
+                    args=("work", "5"),
+                    args_text="work 5",
+                ),
+                event=event,
+                is_admin=True,
+            )
+        )
+
+        assert active_result.actions[0].message is not None
+        assert active_result.actions[0].message.content[0].text == "\n".join(
+            [
+                "Agent runs:",
+                "session_id: memory:user-1:conversation:default",
+                "limit: 10",
+                (
+                    "- default-run status=final_response completed=true "
+                    "steps=1 tool_calls=0 tool_errors=0 tools=-"
+                ),
+            ]
+        )
+        assert named_result.actions[0].message is not None
+        assert named_result.actions[0].message.content[0].text == "\n".join(
+            [
+                "Agent runs:",
+                "session_id: memory:user-1:conversation:work",
+                "limit: 5",
+                (
+                    "- work-run status=max_steps completed=false "
+                    "steps=5 tool_calls=2 tool_errors=1 tools=lookup,search"
+                ),
+            ]
+        )
+
+        await runtime.close()
+
+    asyncio.run(run())
+
+
+def test_builtin_agent_run_command_shows_compact_trace_detail() -> None:
+    async def run() -> None:
+        store = FakeContextStore()
+        runtime = await build_cyrene_ai_runtime(
+            context_manager=ContextManager(store),
+        )
+        assert runtime.plugin_manager is not None
+        await store.save_snapshot(
+            ContextSnapshot(
+                snapshot_id="run-1",
+                session_id="session-1",
+                window=ContextWindow(
+                    window_id="agent-window",
+                    segments=[
+                        ContextSegment(
+                            segment_id="agent-trace",
+                            role=ContextSegmentRole.WORKING,
+                            items=[
+                                ContextItem(
+                                    item_id="trace-1",
+                                    type=ContextItemType.TOOL_TRACE,
+                                    source=ContextItemSource.TOOL,
+                                    content="tool output",
+                                    metadata={"agent_trace_index": 0},
+                                ),
+                            ],
+                        )
+                    ],
+                ),
+                metadata={
+                    "agent_loop": "minimal",
+                    "finished_at": "2026-06-04T00:00:00+00:00",
+                    "completed": True,
+                    "stop_reason": "final_response",
+                    "step_count": 1,
+                    "tool_call_count": 1,
+                    "tool_result_count": 1,
+                    "tool_error_count": 0,
+                    "tool_names": ["lookup"],
+                },
+            )
+        )
+
+        result = await runtime.plugin_manager.execute_command(
+            PluginCommandRequest(
+                command=BotCommand(
+                    raw_text="/agent run run-1",
+                    name="agent run",
+                    args=("run-1",),
+                    args_text="run-1",
+                ),
+                event=_event("/agent run run-1"),
+                is_admin=True,
+            )
+        )
+
+        assert result.actions[0].message is not None
+        assert result.actions[0].message.content[0].text == "\n".join(
+            [
+                "Agent run:",
+                "session_id: session-1",
+                "snapshot_id: run-1",
+                "finished_at: 2026-06-04T00:00:00+00:00",
+                "completed: true",
+                "stop_reason: final_response",
+                "steps: 1",
+                "tool_calls: 1",
+                "tool_results: 1",
+                "tool_errors: 0",
+                "tools: lookup",
+                "trace_items: 1",
+                "trace:",
+                "- 0 tool name=- tool_call_id=-: tool output",
+            ]
+        )
+
+        await runtime.close()
+
+    asyncio.run(run())
+
+
+def test_builtin_agent_runs_command_reports_history_errors() -> None:
+    async def run() -> None:
+        runtime_without_context = await build_cyrene_ai_runtime()
+        assert runtime_without_context.plugin_manager is not None
+        missing_context = await runtime_without_context.plugin_manager.execute_command(
+            PluginCommandRequest(
+                command=BotCommand(raw_text="/agent runs", name="agent runs"),
+                event=_event("/agent runs"),
+                is_admin=True,
+            )
+        )
+        await runtime_without_context.close()
+
+        store = FakeContextStore()
+        runtime = await build_cyrene_ai_runtime(
+            context_manager=ContextManager(store),
+        )
+        assert runtime.plugin_manager is not None
+        no_runs = await runtime.plugin_manager.execute_command(
+            PluginCommandRequest(
+                command=BotCommand(raw_text="/agent runs", name="agent runs"),
+                event=_event("/agent runs"),
+                is_admin=True,
+            )
+        )
+        invalid_limit = await runtime.plugin_manager.execute_command(
+            PluginCommandRequest(
+                command=BotCommand(
+                    raw_text="/agent runs 0",
+                    name="agent runs",
+                    args=("0",),
+                    args_text="0",
+                ),
+                event=_event("/agent runs 0"),
+                is_admin=True,
+            )
+        )
+        invalid_limit_text = await runtime.plugin_manager.execute_command(
+            PluginCommandRequest(
+                command=BotCommand(
+                    raw_text="/agent runs session-x nope",
+                    name="agent runs",
+                    args=("session-x", "nope"),
+                    args_text="session-x nope",
+                ),
+                event=_event("/agent runs session-x nope"),
+                is_admin=True,
+            )
+        )
+
+        assert missing_context.actions[0].message is not None
+        assert missing_context.actions[0].message.content[0].text == (
+            "Agent runs failed: Context manager is not configured."
+        )
+        assert no_runs.actions[0].message is not None
+        assert no_runs.actions[0].message.content[0].text == (
+            "No agent runs found for session memory:user-1."
+        )
+        assert invalid_limit.actions[0].message is not None
+        assert invalid_limit.actions[0].message.content[0].text == (
+            "Agent runs failed: Agent run history limit must be between 1 and 50."
+        )
+        assert invalid_limit_text.actions[0].message is not None
+        assert invalid_limit_text.actions[0].message.content[0].text == (
+            "Agent runs failed: Agent runs limit must be a number."
         )
 
         await runtime.close()
@@ -566,6 +838,8 @@ def test_builtin_help_command_lists_admin_commands_for_admin() -> None:
         text = result.actions[0].message.content[0].text
         assert "Admin:" in text
         assert "/status - Show runtime status. [admin]" in text
+        assert "/agent runs [session] [limit] - List agent runs. [admin]" in text
+        assert "/agent run <snapshot_id> - Show agent run trace. [admin]" in text
         assert "/agent trace [session] - Show latest agent trace summary. [admin]" in text
         assert "/plugin commands [plugin_id] - List plugin commands. [admin]" in text
 

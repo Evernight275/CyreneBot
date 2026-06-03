@@ -267,6 +267,8 @@ async def _run_agent_executes_tool_and_returns_final_response() -> None:
     assert result.context_snapshot.window.segments[-1].role == ContextSegmentRole.WORKING
     assert result.context_snapshot.metadata["completed"] is True
     assert result.context_snapshot.metadata["stop_reason"] == "final_response"
+    assert isinstance(result.context_snapshot.metadata["finished_at"], str)
+    assert result.context_snapshot.metadata["finished_at"]
     assert result.context_snapshot.metadata["step_count"] == 2
     assert result.context_snapshot.metadata["tool_call_count"] == 1
     assert result.context_snapshot.metadata["tool_result_count"] == 1

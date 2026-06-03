@@ -75,6 +75,8 @@ async def _run_build_runtime(tmp_path) -> None:
         "session delete",
         "reset",
         "status",
+        "agent runs",
+        "agent run",
         "agent trace",
         "tool ls",
         "tool on",

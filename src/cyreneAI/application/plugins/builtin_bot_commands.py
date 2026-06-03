@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from typing import cast
-
+from cyreneAI.application.agent.history import (
+    DEFAULT_AGENT_RUN_HISTORY_LIMIT,
+    AgentRunHistoryReader,
+)
 from cyreneAI.application.runtime import CyreneAIRuntime
-from cyreneAI.core.errors.base import CyreneAIError, NotFoundError
+from cyreneAI.core.errors.base import CyreneAIError, NotFoundError, ValidationError
 from cyreneAI.core.errors.plugin import PluginInputError
 from cyreneAI.core.plugin.plugin_protocol import PluginRegistryProtocol
 from cyreneAI.core.schema.bot import (
@@ -13,8 +15,13 @@ from cyreneAI.core.schema.bot import (
     BotEvent,
     BotMessage,
 )
-from cyreneAI.core.schema.context import ContextItem, ContextItemType, ContextSnapshot
-from cyreneAI.core.schema.message import ContentPart, ContentPartType, MessageRole
+from cyreneAI.core.schema.agent import (
+    AgentRunHistoryItem,
+    AgentRunHistoryListResult,
+    AgentRunTraceItem,
+    AgentRunTraceResult,
+)
+from cyreneAI.core.schema.message import ContentPart, ContentPartType
 from cyreneAI.core.schema.plugin import (
     PluginCommandArgumentDefinition,
     PluginCommandArgumentKind,
@@ -100,6 +107,10 @@ class BuiltinBotCommandExecutor:
             text = await self._reset_context(request)
         elif command.name == "status":
             text = self._render_status()
+        elif command.name == "agent runs":
+            text = await self._render_agent_runs(request)
+        elif command.name == "agent run":
+            text = await self._render_agent_run(request)
         elif command.name == "agent trace":
             text = await self._render_agent_trace(request)
         elif command.name == "tool ls":
@@ -465,31 +476,57 @@ class BuiltinBotCommandExecutor:
         return await manager.clear_session(context_session_id)
 
     async def _render_agent_trace(self, request: PluginCommandRequest) -> str:
-        manager = self._runtime.context_manager
-        if manager is None:
-            return "Context manager is not configured."
+        context_session_id = (
+            _metadata_string(request.metadata.get("context_session_id"))
+            or _request_event(request).session_id
+        )
         try:
-            context_session_id = await self._resolve_agent_trace_context_session_id(
+            context_session_id = await self._resolve_agent_context_session_id(
                 request
             )
+            result = await AgentRunHistoryReader(self._runtime).latest_run(
+                context_session_id
+            )
+        except NotFoundError:
+            return f"No agent trace found for session {context_session_id}."
         except CyreneAIError as exc:
             return f"Agent trace failed: {exc}"
+        return _render_agent_run_trace_result(result, title="Agent trace:")
 
-        snapshots = await manager.list_by_session(context_session_id)
-        snapshots = [
-            snapshot
-            for snapshot in snapshots
-            if _is_agent_trace_snapshot(snapshot)
-        ]
-        if not snapshots:
-            return f"No agent trace found for session {context_session_id}."
-        return _render_agent_trace_snapshot(snapshots[-1])
+    async def _render_agent_runs(self, request: PluginCommandRequest) -> str:
+        try:
+            name_or_session_id, limit = _parse_agent_runs_args(request.command.args)
+            context_session_id = await self._resolve_agent_context_session_id(
+                request,
+                name_or_session_id=name_or_session_id,
+            )
+            result = await AgentRunHistoryReader(self._runtime).list_runs(
+                context_session_id,
+                limit=limit,
+            )
+        except CyreneAIError as exc:
+            return f"Agent runs failed: {exc}"
+        if not result.runs:
+            return f"No agent runs found for session {result.session_id}."
+        return _render_agent_run_history_list(result)
 
-    async def _resolve_agent_trace_context_session_id(
+    async def _render_agent_run(self, request: PluginCommandRequest) -> str:
+        snapshot_id = request.command.args_text
+        if not snapshot_id:
+            return "Usage: /agent run <snapshot_id>"
+        try:
+            result = await AgentRunHistoryReader(self._runtime).get_run(snapshot_id)
+        except CyreneAIError as exc:
+            return f"Agent run failed: {exc}"
+        return _render_agent_run_trace_result(result, title="Agent run:")
+
+    async def _resolve_agent_context_session_id(
         self,
         request: PluginCommandRequest,
+        *,
+        name_or_session_id: str | None = None,
     ) -> str:
-        name_or_session_id = request.command.args_text
+        name_or_session_id = name_or_session_id or request.command.args_text
         bot_session_manager = self._runtime.bot_session_manager
         if name_or_session_id:
             if bot_session_manager is None:
@@ -921,6 +958,18 @@ def _builtin_bot_commands_definition() -> PluginDefinition:
                 admin_required=True,
             ),
             PluginCommandDefinition(
+                name="agent runs",
+                description="List agent runs.",
+                usage="/agent runs [session] [limit]",
+                admin_required=True,
+            ),
+            PluginCommandDefinition(
+                name="agent run",
+                description="Show agent run trace.",
+                usage="/agent run <snapshot_id>",
+                admin_required=True,
+            ),
+            PluginCommandDefinition(
                 name="agent trace",
                 description="Show latest agent trace summary.",
                 usage="/agent trace [session]",
@@ -1101,80 +1150,98 @@ def _provider_api_key_status(config: ProviderConfig) -> str:
     return "missing"
 
 
-def _is_agent_trace_snapshot(snapshot: ContextSnapshot) -> bool:
-    if snapshot.metadata.get("agent_loop") == "minimal":
-        return True
-    return bool(_agent_trace_items(snapshot))
+def _parse_agent_runs_args(args: tuple[str, ...]) -> tuple[str | None, int]:
+    if not args:
+        return None, DEFAULT_AGENT_RUN_HISTORY_LIMIT
+    if len(args) == 1:
+        value = args[0]
+        if _is_integer_text(value):
+            return None, int(value)
+        return value, DEFAULT_AGENT_RUN_HISTORY_LIMIT
+    if len(args) == 2:
+        limit_text = args[1]
+        if not _is_integer_text(limit_text):
+            raise ValidationError("Agent runs limit must be a number.")
+        return args[0], int(limit_text)
+    raise ValidationError("Usage: /agent runs [session] [limit]")
 
 
-def _render_agent_trace_snapshot(snapshot: ContextSnapshot) -> str:
-    metadata = snapshot.metadata
-    trace_items = _agent_trace_items(snapshot)
+def _is_integer_text(value: str) -> bool:
+    try:
+        int(value)
+    except ValueError:
+        return False
+    return True
+
+
+def _render_agent_run_history_list(result: AgentRunHistoryListResult) -> str:
     lines = [
-        "Agent trace:",
-        f"session_id: {snapshot.session_id}",
-        f"snapshot_id: {snapshot.snapshot_id}",
-        f"completed: {_metadata_value(metadata.get('completed'), '-')}",
-        f"stop_reason: {_metadata_value(metadata.get('stop_reason'), '-')}",
-        f"steps: {_metadata_value(metadata.get('step_count'), 0)}",
-        f"tool_calls: {_metadata_value(metadata.get('tool_call_count'), 0)}",
-        f"tool_results: {_metadata_value(metadata.get('tool_result_count'), 0)}",
-        f"tool_errors: {_metadata_value(metadata.get('tool_error_count'), 0)}",
-        f"tools: {_render_metadata_strings(metadata.get('tool_names'))}",
-        f"trace_items: {len(trace_items)}",
+        "Agent runs:",
+        f"session_id: {result.session_id}",
+        f"limit: {result.limit}",
     ]
-    last_assistant_text = _last_assistant_trace_text(trace_items)
-    if last_assistant_text:
-        lines.append(f"last_assistant: {_truncate_line(last_assistant_text, 160)}")
+    lines.extend(_render_agent_run_history_line(run) for run in result.runs)
     return "\n".join(lines)
 
 
-def _agent_trace_items(snapshot: ContextSnapshot) -> list[ContextItem]:
-    return [
-        item
-        for segment in snapshot.window.segments
-        for item in segment.items
-        if (
-            item.type == ContextItemType.TOOL_TRACE
-            or "agent_trace_index" in item.metadata
-        )
-    ]
-
-
-def _last_assistant_trace_text(items: list[ContextItem]) -> str | None:
-    for item in reversed(items):
-        message = item.message
-        if message is None or message.role != MessageRole.ASSISTANT:
-            continue
-        text = _message_text(message.content)
-        if text:
-            return text
-    return None
-
-
-def _message_text(content: list[ContentPart] | None) -> str:
-    if not content:
-        return ""
-    return "".join(
-        part.text or ""
-        for part in content
-        if part.type == ContentPartType.TEXT
+def _render_agent_run_history_line(run: AgentRunHistoryItem) -> str:
+    return (
+        f"- {run.snapshot_id} status={run.stop_reason} "
+        f"completed={_render_optional_bool(run.completed)} "
+        f"steps={run.step_count} tool_calls={run.tool_call_count} "
+        f"tool_errors={run.tool_error_count} "
+        f"tools={_render_tool_names(run.tool_names)}"
     )
 
 
-def _metadata_value(value: object, default: object) -> str:
+def _render_agent_run_trace_result(
+    result: AgentRunTraceResult,
+    *,
+    title: str,
+) -> str:
+    run = result.run
+    lines = [
+        title,
+        f"session_id: {run.session_id}",
+        f"snapshot_id: {run.snapshot_id}",
+        f"finished_at: {run.finished_at}",
+        f"completed: {_render_optional_bool(run.completed)}",
+        f"stop_reason: {run.stop_reason}",
+        f"steps: {run.step_count}",
+        f"tool_calls: {run.tool_call_count}",
+        f"tool_results: {run.tool_result_count}",
+        f"tool_errors: {run.tool_error_count}",
+        f"tools: {_render_tool_names(run.tool_names)}",
+        f"trace_items: {run.trace_item_count}",
+    ]
+    if run.last_assistant:
+        lines.append(f"last_assistant: {_truncate_line(run.last_assistant, 160)}")
+    if result.trace_items:
+        lines.append("trace:")
+        lines.extend(
+            _render_agent_run_trace_line(item)
+            for item in result.trace_items
+        )
+    return "\n".join(lines)
+
+
+def _render_agent_run_trace_line(item: AgentRunTraceItem) -> str:
+    label = item.role or item.source or item.item_type
+    return (
+        f"- {item.index} {label} "
+        f"name={item.name or '-'} "
+        f"tool_call_id={item.tool_call_id or '-'}: "
+        f"{item.text_preview or '-'}"
+    )
+
+
+def _render_optional_bool(value: bool | None) -> str:
     if value is None:
-        value = default
-    if isinstance(value, bool):
-        return str(value).lower()
-    return str(value)
-
-
-def _render_metadata_strings(value: object) -> str:
-    if not isinstance(value, list):
         return "-"
-    items = cast(list[object], value)
-    names = [item for item in items if isinstance(item, str) and item]
+    return str(value).lower()
+
+
+def _render_tool_names(names: list[str]) -> str:
     if not names:
         return "-"
     return ",".join(names)
