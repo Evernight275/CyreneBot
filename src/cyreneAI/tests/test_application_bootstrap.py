@@ -66,6 +66,7 @@ async def _run_build_runtime(tmp_path) -> None:
         "echo",
         "session",
         "session current",
+        "session status",
         "session ls",
         "session new",
         "session use",

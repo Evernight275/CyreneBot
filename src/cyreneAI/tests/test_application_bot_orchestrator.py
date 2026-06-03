@@ -693,6 +693,7 @@ def test_bot_orchestrator_treats_slash_message_as_command() -> None:
                     "/echo <text> - Echo text back.",
                     "/session - Show current session.",
                     "/session current - Show current session.",
+                    "/session status <name> - Show session status.",
                     "/session ls - List sessions.",
                     "/session new <name> - Create and select a session.",
                     "/session use <name> - Select a session.",
@@ -946,6 +947,14 @@ def test_bot_orchestrator_runs_provider_admin_commands() -> None:
                 }
             )
         )
+        await store.upsert_config(
+            provider.config.model_copy(
+                update={
+                    "provider_id": "provider-2",
+                    "enabled": False,
+                }
+            )
+        )
         runtime = await _build_runtime(
             provider,
             bot_admin_config=BotAdminConfig(user_ids=["user-1"]),
@@ -965,6 +974,13 @@ def test_bot_orchestrator_runs_provider_admin_commands() -> None:
         status_result = await BotOrchestrator(runtime).handle(
             ApplicationBotRequest(
                 event=_bot_event("/provider status provider-1"),
+                provider_id="provider-1",
+                model="fake-model",
+            )
+        )
+        stopped_status_result = await BotOrchestrator(runtime).handle(
+            ApplicationBotRequest(
+                event=_bot_event("/provider status provider-2"),
                 provider_id="provider-1",
                 model="fake-model",
             )
@@ -989,7 +1005,14 @@ def test_bot_orchestrator_runs_provider_admin_commands() -> None:
             "\n".join(
                 [
                     "Providers:",
-                    "- provider-1 type=openai_compatible status=running enabled=true",
+                    (
+                        "- provider-1 type=openai_compatible status=running "
+                        "enabled=true configured=true api_key=set"
+                    ),
+                    (
+                        "- provider-2 type=openai_compatible status=stopped "
+                        "enabled=false configured=true api_key=missing"
+                    ),
                 ]
             )
         )
@@ -1004,6 +1027,21 @@ def test_bot_orchestrator_runs_provider_admin_commands() -> None:
                     "running: true",
                     "enabled: true",
                     "api_key: set",
+                    "timeout_seconds: 1",
+                ]
+            )
+        )
+        assert stopped_status_result.actions[0].message is not None
+        assert stopped_status_result.actions[0].message.content == _content(
+            "\n".join(
+                [
+                    "Provider provider-2:",
+                    "status: stopped",
+                    "type: openai_compatible",
+                    "configured: true",
+                    "running: false",
+                    "enabled: false",
+                    "api_key: missing",
                     "timeout_seconds: 1",
                 ]
             )

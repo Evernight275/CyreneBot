@@ -90,6 +90,7 @@ def test_builtin_bot_command_plugin_is_registered_by_default() -> None:
             "echo",
             "session",
             "session current",
+            "session status",
             "session ls",
             "session new",
             "session use",
@@ -157,6 +158,7 @@ def test_builtin_help_command_lists_registered_commands() -> None:
                 "/echo <text> - Echo text back.",
                 "/session - Show current session.",
                 "/session current - Show current session.",
+                "/session status <name> - Show session status.",
                 "/session ls - List sessions.",
                 "/session new <name> - Create and select a session.",
                 "/session use <name> - Select a session.",
@@ -202,6 +204,17 @@ def test_builtin_session_commands_manage_conversations_and_reset_context() -> No
         listed = await runtime.plugin_manager.execute_command(
             PluginCommandRequest(
                 command=BotCommand(raw_text="/session ls", name="session ls"),
+                event=event,
+            )
+        )
+        default_status = await runtime.plugin_manager.execute_command(
+            PluginCommandRequest(
+                command=BotCommand(
+                    raw_text="/session status default",
+                    name="session status",
+                    args=("default",),
+                    args_text="default",
+                ),
                 event=event,
             )
         )
@@ -304,6 +317,15 @@ def test_builtin_session_commands_manage_conversations_and_reset_context() -> No
                     "- work id=work status=active "
                     "context_session_id=memory:user-1:conversation:work"
                 ),
+            ]
+        )
+        assert default_status.actions[0].message is not None
+        assert default_status.actions[0].message.content[0].text == "\n".join(
+            [
+                "Session default:",
+                "status: inactive",
+                "id: default",
+                "context_session_id: memory:user-1:conversation:default",
             ]
         )
         assert selected_default.actions[0].message is not None
@@ -486,6 +508,7 @@ def test_builtin_help_command_groups_third_party_commands() -> None:
                 "/echo <text> - Echo text back.",
                 "/session - Show current session.",
                 "/session current - Show current session.",
+                "/session status <name> - Show session status.",
                 "/session ls - List sessions.",
                 "/session new <name> - Create and select a session.",
                 "/session use <name> - Select a session.",
@@ -575,7 +598,7 @@ def test_builtin_plugin_admin_commands_show_command_audit() -> None:
         assert commands_result.actions[0].message.content[0].text == "\n".join(
             [
                 "Plugin commands:",
-                "- /hello plugin=thirdparty.hello kind=third-party aliases=/hi admin=false enabled=true: Say hello.",
+                "- /hello plugin=thirdparty.hello kind=third-party status=enabled aliases=/hi admin=false enabled=true: Say hello.",
             ]
         )
         assert status_result.actions[0].message is not None
@@ -634,6 +657,18 @@ def test_builtin_plugin_status_shows_failed_plugin_command_audit() -> None:
                 is_admin=True,
             )
         )
+        commands_result = await runtime.plugin_manager.execute_command(
+            PluginCommandRequest(
+                command=BotCommand(
+                    raw_text="/plugin commands thirdparty.failed",
+                    name="plugin commands",
+                    args=("thirdparty.failed",),
+                    args_text="thirdparty.failed",
+                ),
+                event=_event("/plugin commands thirdparty.failed"),
+                is_admin=True,
+            )
+        )
 
         assert result.actions[0].message is not None
         assert result.actions[0].message.content[0].text == "\n".join(
@@ -646,6 +681,17 @@ def test_builtin_plugin_status_shows_failed_plugin_command_audit() -> None:
                 "error: 该插件命令 hello 已由 thirdparty.hello 注册",
                 "commands:",
                 "- /hello aliases=/hi admin=false enabled=true: Conflicting hello.",
+            ]
+        )
+        assert commands_result.actions[0].message is not None
+        assert commands_result.actions[0].message.content[0].text == "\n".join(
+            [
+                "Plugin commands:",
+                (
+                    "- /hello plugin=thirdparty.failed kind=failed "
+                    "status=failed reason=register_conflict aliases=/hi "
+                    "admin=false enabled=true: Conflicting hello."
+                ),
             ]
         )
 

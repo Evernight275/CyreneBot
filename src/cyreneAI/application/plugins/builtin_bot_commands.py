@@ -79,6 +79,8 @@ class BuiltinBotCommandExecutor:
             text = await self._render_session_current(request)
         elif command.name == "session current":
             text = await self._render_session_current(request)
+        elif command.name == "session status":
+            text = await self._render_session_status(request)
         elif command.name == "session ls":
             text = await self._render_session_list(request)
         elif command.name == "session new":
@@ -104,7 +106,7 @@ class BuiltinBotCommandExecutor:
         elif command.name == "tool off_all":
             text = self._disable_all_tools()
         elif command.name == "provider ls":
-            text = self._render_provider_list()
+            text = await self._render_provider_list()
         elif command.name == "provider catalog":
             text = self._render_provider_catalog()
         elif command.name == "provider status":
@@ -272,6 +274,26 @@ class BuiltinBotCommandExecutor:
             )
         return "\n".join(lines)
 
+    async def _render_session_status(
+        self,
+        request: PluginCommandRequest,
+    ) -> str:
+        manager = self._runtime.bot_session_manager
+        if manager is None:
+            return "Bot sessions are disabled."
+        name = request.command.args_text
+        if not name:
+            return "Usage: /session status <name>"
+        try:
+            active = await manager.get_active_conversation(_request_event(request))
+            conversation = await manager.get_conversation(
+                _request_event(request),
+                name,
+            )
+        except CyreneAIError as exc:
+            return f"Session status failed: {exc}"
+        return _render_conversation_status(conversation, active)
+
     async def _create_session_conversation(
         self,
         request: PluginCommandRequest,
@@ -437,21 +459,36 @@ class BuiltinBotCommandExecutor:
             return None
         return await manager.clear_session(context_session_id)
 
-    def _render_provider_list(self) -> str:
-        configs = {
+    async def _render_provider_list(self) -> str:
+        running_configs = {
             config.provider_id: config
             for config in self._runtime.provider_manager.list_running_configs()
         }
-        if not configs:
-            return "No providers running."
+        saved_configs: dict[str, ProviderConfig] = {}
+        store = self._runtime.provider_config_store
+        if store is not None:
+            try:
+                saved_configs = {
+                    config.provider_id: config
+                    for config in await store.list_configs()
+                }
+            except CyreneAIError as exc:
+                return f"Provider list failed: {exc}"
+
+        provider_ids = sorted(set(running_configs) | set(saved_configs))
+        if not provider_ids:
+            return "No providers configured."
 
         lines = ["Providers:"]
-        for provider_id in sorted(configs):
-            config = configs[provider_id]
+        for provider_id in provider_ids:
+            config = saved_configs.get(provider_id) or running_configs[provider_id]
+            running = provider_id in running_configs
             lines.append(
                 f"- {provider_id} type={config.provider_type.value} "
-                f"status=running "
-                f"enabled={str(config.enabled).lower()}"
+                f"status={_provider_runtime_status(running)} "
+                f"enabled={str(config.enabled).lower()} "
+                f"configured={str(provider_id in saved_configs).lower()} "
+                f"api_key={_provider_api_key_status(config)}"
             )
         return "\n".join(lines)
 
@@ -651,9 +688,16 @@ class BuiltinBotCommandExecutor:
             )
             for command in commands:
                 aliases = _render_aliases(command.aliases)
+                status_value = status.status if status is not None else "unknown"
+                reason = (
+                    f" reason={status.reason}"
+                    if status is not None and status.reason
+                    else ""
+                )
                 lines.append(
                     f"- {_render_command_usage(command)} "
                     f"plugin={plugin_id} kind={_plugin_kind(definition)} "
+                    f"status={status_value}{reason} "
                     f"aliases={aliases} admin={str(command.admin_required).lower()} "
                     f"enabled={str(command.enabled).lower()}: {command.description}"
                 )
@@ -779,6 +823,11 @@ def _builtin_bot_commands_definition() -> PluginDefinition:
                 name="session current",
                 description="Show current session.",
                 usage="/session current",
+            ),
+            PluginCommandDefinition(
+                name="session status",
+                description="Show session status.",
+                usage="/session status <name>",
             ),
             PluginCommandDefinition(
                 name="session ls",
@@ -958,10 +1007,17 @@ def _request_event(request: PluginCommandRequest) -> BotEvent:
 
 
 def _render_conversation_current(conversation: BotConversationRef) -> str:
+    return _render_conversation_status(conversation, conversation)
+
+
+def _render_conversation_status(
+    conversation: BotConversationRef,
+    active: BotConversationRef,
+) -> str:
     return "\n".join(
         [
             f"Session {conversation.name}:",
-            "status: active",
+            f"status: {_session_status(conversation, active)}",
             f"id: {conversation.conversation_id}",
             f"context_session_id: {conversation.context_session_id}",
         ]
@@ -975,6 +1031,18 @@ def _session_status(
     if conversation.conversation_id == active.conversation_id:
         return "active"
     return "inactive"
+
+
+def _provider_runtime_status(running: bool) -> str:
+    if running:
+        return "running"
+    return "stopped"
+
+
+def _provider_api_key_status(config: ProviderConfig) -> str:
+    if config.api_key:
+        return "set"
+    return "missing"
 
 
 def _metadata_string(value: object) -> str | None:
