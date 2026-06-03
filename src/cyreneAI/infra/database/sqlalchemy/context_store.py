@@ -131,6 +131,25 @@ class SQLAlchemyContextStore(ContextStoreProtocol):
                 cause=exc,
             ) from exc
 
+    async def delete_snapshots_for_session(self, session_id: str) -> int:
+        """
+        删除指定会话的全部上下文快照。
+        """
+        try:
+            async with self._engine.begin() as connection:
+                result = await connection.execute(
+                    delete(context_snapshots).where(
+                        context_snapshots.c.session_id == session_id
+                    )
+                )
+        except SQLAlchemyError as exc:
+            raise ContextStoreError(
+                f"Failed to delete context snapshots for session {session_id}",
+                cause=exc,
+            ) from exc
+
+        return result.rowcount or 0
+
     async def close(self) -> None:
         """
         关闭数据库连接池

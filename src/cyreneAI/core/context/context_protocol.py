@@ -42,6 +42,12 @@ class ContextStoreProtocol(Protocol):
         """
         ...
 
+    async def delete_snapshots_for_session(self, session_id: str) -> int:
+        """
+        删除指定会话的全部上下文快照，返回删除数量。
+        """
+        ...
+
 
 class ContextBuilderProtocol(Protocol):
     """

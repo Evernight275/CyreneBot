@@ -59,6 +59,10 @@ async def _run_store_lifecycle(database_path) -> None:
         with pytest.raises(ContextNotFoundError):
             await store.get_snapshot("snapshot-1")
         assert await store.list_snapshots("session-1") == [second]
+
+        assert await store.delete_snapshots_for_session("session-1") == 1
+        assert await store.list_snapshots("session-1") == []
+        assert await store.list_snapshots("session-2") == [other]
     finally:
         await store.close()
 
@@ -143,6 +147,9 @@ async def _run_store_translates_database_errors() -> None:
 
     with pytest.raises(ContextStoreError):
         await store.delete_snapshot("snapshot-1")
+
+    with pytest.raises(ContextStoreError):
+        await store.delete_snapshots_for_session("session-1")
 
     await store.close()
 

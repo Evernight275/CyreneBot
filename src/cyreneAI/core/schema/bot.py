@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
@@ -71,6 +72,23 @@ class BotSession(BotBase):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class BotConversationRef(BotBase):
+    """
+    bot 会话下的一个独立对话上下文引用。
+    """
+
+    conversation_id: str
+    name: str
+    context_session_id: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+def _empty_bot_conversations() -> list[BotConversationRef]:
+    return []
+
+
 class BotConversationState(BotBase):
     """
     bot 会话状态快照。
@@ -79,6 +97,10 @@ class BotConversationState(BotBase):
     session: BotSession
     turn_count: int = Field(default=0, ge=0)
     last_event_id: str | None = None
+    active_conversation_id: str | None = None
+    conversations: list[BotConversationRef] = Field(
+        default_factory=_empty_bot_conversations
+    )
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 

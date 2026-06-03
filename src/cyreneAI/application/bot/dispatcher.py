@@ -39,6 +39,11 @@ class BotDispatcher:
         orchestrator_request = request
         if self._runtime.bot_session_manager is not None:
             await self._runtime.bot_session_manager.get_or_create(request.event)
+            active_conversation = (
+                await self._runtime.bot_session_manager.get_active_conversation(
+                    request.event
+                )
+            )
             session_state = await self._runtime.bot_session_manager.update_activity(
                 session_id=request.event.session_id,
                 event_id=request.event.event_id,
@@ -46,6 +51,9 @@ class BotDispatcher:
                     "channel_id": request.event.channel_id,
                     "user_id": request.event.user_id or "",
                     "thread_id": request.event.thread_id or "",
+                    "active_conversation_id": active_conversation.conversation_id,
+                    "active_conversation_name": active_conversation.name,
+                    "context_session_id": active_conversation.context_session_id,
                 },
             )
             orchestrator_request = request.model_copy(
@@ -55,6 +63,9 @@ class BotDispatcher:
                         "bot_session_id": session_state.session.session_id,
                         "bot_session_status": session_state.session.status,
                         "bot_turn_count": str(session_state.turn_count),
+                        "bot_conversation_id": active_conversation.conversation_id,
+                        "bot_conversation_name": active_conversation.name,
+                        "context_session_id": active_conversation.context_session_id,
                     }
                 }
             )

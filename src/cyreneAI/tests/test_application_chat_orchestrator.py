@@ -97,6 +97,21 @@ class FakeContextStore:
             if snapshot.snapshot_id != snapshot_id
         ]
 
+    async def delete_snapshots_for_session(self, session_id: str) -> int:
+        deleted_count = len(
+            [
+                snapshot
+                for snapshot in self.snapshots
+                if snapshot.session_id == session_id
+            ]
+        )
+        self.snapshots = [
+            snapshot
+            for snapshot in self.snapshots
+            if snapshot.session_id != session_id
+        ]
+        return deleted_count
+
 
 class FakeChatProvider:
     info = ProviderInfo(

@@ -7,6 +7,8 @@ from cyreneAI.core.plugin.plugin_protocol import PluginRegistryProtocol
 from cyreneAI.core.schema.bot import (
     BotAction,
     BotActionType,
+    BotConversationRef,
+    BotEvent,
     BotMessage,
 )
 from cyreneAI.core.schema.message import ContentPart, ContentPartType
@@ -73,6 +75,22 @@ class BuiltinBotCommandExecutor:
             text = "pong"
         elif command.name == "echo":
             text = command.args_text or "(empty)"
+        elif command.name == "session":
+            text = await self._render_session_current(request)
+        elif command.name == "session current":
+            text = await self._render_session_current(request)
+        elif command.name == "session ls":
+            text = await self._render_session_list(request)
+        elif command.name == "session new":
+            text = await self._create_session_conversation(request)
+        elif command.name == "session use":
+            text = await self._use_session_conversation(request)
+        elif command.name == "session rename":
+            text = await self._rename_session_conversation(request)
+        elif command.name == "session delete":
+            text = await self._delete_session_conversation(request)
+        elif command.name == "reset":
+            text = await self._reset_context(request)
         elif command.name == "status":
             text = self._render_status()
         elif command.name == "tool ls":
@@ -192,6 +210,169 @@ class BuiltinBotCommandExecutor:
                 registry.set_enabled(definition.name, False)
                 count += 1
         return f"Disabled {count} tool(s)."
+
+    async def _render_session_current(
+        self,
+        request: PluginCommandRequest,
+    ) -> str:
+        manager = self._runtime.bot_session_manager
+        if manager is None:
+            return "Bot sessions are disabled."
+        conversation = await manager.get_active_conversation(_request_event(request))
+        return _render_conversation_current(conversation)
+
+    async def _render_session_list(
+        self,
+        request: PluginCommandRequest,
+    ) -> str:
+        manager = self._runtime.bot_session_manager
+        if manager is None:
+            return "Bot sessions are disabled."
+        event = _request_event(request)
+        active = await manager.get_active_conversation(event)
+        conversations = await manager.list_conversations(event)
+        lines = ["Sessions:"]
+        for conversation in conversations:
+            marker = "*" if conversation.conversation_id == active.conversation_id else "-"
+            lines.append(f"{marker} {conversation.name}")
+        return "\n".join(lines)
+
+    async def _create_session_conversation(
+        self,
+        request: PluginCommandRequest,
+    ) -> str:
+        manager = self._runtime.bot_session_manager
+        if manager is None:
+            return "Bot sessions are disabled."
+        name = request.command.args_text
+        if not name:
+            return "Usage: /session new <name>"
+        try:
+            conversation = await manager.create_conversation(
+                _request_event(request),
+                name,
+            )
+        except CyreneAIError as exc:
+            return f"Session create failed: {exc}"
+        return f"Session {conversation.name} created and selected."
+
+    async def _use_session_conversation(
+        self,
+        request: PluginCommandRequest,
+    ) -> str:
+        manager = self._runtime.bot_session_manager
+        if manager is None:
+            return "Bot sessions are disabled."
+        name = request.command.args_text
+        if not name:
+            return "Usage: /session use <name>"
+        try:
+            conversation = await manager.use_conversation(
+                _request_event(request),
+                name,
+            )
+        except CyreneAIError as exc:
+            return f"Session switch failed: {exc}"
+        return f"Session {conversation.name} selected."
+
+    async def _rename_session_conversation(
+        self,
+        request: PluginCommandRequest,
+    ) -> str:
+        manager = self._runtime.bot_session_manager
+        if manager is None:
+            return "Bot sessions are disabled."
+        args = request.command.args
+        if len(args) < 2:
+            return "Usage: /session rename <old> <new>"
+        old_name = args[0]
+        new_name = " ".join(args[1:])
+        try:
+            conversation = await manager.rename_conversation(
+                _request_event(request),
+                old_name,
+                new_name,
+            )
+        except CyreneAIError as exc:
+            return f"Session rename failed: {exc}"
+        return f"Session renamed to {conversation.name}."
+
+    async def _delete_session_conversation(
+        self,
+        request: PluginCommandRequest,
+    ) -> str:
+        manager = self._runtime.bot_session_manager
+        if manager is None:
+            return "Bot sessions are disabled."
+        name = request.command.args_text
+        if not name:
+            return "Usage: /session delete <name>"
+        try:
+            conversation = await manager.delete_conversation(
+                _request_event(request),
+                name,
+            )
+        except CyreneAIError as exc:
+            return f"Session delete failed: {exc}"
+
+        deleted_count = await self._clear_context_session(
+            conversation.context_session_id
+        )
+        suffix = (
+            f" Context snapshots deleted: {deleted_count}."
+            if deleted_count is not None
+            else " Context manager is not configured."
+        )
+        return f"Session {conversation.name} deleted.{suffix}"
+
+    async def _reset_context(self, request: PluginCommandRequest) -> str:
+        try:
+            conversation = await self._resolve_reset_conversation(request)
+        except CyreneAIError as exc:
+            return f"Session reset failed: {exc}"
+        if conversation is not None:
+            deleted_count = await self._clear_context_session(
+                conversation.context_session_id
+            )
+            if deleted_count is None:
+                return "Context manager is not configured."
+            return (
+                f"Session {conversation.name} reset. "
+                f"Context snapshots deleted: {deleted_count}."
+            )
+
+        context_session_id = _metadata_string(
+            request.metadata.get("context_session_id")
+        ) or _request_event(request).session_id
+        deleted_count = await self._clear_context_session(context_session_id)
+        if deleted_count is None:
+            return "Context manager is not configured."
+        return f"Context reset. Context snapshots deleted: {deleted_count}."
+
+    async def _resolve_reset_conversation(
+        self,
+        request: PluginCommandRequest,
+    ) -> BotConversationRef | None:
+        manager = self._runtime.bot_session_manager
+        if manager is None:
+            if request.command.args_text:
+                return None
+            return None
+        if request.command.args_text:
+            try:
+                return await manager.get_conversation(
+                    _request_event(request),
+                    request.command.args_text,
+                )
+            except CyreneAIError:
+                raise
+        return await manager.get_active_conversation(_request_event(request))
+
+    async def _clear_context_session(self, context_session_id: str) -> int | None:
+        manager = self._runtime.context_manager
+        if manager is None:
+            return None
+        return await manager.clear_session(context_session_id)
 
     def _render_provider_list(self) -> str:
         configs = {
@@ -383,6 +564,46 @@ def _builtin_bot_commands_definition() -> PluginDefinition:
                 usage="/echo <text>",
             ),
             PluginCommandDefinition(
+                name="session",
+                description="Show current session.",
+                usage="/session",
+            ),
+            PluginCommandDefinition(
+                name="session current",
+                description="Show current session.",
+                usage="/session current",
+            ),
+            PluginCommandDefinition(
+                name="session ls",
+                description="List sessions.",
+                usage="/session ls",
+            ),
+            PluginCommandDefinition(
+                name="session new",
+                description="Create and select a session.",
+                usage="/session new <name>",
+            ),
+            PluginCommandDefinition(
+                name="session use",
+                description="Select a session.",
+                usage="/session use <name>",
+            ),
+            PluginCommandDefinition(
+                name="session rename",
+                description="Rename a session.",
+                usage="/session rename <old> <new>",
+            ),
+            PluginCommandDefinition(
+                name="session delete",
+                description="Delete a session.",
+                usage="/session delete <name>",
+            ),
+            PluginCommandDefinition(
+                name="reset",
+                description="Reset current session context.",
+                usage="/reset [session]",
+            ),
+            PluginCommandDefinition(
                 name="status",
                 description="Show runtime status.",
                 usage="/status",
@@ -498,6 +719,28 @@ def _send_text_action(
             "command_args": list(request.command.args),
         },
     )
+
+
+def _request_event(request: PluginCommandRequest) -> BotEvent:
+    if request.event is None:
+        raise PluginInputError("插件命令请求必须包含 bot event")
+    return request.event
+
+
+def _render_conversation_current(conversation: BotConversationRef) -> str:
+    return "\n".join(
+        [
+            "Current session:",
+            f"name: {conversation.name}",
+            f"context_session_id: {conversation.context_session_id}",
+        ]
+    )
+
+
+def _metadata_string(value: object) -> str | None:
+    if isinstance(value, str) and value:
+        return value
+    return None
 
 
 def _render_command_usage(command: PluginCommandDefinition) -> str:

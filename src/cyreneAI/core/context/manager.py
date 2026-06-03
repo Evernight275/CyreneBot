@@ -36,6 +36,12 @@ class ContextManager:
         """
         await self._store.delete_snapshot(snapshot_id)
 
+    async def clear_session(self, session_id: str) -> int:
+        """
+        清空指定会话的上下文快照。
+        """
+        return await self._store.delete_snapshots_for_session(session_id)
+
     async def close(self) -> None:
         """
         关闭上下文存储

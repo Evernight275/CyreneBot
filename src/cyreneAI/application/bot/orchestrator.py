@@ -89,10 +89,11 @@ class BotOrchestrator:
             )
 
         user_message = _bot_event_to_user_message(request.event)
+        context_session_id = _context_session_id(request)
         if request.message_response_mode == BotMessageResponseMode.AGENT:
             agent_result = await self._agent_orchestrator.run(
                 build_agent_run_request(
-                    session_id=request.event.session_id,
+                    session_id=context_session_id,
                     provider_id=request.provider_id,
                     model=request.model,
                     messages=[user_message],
@@ -135,7 +136,7 @@ class BotOrchestrator:
 
         chat_result = await self._chat_orchestrator.chat(
             ApplicationChatRequest(
-                session_id=request.event.session_id,
+                session_id=context_session_id,
                 provider_id=request.provider_id,
                 model=request.model,
                 messages=[user_message],
@@ -484,6 +485,13 @@ def _metadata_truthy(value: object) -> bool:
     if isinstance(value, str):
         return value.casefold() in {"1", "true", "yes", "on"}
     return False
+
+
+def _context_session_id(request: ApplicationBotRequest) -> str:
+    value = request.metadata.get("context_session_id")
+    if isinstance(value, str) and value:
+        return value
+    return request.event.session_id
 
 
 def _bot_event_to_plugin_event(event: BotEvent) -> PluginEvent:

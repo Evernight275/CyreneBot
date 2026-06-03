@@ -28,6 +28,16 @@ class FakeContextStore:
         self.deleted_snapshot_ids.append(snapshot_id)
         self.snapshots.pop(snapshot_id, None)
 
+    async def delete_snapshots_for_session(self, session_id: str) -> int:
+        snapshot_ids = [
+            snapshot.snapshot_id
+            for snapshot in self.snapshots.values()
+            if snapshot.session_id == session_id
+        ]
+        for snapshot_id in snapshot_ids:
+            await self.delete_snapshot(snapshot_id)
+        return len(snapshot_ids)
+
 
 def _snapshot(snapshot_id: str, session_id: str) -> ContextSnapshot:
     return ContextSnapshot(
@@ -55,6 +65,13 @@ async def _run_context_manager_lifecycle() -> None:
 
     assert store.deleted_snapshot_ids == ["snapshot-1"]
     assert await manager.list_by_session("session-1") == [second]
+
+    deleted_count = await manager.clear_session("session-1")
+
+    assert deleted_count == 1
+    assert store.deleted_snapshot_ids == ["snapshot-1", "snapshot-2"]
+    assert await manager.list_by_session("session-1") == []
+    assert await manager.list_by_session("session-2") == [other]
 
 
 def test_context_manager_delegates_snapshot_lifecycle_to_store() -> None:

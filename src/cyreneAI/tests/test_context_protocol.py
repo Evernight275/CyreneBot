@@ -67,6 +67,16 @@ class FakeContextStore:
     async def delete_snapshot(self, snapshot_id: str) -> None:
         self._snapshots.pop(snapshot_id, None)
 
+    async def delete_snapshots_for_session(self, session_id: str) -> int:
+        snapshot_ids = [
+            snapshot.snapshot_id
+            for snapshot in self._snapshots.values()
+            if snapshot.session_id == session_id
+        ]
+        for snapshot_id in snapshot_ids:
+            self._snapshots.pop(snapshot_id, None)
+        return len(snapshot_ids)
+
 
 class FakeContextBuilder:
     async def build(self, request: ContextBuildRequest) -> ContextBuildResult:
@@ -128,6 +138,10 @@ async def _use_store(store: ContextStoreProtocol) -> None:
     assert await store.list_snapshots("session-1") == [snapshot]
 
     await store.delete_snapshot("snapshot-1")
+    assert await store.list_snapshots("session-1") == []
+
+    await store.save_snapshot(snapshot)
+    assert await store.delete_snapshots_for_session("session-1") == 1
     assert await store.list_snapshots("session-1") == []
 
 

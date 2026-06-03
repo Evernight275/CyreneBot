@@ -281,6 +281,40 @@ def test_bot_orchestrator_turns_message_event_into_send_action() -> None:
     asyncio.run(run())
 
 
+def test_bot_orchestrator_uses_metadata_context_session_id() -> None:
+    async def run() -> None:
+        provider = FakeChatProvider(
+            ChatResponse(
+                provider_id="provider-1",
+                model="fake-model",
+                message=_chat_message(MessageRole.ASSISTANT, "pong"),
+                finish_reason=ChatFinishReason.STOP,
+            )
+        )
+        runtime = await _build_runtime(provider)
+
+        result = await BotOrchestrator(runtime).handle(
+            ApplicationBotRequest(
+                event=_bot_event(),
+                provider_id="provider-1",
+                model="fake-model",
+                metadata={
+                    "context_session_id": "test-channel:user-1:conversation:work",
+                },
+            )
+        )
+
+        assert provider.requests[0].metadata["session_id"] == (
+            "test-channel:user-1:conversation:work"
+        )
+        assert result.chat_result is not None
+        assert result.chat_result.context_snapshot.session_id == (
+            "test-channel:user-1:conversation:work"
+        )
+
+    asyncio.run(run())
+
+
 def test_bot_orchestrator_can_run_agent_for_direct_non_command_message() -> None:
     async def run() -> None:
         provider = FakeChatProvider(
@@ -653,12 +687,20 @@ def test_bot_orchestrator_treats_slash_message_as_command() -> None:
                 [
                     "Available commands:",
                     "/start - Start the bot.",
-                        "/help - Show available commands.",
-                        "/ping - Check whether the bot is responsive.",
-                        "/echo <text> - Echo text back.",
-                    ]
-                )
+                    "/help - Show available commands.",
+                    "/ping - Check whether the bot is responsive.",
+                    "/echo <text> - Echo text back.",
+                    "/session - Show current session.",
+                    "/session current - Show current session.",
+                    "/session ls - List sessions.",
+                    "/session new <name> - Create and select a session.",
+                    "/session use <name> - Select a session.",
+                    "/session rename <old> <new> - Rename a session.",
+                    "/session delete <name> - Delete a session.",
+                    "/reset [session] - Reset current session context.",
+                ]
             )
+        )
 
     asyncio.run(run())
 

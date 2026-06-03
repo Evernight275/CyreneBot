@@ -3,6 +3,7 @@ from __future__ import annotations
 from cyreneAI.core.schema.bot import (
     BotAction,
     BotActionType,
+    BotConversationRef,
     BotConversationState,
     BotEvent,
     BotEventType,
@@ -72,6 +73,11 @@ def test_bot_session_schema_keeps_channel_identity() -> None:
 
 
 def test_bot_conversation_state_tracks_session_activity() -> None:
+    conversation = BotConversationRef(
+        conversation_id="default",
+        name="default",
+        context_session_id="telegram:user-1:conversation:default",
+    )
     state = BotConversationState(
         session=BotSession(
             session_id="telegram:user-1",
@@ -80,8 +86,12 @@ def test_bot_conversation_state_tracks_session_activity() -> None:
         ),
         turn_count=2,
         last_event_id="event-2",
+        active_conversation_id="default",
+        conversations=[conversation],
     )
 
     assert state.session.status == BotSessionStatus.ACTIVE
     assert state.turn_count == 2
     assert state.last_event_id == "event-2"
+    assert state.active_conversation_id == "default"
+    assert state.conversations == [conversation]
