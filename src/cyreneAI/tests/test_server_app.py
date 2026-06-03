@@ -623,6 +623,9 @@ def test_server_runs_agent() -> None:
             "provider_id": "provider-1",
             "model": "chat-model",
             "goal": "ping",
+            "max_tool_calls_per_step": 2,
+            "max_total_tool_calls": 3,
+            "max_tool_result_chars": 256,
             "metadata": {
                 "session_id": "agent-session",
             },
@@ -636,6 +639,9 @@ def test_server_runs_agent() -> None:
     assert data["metadata"]["session_id"] == "agent-session"
     assert data["response"]["message"]["content"][0]["text"] == "pong"
     assert data["steps"][0]["request"]["messages"][0]["content"][0]["text"] == "ping"
+    assert data["steps"][0]["request"]["metadata"]["max_tool_calls_per_step"] == 2
+    assert data["steps"][0]["request"]["metadata"]["max_total_tool_calls"] == 3
+    assert data["steps"][0]["request"]["metadata"]["max_tool_result_chars"] == 256
 
 
 def test_server_generates_images() -> None:
@@ -662,6 +668,10 @@ def test_server_channel_webhook_sends_bot_reply() -> None:
                 "event_id": "event-1",
                 "text": "ping",
             },
+            "message_response_mode": "agent",
+            "max_agent_tool_calls_per_step": 2,
+            "max_agent_total_tool_calls": 3,
+            "max_agent_tool_result_chars": 256,
         },
     )
 
@@ -669,6 +679,12 @@ def test_server_channel_webhook_sends_bot_reply() -> None:
     sent_actions = response.json()["sent_actions"]
     assert len(sent_actions) == 1
     assert sent_actions[0]["message"]["content"][0]["text"] == "pong"
+    agent_request_metadata = response.json()["bot_result"]["agent_result"]["steps"][0][
+        "request"
+    ]["metadata"]
+    assert agent_request_metadata["max_tool_calls_per_step"] == 2
+    assert agent_request_metadata["max_total_tool_calls"] == 3
+    assert agent_request_metadata["max_tool_result_chars"] == 256
 
 
 def test_server_telegram_webhook_sends_bot_reply_without_admin_auth() -> None:

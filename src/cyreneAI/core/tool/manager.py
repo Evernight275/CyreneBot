@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any, cast
 
-from cyreneAI.core.errors.tool import ToolExecutionError, ToolPolicyError, ToolResultError
+from cyreneAI.core.errors.tool import ToolExecutionError, ToolPolicyError
 from cyreneAI.core.schema.tool import (
     ToolCall,
     ToolDefinition,
@@ -80,7 +80,7 @@ class ToolManager:
                 definition=definition,
                 executor=executor,
             )
-        _validate_result_size(definition=definition, result=result)
+        result = _truncate_result_size(definition=definition, result=result)
         return _with_policy_metadata(
             result,
             definition=definition,
@@ -117,18 +117,27 @@ async def _execute_with_timeout(
         ) from exc
 
 
-def _validate_result_size(
+def _truncate_result_size(
     *,
     definition: ToolDefinition,
     result: ToolResult,
-) -> None:
+) -> ToolResult:
     max_output_chars = definition.safety_profile.max_output_chars
     if max_output_chars is None or result.content is None:
-        return
-    if len(result.content) > max_output_chars:
-        raise ToolResultError(
-            f"Tool {definition.name} output exceeded maximum size"
-        )
+        return result
+    if len(result.content) <= max_output_chars:
+        return result
+    return result.model_copy(
+        update={
+            "content": result.content[:max_output_chars],
+            "metadata": {
+                **result.metadata,
+                "truncated": True,
+                "original_content_chars": len(result.content),
+                "max_output_chars": max_output_chars,
+            },
+        }
+    )
 
 
 def _with_policy_metadata(

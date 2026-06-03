@@ -326,6 +326,9 @@ class ApplicationBotRequest(CyreneAISchema):
     tool_execution_policy: ToolExecutionPolicy | None = None
     max_tool_rounds: int = Field(default=1, ge=0)
     max_agent_steps: int = Field(default=4, ge=1)
+    max_agent_tool_calls_per_step: int | None = Field(default=None, ge=1)
+    max_agent_total_tool_calls: int | None = Field(default=None, ge=1)
+    max_agent_tool_result_chars: int | None = Field(default=None, ge=1)
     agent_planning: AgentPlanningConfig | None = None
     agent_tool_selection: AgentToolSelectionConfig | None = None
     agent_memory_retrieval: AgentMemoryRetrievalConfig | None = None
@@ -380,6 +383,9 @@ class ApplicationChannelEventsRequest(CyreneAISchema):
     tool_execution_policy: ToolExecutionPolicy | None = None
     max_tool_rounds: int = Field(default=1, ge=0)
     max_agent_steps: int = Field(default=4, ge=1)
+    max_agent_tool_calls_per_step: int | None = Field(default=None, ge=1)
+    max_agent_total_tool_calls: int | None = Field(default=None, ge=1)
+    max_agent_tool_result_chars: int | None = Field(default=None, ge=1)
     agent_planning: AgentPlanningConfig | None = None
     agent_tool_selection: AgentToolSelectionConfig | None = None
     agent_memory_retrieval: AgentMemoryRetrievalConfig | None = None
@@ -424,6 +430,9 @@ class ApplicationChannelWebhookRequest(CyreneAISchema):
     tool_execution_policy: ToolExecutionPolicy | None = None
     max_tool_rounds: int = Field(default=1, ge=0)
     max_agent_steps: int = Field(default=4, ge=1)
+    max_agent_tool_calls_per_step: int | None = Field(default=None, ge=1)
+    max_agent_total_tool_calls: int | None = Field(default=None, ge=1)
+    max_agent_tool_result_chars: int | None = Field(default=None, ge=1)
     agent_planning: AgentPlanningConfig | None = None
     agent_tool_selection: AgentToolSelectionConfig | None = None
     agent_memory_retrieval: AgentMemoryRetrievalConfig | None = None

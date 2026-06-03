@@ -334,6 +334,9 @@ def test_bot_orchestrator_can_run_agent_for_direct_non_command_message() -> None
                 model="fake-model",
                 message_response_mode=BotMessageResponseMode.AGENT,
                 message_trigger_mode=BotMessageTriggerMode.DIRECT,
+                max_agent_tool_calls_per_step=2,
+                max_agent_total_tool_calls=3,
+                max_agent_tool_result_chars=256,
                 agent_planning=AgentPlanningConfig(
                     enabled=True,
                     instructions="Answer through agent mode.",
@@ -348,6 +351,9 @@ def test_bot_orchestrator_can_run_agent_for_direct_non_command_message() -> None
             "Answer through agent mode."
             in provider.requests[0].messages[0].content[0].text
         )
+        assert provider.requests[0].metadata["max_tool_calls_per_step"] == 2
+        assert provider.requests[0].metadata["max_total_tool_calls"] == 3
+        assert provider.requests[0].metadata["max_tool_result_chars"] == 256
         assert provider.requests[0].messages[-1].content == _content("hello agent")
         assert result.chat_result is None
         assert result.agent_result is not None

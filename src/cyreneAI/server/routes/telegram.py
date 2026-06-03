@@ -34,6 +34,9 @@ async def handle_telegram_webhook(
     temperature: float | None = Query(default=None),
     max_tokens: int | None = Query(default=None),
     max_agent_steps: int = Query(default=4, ge=1),
+    max_agent_tool_calls_per_step: int | None = Query(default=None, ge=1),
+    max_agent_total_tool_calls: int | None = Query(default=None, ge=1),
+    max_agent_tool_result_chars: int | None = Query(default=None, ge=1),
     message_response_mode: BotMessageResponseMode = Query(
         default=BotMessageResponseMode.CHAT
     ),
@@ -67,6 +70,9 @@ async def handle_telegram_webhook(
                 temperature=temperature,
                 max_tokens=max_tokens,
                 max_agent_steps=max_agent_steps,
+                max_agent_tool_calls_per_step=max_agent_tool_calls_per_step,
+                max_agent_total_tool_calls=max_agent_total_tool_calls,
+                max_agent_tool_result_chars=max_agent_tool_result_chars,
                 message_response_mode=message_response_mode,
                 message_trigger_mode=message_trigger_mode,
                 message_trigger_keywords=message_trigger_keyword,

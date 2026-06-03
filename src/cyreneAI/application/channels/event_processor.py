@@ -47,6 +47,13 @@ class ChannelEventProcessor:
                         tool_execution_policy=request.tool_execution_policy,
                         max_tool_rounds=request.max_tool_rounds,
                         max_agent_steps=request.max_agent_steps,
+                        max_agent_tool_calls_per_step=(
+                            request.max_agent_tool_calls_per_step
+                        ),
+                        max_agent_total_tool_calls=request.max_agent_total_tool_calls,
+                        max_agent_tool_result_chars=(
+                            request.max_agent_tool_result_chars
+                        ),
                         agent_planning=request.agent_planning,
                         agent_tool_selection=request.agent_tool_selection,
                         agent_memory_retrieval=request.agent_memory_retrieval,

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from cyreneAI.core.errors.tool import ToolInputError, ToolPolicyError, ToolResultError
+from cyreneAI.core.errors.tool import ToolInputError, ToolPolicyError
 from cyreneAI.core.schema.tool import (
     ToolCall,
     ToolDefinition,
@@ -264,7 +264,7 @@ def test_tool_manager_delegates_sandbox_required_tools() -> None:
     asyncio.run(_run_tool_manager_delegates_sandbox_required_tools())
 
 
-async def _run_tool_manager_rejects_oversized_result() -> None:
+async def _run_tool_manager_truncates_oversized_result() -> None:
     registry = ToolRegistry()
     registry.register(
         ToolDefinition(
@@ -276,14 +276,18 @@ async def _run_tool_manager_rejects_oversized_result() -> None:
     )
     manager = ToolManager(registry)
 
-    with pytest.raises(ToolResultError):
-        await manager.execute(
-            ToolCall(id="call-1", name="lookup", arguments="{\"key\":\"value\"}"),
-        )
+    result = await manager.execute(
+        ToolCall(id="call-1", name="lookup", arguments="{\"key\":\"value\"}"),
+    )
+
+    assert result.content == "execu"
+    assert result.metadata["truncated"] is True
+    assert result.metadata["original_content_chars"] == 24
+    assert result.metadata["max_output_chars"] == 5
 
 
-def test_tool_manager_rejects_oversized_result() -> None:
-    asyncio.run(_run_tool_manager_rejects_oversized_result())
+def test_tool_manager_truncates_oversized_result() -> None:
+    asyncio.run(_run_tool_manager_truncates_oversized_result())
 
 
 def test_core_tools_does_not_import_infra_or_external_sdks() -> None:

@@ -100,6 +100,9 @@ class AgentRunRequestBody(CyreneAISchema):
     tool_selection: AgentToolSelectionConfig | None = None
     memory_retrieval: AgentMemoryRetrievalConfig | None = None
     tool_choice: ToolChoice | None = None
+    max_tool_calls_per_step: int | None = Field(default=None, ge=1)
+    max_total_tool_calls: int | None = Field(default=None, ge=1)
+    max_tool_result_chars: int | None = Field(default=None, ge=1)
     temperature: float | None = None
     max_tokens: int | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -127,6 +130,9 @@ class ChannelWebhookRequestBody(CyreneAISchema):
     tool_execution_policy: ToolExecutionPolicy | None = None
     max_tool_rounds: int = Field(default=1, ge=0)
     max_agent_steps: int = Field(default=4, ge=1)
+    max_agent_tool_calls_per_step: int | None = Field(default=None, ge=1)
+    max_agent_total_tool_calls: int | None = Field(default=None, ge=1)
+    max_agent_tool_result_chars: int | None = Field(default=None, ge=1)
     required_skill_names: list[str] = Field(default_factory=list)
     max_skills: int | None = None
     agent_planning: AgentPlanningConfig | None = None

@@ -4,8 +4,6 @@ import asyncio
 import json
 from datetime import timedelta
 
-import pytest
-
 from cyreneAI.application.agent.orchestrator import (
     AgentOrchestrator,
     AgentRunRequest,
@@ -14,8 +12,6 @@ from cyreneAI.application.agent.orchestrator import (
 from cyreneAI.application.runtime import CyreneAIRuntime
 from cyreneAI.core.context.builder import ContextWindowBuilder
 from cyreneAI.core.context.manager import ContextManager
-from cyreneAI.core.errors.base import StateError
-from cyreneAI.core.errors.tool import ToolExecutionError
 from cyreneAI.core.provider.factory import ProviderFactory
 from cyreneAI.core.provider.manager import ProviderManager
 from cyreneAI.core.schema.agent import (
@@ -47,6 +43,7 @@ from cyreneAI.core.schema.tool import (
     ToolDefinition,
     ToolExecutionPolicy,
     ToolResult,
+    ToolSafetyProfile,
 )
 from cyreneAI.core.tool.manager import ToolManager
 from cyreneAI.core.tool.registry import ToolRegistry
@@ -126,6 +123,15 @@ class MemorySearchToolExecutor:
                 },
                 sort_keys=True,
             ),
+        )
+
+
+class LongOutputToolExecutor:
+    async def execute(self, call: ToolCall) -> ToolResult:
+        return ToolResult(
+            call_id=call.id,
+            name=call.name,
+            content="abcdefghijklmnopqrstuvwxyz",
         )
 
 
@@ -447,18 +453,26 @@ def test_agent_orchestrator_stops_after_max_steps() -> None:
 
 async def _run_agent_rejects_disallowed_tool_call() -> None:
     provider = FakeChatProvider(
-        ChatResponse(
-            provider_id="provider-1",
-            model="fake-model",
-            tool_calls=[
-                ToolCall(
-                    id="call-1",
-                    name="delete",
-                    arguments="{}",
-                )
-            ],
-            finish_reason=ChatFinishReason.TOOL_CALLS,
-        )
+        [
+            ChatResponse(
+                provider_id="provider-1",
+                model="fake-model",
+                tool_calls=[
+                    ToolCall(
+                        id="call-1",
+                        name="delete",
+                        arguments="{}",
+                    )
+                ],
+                finish_reason=ChatFinishReason.TOOL_CALLS,
+            ),
+            ChatResponse(
+                provider_id="provider-1",
+                model="fake-model",
+                message=_message(MessageRole.ASSISTANT, "cannot delete"),
+                finish_reason=ChatFinishReason.STOP,
+            ),
+        ]
     )
     delete_executor = RecordingToolExecutor()
     tool_registry = ToolRegistry()
@@ -472,20 +486,25 @@ async def _run_agent_rejects_disallowed_tool_call() -> None:
     )
     runtime = await _build_runtime(provider, tool_registry)
 
-    with pytest.raises(ToolExecutionError):
-        await AgentOrchestrator(runtime).run(
-            AgentRunRequest(
-                session_id="session-1",
-                provider_id="provider-1",
-                model="fake-model",
-                goal="Use tools.",
-                allowed_tool_names=["lookup"],
-            )
+    result = await AgentOrchestrator(runtime).run(
+        AgentRunRequest(
+            session_id="session-1",
+            provider_id="provider-1",
+            model="fake-model",
+            goal="Use tools.",
+            allowed_tool_names=["lookup"],
         )
+    )
 
+    assert result.completed is True
+    assert result.steps[0].tool_results[0].success is False
+    assert result.steps[0].tool_results[0].error == "Tool delete is not allowed"
+    assert result.metadata["tool_error_count"] == 1
     assert delete_executor.calls == []
     assert provider.requests[0].tools is not None
     assert [tool.name for tool in provider.requests[0].tools] == ["lookup"]
+    assert provider.requests[1].messages[-1].role == MessageRole.TOOL
+    assert provider.requests[1].messages[-1].tool_call_id == "call-1"
 
 
 def test_agent_orchestrator_rejects_disallowed_tool_call() -> None:
@@ -723,14 +742,159 @@ def test_agent_orchestrator_retrieves_memory_before_first_step() -> None:
     asyncio.run(_run_agent_retrieves_memory_before_first_step())
 
 
-async def _run_agent_requires_tool_manager_for_tool_calls() -> None:
+async def _run_agent_skips_memory_retrieval_when_tool_is_missing() -> None:
     provider = FakeChatProvider(
         ChatResponse(
             provider_id="provider-1",
             model="fake-model",
-            tool_calls=[ToolCall(id="call-1", name="lookup", arguments="{}")],
-            finish_reason=ChatFinishReason.TOOL_CALLS,
+            message=_message(MessageRole.ASSISTANT, "final"),
+            finish_reason=ChatFinishReason.STOP,
         )
+    )
+    runtime = await _build_runtime(provider)
+
+    result = await AgentOrchestrator(runtime).run(
+        AgentRunRequest(
+            session_id="session-1",
+            provider_id="provider-1",
+            model="fake-model",
+            goal="Use memory if available.",
+            memory_retrieval=AgentMemoryRetrievalConfig(enabled=True),
+        )
+    )
+
+    assert result.completed is True
+    assert result.metadata["memory_retrieval_status"] == "skipped"
+    assert result.metadata["memory_retrieval_error"] == (
+        "Agent memory retrieval requires a tool manager"
+    )
+    assert provider.requests[0].messages == [
+        _message(MessageRole.USER, "Use memory if available."),
+    ]
+
+
+def test_agent_orchestrator_skips_memory_retrieval_when_tool_is_missing() -> None:
+    asyncio.run(_run_agent_skips_memory_retrieval_when_tool_is_missing())
+
+
+async def _run_agent_stops_when_tool_call_limit_is_exceeded() -> None:
+    first_call = ToolCall(id="call-1", name="lookup", arguments="{}")
+    second_call = ToolCall(id="call-2", name="lookup", arguments="{}")
+    provider = FakeChatProvider(
+        [
+            ChatResponse(
+                provider_id="provider-1",
+                model="fake-model",
+                tool_calls=[first_call, second_call],
+                finish_reason=ChatFinishReason.TOOL_CALLS,
+            ),
+            ChatResponse(
+                provider_id="provider-1",
+                model="fake-model",
+                message=_message(MessageRole.ASSISTANT, "limited final"),
+                finish_reason=ChatFinishReason.STOP,
+            ),
+        ]
+    )
+    executor = RecordingToolExecutor()
+    tool_registry = ToolRegistry()
+    tool_registry.register(
+        ToolDefinition(name="lookup", description="Lookup a value."),
+        executor,
+    )
+    runtime = await _build_runtime(provider, tool_registry)
+
+    result = await AgentOrchestrator(runtime).run(
+        AgentRunRequest(
+            session_id="session-1",
+            provider_id="provider-1",
+            model="fake-model",
+            goal="Use tools.",
+            max_tool_calls_per_step=1,
+        )
+    )
+
+    assert result.completed is False
+    assert result.stop_reason == AgentStopReason.TOOL_LIMIT
+    assert executor.calls == [first_call]
+    assert result.steps[0].tool_results[0].success is True
+    assert result.steps[0].tool_results[1].success is False
+    assert result.steps[0].tool_results[1].metadata["agent_tool_limit_exceeded"] is True
+    assert result.metadata["tool_error_count"] == 1
+    assert provider.requests[1].tools is None
+    assert provider.requests[1].metadata["agent_tool_limit_finalization"] is True
+
+
+def test_agent_orchestrator_stops_when_tool_call_limit_is_exceeded() -> None:
+    asyncio.run(_run_agent_stops_when_tool_call_limit_is_exceeded())
+
+
+async def _run_agent_truncates_tool_result_content() -> None:
+    tool_call = ToolCall(id="call-1", name="lookup", arguments="{}")
+    provider = FakeChatProvider(
+        [
+            ChatResponse(
+                provider_id="provider-1",
+                model="fake-model",
+                tool_calls=[tool_call],
+                finish_reason=ChatFinishReason.TOOL_CALLS,
+            ),
+            ChatResponse(
+                provider_id="provider-1",
+                model="fake-model",
+                message=_message(MessageRole.ASSISTANT, "final"),
+                finish_reason=ChatFinishReason.STOP,
+            ),
+        ]
+    )
+    tool_registry = ToolRegistry()
+    tool_registry.register(
+        ToolDefinition(
+            name="lookup",
+            description="Lookup a value.",
+            safety_profile=ToolSafetyProfile(max_output_chars=12),
+        ),
+        LongOutputToolExecutor(),
+    )
+    runtime = await _build_runtime(provider, tool_registry)
+
+    result = await AgentOrchestrator(runtime).run(
+        AgentRunRequest(
+            session_id="session-1",
+            provider_id="provider-1",
+            model="fake-model",
+            goal="Use tools.",
+        )
+    )
+
+    tool_result = result.steps[0].tool_results[0]
+    assert tool_result.content == "abcdefghijkl"
+    assert tool_result.metadata["truncated"] is True
+    assert tool_result.metadata["original_content_chars"] == 26
+    assert provider.requests[1].messages[-1].content is not None
+    assert provider.requests[1].messages[-1].content[0].text == "abcdefghijkl"
+
+
+def test_agent_orchestrator_truncates_tool_result_content() -> None:
+    asyncio.run(_run_agent_truncates_tool_result_content())
+
+
+async def _run_agent_requires_tool_manager_for_tool_calls() -> None:
+    provider = FakeChatProvider(
+        [
+            ChatResponse(
+                provider_id="provider-1",
+                model="fake-model",
+                tool_calls=[ToolCall(id="call-1", name="lookup", arguments="{}")],
+                finish_reason=ChatFinishReason.TOOL_CALLS,
+            ),
+            ChatResponse(
+                provider_id="provider-1",
+                model="fake-model",
+                message=_message(MessageRole.ASSISTANT, "tool unavailable"),
+                finish_reason=ChatFinishReason.STOP,
+            ),
+        ]
     )
     tool_registry = ToolRegistry()
     tool_registry.register(
@@ -743,15 +907,19 @@ async def _run_agent_requires_tool_manager_for_tool_calls() -> None:
         with_tool_manager=False,
     )
 
-    with pytest.raises(StateError):
-        await AgentOrchestrator(runtime).run(
-            AgentRunRequest(
-                session_id="session-1",
-                provider_id="provider-1",
-                model="fake-model",
-                goal="Use tools.",
-            )
+    result = await AgentOrchestrator(runtime).run(
+        AgentRunRequest(
+            session_id="session-1",
+            provider_id="provider-1",
+            model="fake-model",
+            goal="Use tools.",
         )
+    )
+
+    assert result.completed is True
+    assert result.steps[0].tool_results[0].success is False
+    assert result.steps[0].tool_results[0].error == "No tool manager is configured"
+    assert provider.requests[1].messages[-1].role == MessageRole.TOOL
 
 
 def test_agent_orchestrator_requires_tool_manager_for_tool_calls() -> None:

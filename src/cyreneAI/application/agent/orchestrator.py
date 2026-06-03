@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any, cast
 from uuid import uuid4
 
@@ -43,6 +44,9 @@ from cyreneAI.core.schema.tool import (
     ToolExecutionPolicy,
     ToolResult,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class AgentOrchestrator:
@@ -91,7 +95,7 @@ class AgentOrchestrator:
             request=request,
             messages=context_messages,
         )
-        memory_segment = await self._retrieve_memory_context(
+        memory_segment, memory_metadata = await self._retrieve_memory_context(
             request=request,
             plan=plan,
             tool_execution_policy=tool_execution_policy,
@@ -115,15 +119,27 @@ class AgentOrchestrator:
         )
         steps: list[AgentStep] = []
         response: ChatResponse | None = None
+        total_tool_calls = 0
 
         for index in range(request.max_steps):
-            response = await self._chat_provider(provider, current_request)
-            tool_calls = list(response.tool_calls)
-            tool_results = await self._execute_tool_calls(
-                current_request,
-                response,
-                tool_execution_policy=tool_execution_policy,
-            )
+            try:
+                response = await self._chat_provider(provider, current_request)
+                tool_calls = list(response.tool_calls)
+                tool_results, tool_limit_exceeded = await self._execute_tool_calls(
+                    current_request,
+                    response,
+                    tool_execution_policy=tool_execution_policy,
+                    total_tool_calls_so_far=total_tool_calls,
+                )
+            except Exception as exc:
+                await self._save_partial_trace(
+                    request=request,
+                    context_window=context_window,
+                    steps=steps,
+                    exc=exc,
+                )
+                raise
+            total_tool_calls += len(tool_calls)
             steps.append(
                 AgentStep(
                     index=index,
@@ -131,6 +147,13 @@ class AgentOrchestrator:
                     response=response,
                     tool_calls=tool_calls,
                     tool_results=tool_results,
+                    metadata=_build_step_metadata(
+                        index=index,
+                        response=response,
+                        tool_calls=tool_calls,
+                        tool_results=tool_results,
+                        tool_limit_exceeded=tool_limit_exceeded,
+                    ),
                 )
             )
 
@@ -152,13 +175,14 @@ class AgentOrchestrator:
                     context_snapshot=context_snapshot,
                     completed=True,
                     stop_reason=AgentStopReason.FINAL_RESPONSE,
-                    metadata={
-                        **request.metadata,
-                        "session_id": request.session_id,
-                        "dropped_context_items": [
-                            item.item_id for item in context_result.dropped_items
-                        ],
-                    },
+                    metadata=_build_run_metadata(
+                        request=request,
+                        context_result=context_result,
+                        steps=steps,
+                        stop_reason=AgentStopReason.FINAL_RESPONSE,
+                        completed=True,
+                        memory_metadata=memory_metadata,
+                    ),
                 )
 
             current_request = _append_tool_feedback_messages(
@@ -166,6 +190,55 @@ class AgentOrchestrator:
                 response=response,
                 tool_results=tool_results,
             )
+            if tool_limit_exceeded:
+                final_request = _build_tool_limit_final_response_request(current_request)
+                final_response = await self._chat_provider(provider, final_request)
+                response = _ensure_tool_limit_final_response(
+                    request=final_request,
+                    response=final_response,
+                )
+                steps.append(
+                    AgentStep(
+                        index=len(steps),
+                        request=final_request,
+                        response=response,
+                        tool_calls=[],
+                        tool_results=[],
+                        metadata=_build_step_metadata(
+                            index=len(steps),
+                            response=response,
+                            tool_calls=[],
+                            tool_results=[],
+                            tool_limit_exceeded=False,
+                        ),
+                    )
+                )
+                context_snapshot = _build_context_snapshot(
+                    request=request,
+                    context_window=_append_agent_trace_segment(
+                        context_window=context_window,
+                        steps=steps,
+                    ),
+                )
+                if self._runtime.context_manager is not None:
+                    await self._runtime.context_manager.save(context_snapshot)
+                return AgentRunResult(
+                    response=response,
+                    steps=steps,
+                    plan=plan,
+                    skill_bundle=skill_bundle,
+                    context_snapshot=context_snapshot,
+                    completed=False,
+                    stop_reason=AgentStopReason.TOOL_LIMIT,
+                    metadata=_build_run_metadata(
+                        request=request,
+                        context_result=context_result,
+                        steps=steps,
+                        stop_reason=AgentStopReason.TOOL_LIMIT,
+                        completed=False,
+                        memory_metadata=memory_metadata,
+                    ),
+                )
 
         if response is None:
             raise StateError("Agent loop did not execute any step")
@@ -204,13 +277,14 @@ class AgentOrchestrator:
             context_snapshot=context_snapshot,
             completed=False,
             stop_reason=AgentStopReason.MAX_STEPS,
-            metadata={
-                **request.metadata,
-                "session_id": request.session_id,
-                "dropped_context_items": [
-                    item.item_id for item in context_result.dropped_items
-                ],
-            },
+            metadata=_build_run_metadata(
+                request=request,
+                context_result=context_result,
+                steps=steps,
+                stop_reason=AgentStopReason.MAX_STEPS,
+                completed=False,
+                memory_metadata=memory_metadata,
+            ),
         )
 
     async def _build_context(
@@ -285,6 +359,9 @@ class AgentOrchestrator:
                 "agent_plan_mode": (
                     "runtime_hint" if plan_enabled(request.planning) else None
                 ),
+                "max_tool_calls_per_step": request.max_tool_calls_per_step,
+                "max_total_tool_calls": request.max_total_tool_calls,
+                "max_tool_result_chars": request.max_tool_result_chars,
                 "skill_names": (
                     skill_bundle.metadata.get("skills", [])
                     if skill_bundle is not None
@@ -333,28 +410,54 @@ class AgentOrchestrator:
         response: ChatResponse,
         *,
         tool_execution_policy: ToolExecutionPolicy,
-    ) -> list[ToolResult]:
+        total_tool_calls_so_far: int,
+    ) -> tuple[list[ToolResult], bool]:
         if not response.tool_calls:
-            return []
-
-        if self._runtime.tool_manager is None:
-            raise StateError("Provider returned tool calls but no tool manager is set")
+            return [], False
 
         results: list[ToolResult] = []
-        for call in response.tool_calls:
+        executable_calls, skipped_calls = _split_tool_calls_for_limits(
+            list(response.tool_calls),
+            max_tool_calls_per_step=_metadata_int(
+                request.metadata.get("max_tool_calls_per_step")
+            ),
+            max_total_tool_calls=_metadata_int(
+                request.metadata.get("max_total_tool_calls")
+            ),
+            total_tool_calls_so_far=total_tool_calls_so_far,
+        )
+        for call in executable_calls:
+            if self._runtime.tool_manager is None:
+                results.append(_tool_error_result(call, "No tool manager is configured"))
+                continue
             with use_tool_execution_context(
                 session_id=_optional_string(request.metadata.get("session_id")),
                 provider_id=request.provider_id,
                 model=request.model,
                 metadata=request.metadata,
             ):
-                results.append(
-                    await self._runtime.tool_manager.execute(
+                try:
+                    result = await self._runtime.tool_manager.execute(
                         call,
                         policy=tool_execution_policy,
                     )
+                except Exception as exc:
+                    logger.exception(
+                        "Agent tool call failed: tool=%s call_id=%s",
+                        call.name,
+                        call.id,
+                    )
+                    result = _tool_error_result(call, str(exc), exc=exc)
+                results.append(
+                    self._truncate_tool_result(
+                        result,
+                        request_limit=_metadata_int(
+                            request.metadata.get("max_tool_result_chars")
+                        ),
+                    )
                 )
-        return results
+        results.extend(_tool_limit_result(call) for call in skipped_calls)
+        return results, bool(skipped_calls)
 
     async def _retrieve_memory_context(
         self,
@@ -362,23 +465,29 @@ class AgentOrchestrator:
         request: AgentRunRequest,
         plan: AgentPlan | None,
         tool_execution_policy: ToolExecutionPolicy,
-    ) -> ContextSegment | None:
+    ) -> tuple[ContextSegment | None, dict[str, object]]:
         config = request.memory_retrieval
         if config is None or not config.enabled:
-            return None
+            return None, {}
         if self._runtime.tool_manager is None:
-            raise StateError("Agent memory retrieval requires a tool manager")
+            return _memory_retrieval_failure(
+                config=config,
+                error="Agent memory retrieval requires a tool manager",
+            )
         if self._runtime.tool_registry is None or not self._runtime.tool_registry.exists(
             "search_memory"
         ):
-            raise StateError("Agent memory retrieval requires search_memory tool")
+            return _memory_retrieval_failure(
+                config=config,
+                error="Agent memory retrieval requires search_memory tool",
+            )
 
         query = _memory_query(
             request=request,
             config=config,
         )
         if query is None:
-            return None
+            return None, {"memory_retrieval_status": "skipped"}
 
         arguments: dict[str, object] = {
             "query": query,
@@ -403,19 +512,75 @@ class AgentOrchestrator:
                 "agent_memory_retrieval": True,
             },
         ):
-            result = await self._runtime.tool_manager.execute(
-                call,
-                policy=tool_execution_policy,
-            )
+            try:
+                result = await self._runtime.tool_manager.execute(
+                    call,
+                    policy=tool_execution_policy,
+                )
+                result = self._truncate_tool_result(
+                    result,
+                    request_limit=request.max_tool_result_chars,
+                )
+                segment = _memory_result_to_context_segment(
+                    request=request,
+                    query=query,
+                    result=result,
+                )
+            except Exception as exc:
+                if config.strict:
+                    raise
+                logger.exception("Agent memory retrieval failed")
+                return None, {
+                    "memory_retrieval_status": "failed",
+                    "memory_retrieval_error": str(exc),
+                }
 
-        segment = _memory_result_to_context_segment(
-            request=request,
-            query=query,
-            result=result,
-        )
         if plan is not None:
             plan.metadata["memory_match_count"] = len(segment.items)
-        return segment
+            plan.metadata["memory_retrieval_status"] = "retrieved"
+        return segment, {
+            "memory_retrieval_status": "retrieved",
+            "memory_match_count": len(segment.items),
+        }
+
+    def _truncate_tool_result(
+        self,
+        result: ToolResult,
+        *,
+        request_limit: int | None = None,
+    ) -> ToolResult:
+        max_chars = _tool_result_max_chars(
+            result=result,
+            runtime=self._runtime,
+            request_limit=request_limit,
+        )
+        if max_chars is None:
+            return result
+        return _truncate_tool_result(result, max_chars=max_chars)
+
+    async def _save_partial_trace(
+        self,
+        *,
+        request: AgentRunRequest,
+        context_window: ContextWindow,
+        steps: list[AgentStep],
+        exc: Exception,
+    ) -> None:
+        if self._runtime.context_manager is None:
+            return
+        snapshot = _build_context_snapshot(
+            request=request,
+            context_window=_append_agent_trace_segment(
+                context_window=context_window,
+                steps=steps,
+            ),
+            metadata={
+                "agent_failed": True,
+                "agent_error_type": exc.__class__.__name__,
+                "agent_error": str(exc),
+            },
+        )
+        await self._runtime.context_manager.save(snapshot)
 
 
 def _build_initial_messages(request: AgentRunRequest) -> list[Message]:
@@ -588,6 +753,7 @@ def _build_context_snapshot(
     *,
     request: AgentRunRequest,
     context_window: ContextWindow,
+    metadata: dict[str, object] | None = None,
 ) -> ContextSnapshot:
     return ContextSnapshot(
         snapshot_id=str(uuid4()),
@@ -598,8 +764,191 @@ def _build_context_snapshot(
             "provider_id": request.provider_id,
             "model": request.model,
             "agent_loop": "minimal",
+            **(metadata or {}),
         },
     )
+
+
+def _build_run_metadata(
+    *,
+    request: AgentRunRequest,
+    context_result: ContextBuildResult,
+    steps: list[AgentStep],
+    stop_reason: AgentStopReason,
+    completed: bool,
+    memory_metadata: dict[str, object],
+) -> dict[str, object]:
+    tool_results = [
+        tool_result
+        for step in steps
+        for tool_result in step.tool_results
+    ]
+    return {
+        **request.metadata,
+        **memory_metadata,
+        "session_id": request.session_id,
+        "completed": completed,
+        "stop_reason": stop_reason,
+        "step_count": len(steps),
+        "tool_call_count": sum(len(step.tool_calls) for step in steps),
+        "tool_result_count": len(tool_results),
+        "tool_success_count": sum(1 for result in tool_results if result.success),
+        "tool_error_count": sum(1 for result in tool_results if not result.success),
+        "tool_names": sorted({result.name for result in tool_results}),
+        "dropped_context_items": [
+            item.item_id for item in context_result.dropped_items
+        ],
+        "steps": [step.metadata for step in steps],
+    }
+
+
+def _build_step_metadata(
+    *,
+    index: int,
+    response: ChatResponse,
+    tool_calls: list[ToolCall],
+    tool_results: list[ToolResult],
+    tool_limit_exceeded: bool,
+) -> dict[str, object]:
+    return {
+        "index": index,
+        "finish_reason": response.finish_reason,
+        "tool_calls": [call.name for call in tool_calls],
+        "tool_results": [
+            {
+                "name": result.name,
+                "success": result.success,
+                "error": result.error,
+                "truncated": bool(result.metadata.get("truncated")),
+                "limit_exceeded": bool(
+                    result.metadata.get("agent_tool_limit_exceeded")
+                ),
+            }
+            for result in tool_results
+        ],
+        "tool_success_count": sum(1 for result in tool_results if result.success),
+        "tool_error_count": sum(1 for result in tool_results if not result.success),
+        "tool_limit_exceeded": tool_limit_exceeded,
+    }
+
+
+def _split_tool_calls_for_limits(
+    calls: list[ToolCall],
+    *,
+    max_tool_calls_per_step: int | None,
+    max_total_tool_calls: int | None,
+    total_tool_calls_so_far: int,
+) -> tuple[list[ToolCall], list[ToolCall]]:
+    limit = len(calls)
+    if max_tool_calls_per_step is not None:
+        limit = min(limit, max_tool_calls_per_step)
+    if max_total_tool_calls is not None:
+        remaining = max(max_total_tool_calls - total_tool_calls_so_far, 0)
+        limit = min(limit, remaining)
+    return calls[:limit], calls[limit:]
+
+
+def _tool_error_result(
+    call: ToolCall,
+    error: str,
+    *,
+    exc: Exception | None = None,
+) -> ToolResult:
+    metadata: dict[str, object] = {"agent_tool_error": True}
+    if exc is not None:
+        metadata["error_type"] = exc.__class__.__name__
+    return ToolResult(
+        call_id=call.id,
+        name=call.name,
+        success=False,
+        error=error,
+        metadata=metadata,
+    )
+
+
+def _tool_limit_result(call: ToolCall) -> ToolResult:
+    return ToolResult(
+        call_id=call.id,
+        name=call.name,
+        success=False,
+        error="Agent tool call limit exceeded.",
+        metadata={
+            "agent_tool_error": True,
+            "agent_tool_limit_exceeded": True,
+        },
+    )
+
+
+def _memory_retrieval_failure(
+    *,
+    config: AgentMemoryRetrievalConfig,
+    error: str,
+) -> tuple[None, dict[str, object]]:
+    if config.strict:
+        raise StateError(error)
+    return None, {
+        "memory_retrieval_status": "skipped",
+        "memory_retrieval_error": error,
+    }
+
+
+def _tool_result_max_chars(
+    *,
+    result: ToolResult,
+    runtime: CyreneAIRuntime,
+    request_limit: int | None,
+) -> int | None:
+    limits: list[int] = []
+    if request_limit is not None:
+        limits.append(request_limit)
+    if runtime.tool_registry is not None:
+        try:
+            definition = runtime.tool_registry.get_definition(result.name)
+        except Exception:
+            definition = None
+        if definition is not None and definition.safety_profile.max_output_chars:
+            limits.append(definition.safety_profile.max_output_chars)
+    if not limits:
+        return None
+    return min(limits)
+
+
+def _truncate_tool_result(result: ToolResult, *, max_chars: int) -> ToolResult:
+    metadata = dict(result.metadata)
+    content = result.content
+    error = result.error
+    if content is not None and len(content) > max_chars:
+        original_content_chars = len(content)
+        content = _truncate_text(content, max_chars=max_chars)
+        metadata["truncated"] = True
+        metadata["original_content_chars"] = original_content_chars
+    if error is not None and len(error) > max_chars:
+        original_error_chars = len(error)
+        error = _truncate_text(error, max_chars=max_chars)
+        metadata["truncated"] = True
+        metadata["original_error_chars"] = original_error_chars
+    if metadata == result.metadata:
+        return result
+    return result.model_copy(
+        update={
+            "content": content,
+            "error": error,
+            "metadata": metadata,
+        }
+    )
+
+
+def _truncate_text(text: str, *, max_chars: int) -> str:
+    suffix = "\n...[truncated]"
+    if max_chars <= len(suffix):
+        return text[:max_chars]
+    return f"{text[: max_chars - len(suffix)]}{suffix}"
+
+
+def _metadata_int(value: object) -> int | None:
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    return None
 
 
 def _memory_query(
@@ -813,6 +1162,37 @@ def _build_max_steps_final_response_request(request: ChatRequest) -> ChatRequest
     )
 
 
+def _build_tool_limit_final_response_request(request: ChatRequest) -> ChatRequest:
+    messages = [
+        *request.messages,
+        Message(
+            role=MessageRole.SYSTEM,
+            name="agent_tool_limit",
+            content=[
+                ContentPart(
+                    type=ContentPartType.TEXT,
+                    text=(
+                        "The agent reached a configured tool-call limit. "
+                        "Produce a concise final response from the information "
+                        "already available. Do not call tools."
+                    ),
+                )
+            ],
+        ),
+    ]
+    return request.model_copy(
+        update={
+            "messages": messages,
+            "tools": None,
+            "tool_choice": None,
+            "metadata": {
+                **request.metadata,
+                "agent_tool_limit_finalization": True,
+            },
+        }
+    )
+
+
 def _ensure_max_steps_final_response(
     *,
     request: ChatRequest,
@@ -831,6 +1211,33 @@ def _ensure_max_steps_final_response(
                     text=(
                         "Agent stopped after reaching max_steps before producing "
                         "a final response."
+                    ),
+                )
+            ],
+        ),
+        finish_reason=ChatFinishReason.STOP,
+        raw=response.raw,
+    )
+
+
+def _ensure_tool_limit_final_response(
+    *,
+    request: ChatRequest,
+    response: ChatResponse,
+) -> ChatResponse:
+    if _response_has_text(response):
+        return response.model_copy(update={"tool_calls": []})
+    return ChatResponse(
+        provider_id=response.provider_id or request.provider_id,
+        model=response.model or request.model,
+        message=Message(
+            role=MessageRole.ASSISTANT,
+            content=[
+                ContentPart(
+                    type=ContentPartType.TEXT,
+                    text=(
+                        "Agent stopped after reaching the tool-call limit before "
+                        "producing a final response."
                     ),
                 )
             ],

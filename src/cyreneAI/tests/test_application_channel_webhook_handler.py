@@ -16,6 +16,7 @@ from cyreneAI.core.context.builder import ContextWindowBuilder
 from cyreneAI.core.errors.base import UnsupportedError
 from cyreneAI.core.provider.factory import ProviderFactory
 from cyreneAI.core.provider.manager import ProviderManager
+from cyreneAI.core.schema.application import BotMessageResponseMode
 from cyreneAI.core.schema.bot import (
     BotAction,
     BotChannelDefinition,
@@ -154,6 +155,10 @@ def test_channel_webhook_handler_dispatches_mapped_event() -> None:
                 },
                 provider_id="provider-1",
                 model="fake-model",
+                message_response_mode=BotMessageResponseMode.AGENT,
+                max_agent_tool_calls_per_step=2,
+                max_agent_total_tool_calls=3,
+                max_agent_tool_result_chars=256,
             )
         )
 
@@ -162,6 +167,9 @@ def test_channel_webhook_handler_dispatches_mapped_event() -> None:
         assert result.sent_actions == channel.actions
         assert provider.requests[0].messages[-1].content == _content("hello")
         assert provider.requests[0].metadata["webhook_channel_id"] == "fake"
+        assert provider.requests[0].metadata["max_tool_calls_per_step"] == 2
+        assert provider.requests[0].metadata["max_total_tool_calls"] == 3
+        assert provider.requests[0].metadata["max_tool_result_chars"] == 256
 
     asyncio.run(run())
 

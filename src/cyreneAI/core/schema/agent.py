@@ -49,6 +49,7 @@ class AgentStopReason(StrEnum):
 
     FINAL_RESPONSE = "final_response"
     MAX_STEPS = "max_steps"
+    TOOL_LIMIT = "tool_limit"
 
 
 class AgentPlanningConfig(CyreneAISchema):
@@ -76,6 +77,7 @@ class AgentMemoryRetrievalConfig(CyreneAISchema):
     """
 
     enabled: bool = False
+    strict: bool = False
     query: str | None = None
     namespace: str | None = None
     top_k: int = Field(default=5, ge=1, le=20)
@@ -119,6 +121,9 @@ class AgentRunRequest(CyreneAISchema):
     tool_selection: AgentToolSelectionConfig | None = None
     memory_retrieval: AgentMemoryRetrievalConfig | None = None
     tool_choice: ToolChoice | None = None
+    max_tool_calls_per_step: int | None = Field(default=None, ge=1)
+    max_total_tool_calls: int | None = Field(default=None, ge=1)
+    max_tool_result_chars: int | None = Field(default=None, ge=1)
 
     temperature: float | None = None
     max_tokens: int | None = None
@@ -137,6 +142,7 @@ class AgentStep(CyreneAISchema):
     response: ChatResponse
     tool_calls: list[ToolCall] = Field(default_factory=_empty_tool_calls)
     tool_results: list[ToolResult] = Field(default_factory=_empty_tool_results)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class AgentRunResult(CyreneAISchema):
