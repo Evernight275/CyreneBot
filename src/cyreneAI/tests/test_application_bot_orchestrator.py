@@ -25,9 +25,11 @@ from cyreneAI.core.schema.bot import (
 )
 from cyreneAI.core.context.builder import ContextWindowBuilder
 from cyreneAI.core.errors.bot import BotInputError, BotUnsupportedEventError
+from cyreneAI.core.errors.base import NotFoundError
 from cyreneAI.core.errors.plugin import PluginInputError
 from cyreneAI.core.provider.factory import ProviderFactory
 from cyreneAI.core.provider.manager import ProviderManager
+from cyreneAI.core.provider.registry import ProviderRegistry
 from cyreneAI.core.schema.chat import ChatFinishReason, ChatRequest, ChatResponse
 from cyreneAI.core.schema.application import (
     BotAdminConfig,
@@ -182,10 +184,35 @@ class FailingPluginEventExecutor:
         raise RuntimeError("event failed")
 
 
+class MemoryProviderConfigStore:
+    def __init__(self) -> None:
+        self.configs: dict[str, ProviderConfig] = {}
+
+    async def list_configs(self) -> list[ProviderConfig]:
+        return list(self.configs.values())
+
+    async def get_config(self, provider_id: str) -> ProviderConfig:
+        config = self.configs.get(provider_id)
+        if config is None:
+            raise NotFoundError(f"Provider config not found: {provider_id}")
+        return config
+
+    async def upsert_config(self, config: ProviderConfig) -> ProviderConfig:
+        self.configs[config.provider_id] = config
+        return config
+
+    async def delete_config(self, provider_id: str) -> None:
+        self.configs.pop(provider_id, None)
+
+    async def close(self) -> None:
+        return None
+
+
 async def _build_runtime(
     provider: FakeChatProvider,
     *,
     bot_admin_config: BotAdminConfig | None = None,
+    provider_config_store: MemoryProviderConfigStore | None = None,
 ) -> CyreneAIRuntime:
     factory = ProviderFactory()
 
@@ -198,6 +225,7 @@ async def _build_runtime(
     runtime = CyreneAIRuntime(
         provider_manager=provider_manager,
         context_builder=ContextWindowBuilder(),
+        provider_config_store=provider_config_store,
         bot_admin_config=bot_admin_config,
     )
     plugin_registry = PluginRegistry()
@@ -853,6 +881,98 @@ def test_bot_orchestrator_runs_status_command_for_admin() -> None:
                 ]
             )
         )
+
+    asyncio.run(run())
+
+
+def test_bot_orchestrator_runs_provider_admin_commands() -> None:
+    async def run() -> None:
+        provider = FakeChatProvider(
+            ChatResponse(
+                provider_id="provider-1",
+                message=_chat_message(MessageRole.ASSISTANT, "unused"),
+            )
+        )
+        store = MemoryProviderConfigStore()
+        await store.upsert_config(
+            provider.config.model_copy(
+                update={
+                    "api_key": "secret-key",
+                    "enabled": True,
+                }
+            )
+        )
+        runtime = await _build_runtime(
+            provider,
+            bot_admin_config=BotAdminConfig(user_ids=["user-1"]),
+            provider_config_store=store,
+        )
+        registry = ProviderRegistry()
+        registry.register_provider(provider.info)
+        runtime.provider_registry = registry
+
+        list_result = await BotOrchestrator(runtime).handle(
+            ApplicationBotRequest(
+                event=_bot_event("/provider ls"),
+                provider_id="provider-1",
+                model="fake-model",
+            )
+        )
+        status_result = await BotOrchestrator(runtime).handle(
+            ApplicationBotRequest(
+                event=_bot_event("/provider status provider-1"),
+                provider_id="provider-1",
+                model="fake-model",
+            )
+        )
+        catalog_result = await BotOrchestrator(runtime).handle(
+            ApplicationBotRequest(
+                event=_bot_event("/provider catalog"),
+                provider_id="provider-1",
+                model="fake-model",
+            )
+        )
+        stop_result = await BotOrchestrator(runtime).handle(
+            ApplicationBotRequest(
+                event=_bot_event("/provider stop provider-1"),
+                provider_id="provider-1",
+                model="fake-model",
+            )
+        )
+
+        assert list_result.actions[0].message is not None
+        assert list_result.actions[0].message.content == _content(
+            "\n".join(
+                [
+                    "Running providers:",
+                    "- provider-1 type=openai_compatible enabled=true",
+                ]
+            )
+        )
+        assert status_result.actions[0].message is not None
+        assert "api_key: set" in status_result.actions[0].message.content[0].text
+        assert "secret-key" not in status_result.actions[0].message.content[0].text
+        assert catalog_result.actions[0].message is not None
+        assert "openai_compatible" in catalog_result.actions[0].message.content[0].text
+        assert stop_result.actions[0].message is not None
+        assert stop_result.actions[0].message.content == _content(
+            "Provider provider-1 stopped."
+        )
+        assert not runtime.provider_manager.exists("provider-1")
+        assert (await store.get_config("provider-1")).enabled is False
+        start_result = await BotOrchestrator(runtime).handle(
+            ApplicationBotRequest(
+                event=_bot_event("/provider start provider-1"),
+                provider_id="provider-1",
+                model="fake-model",
+            )
+        )
+        assert start_result.actions[0].message is not None
+        assert start_result.actions[0].message.content == _content(
+            "Provider provider-1 started."
+        )
+        assert runtime.provider_manager.exists("provider-1")
+        assert (await store.get_config("provider-1")).enabled is True
 
     asyncio.run(run())
 

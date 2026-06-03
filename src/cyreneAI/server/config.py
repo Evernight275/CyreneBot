@@ -130,6 +130,12 @@ def build_vector_database_path_from_env() -> str | None:
     return _env_str("CYRENEAI_VECTOR_DATABASE_PATH") or "data/vector.db"
 
 
+def build_provider_config_store_path_from_env() -> str | None:
+    load_dotenv()
+
+    return _env_str("CYRENEAI_PROVIDER_CONFIG_STORE_PATH") or "data/providers.json"
+
+
 def build_tool_sandbox_mode_from_env() -> Literal["in_process", "subprocess"] | None:
     load_dotenv()
 

@@ -19,6 +19,7 @@ from cyreneAI.core.plugin.manager import PluginManager
 from cyreneAI.core.plugin.registry import PluginRegistry
 from cyreneAI.core.provider.factory import ProviderFactory
 from cyreneAI.core.provider.manager import ProviderManager
+from cyreneAI.core.provider.registry import ProviderRegistry
 from cyreneAI.core.schema.bot import (
     BotAction,
     BotChannelDefinition,
@@ -79,6 +80,7 @@ from cyreneAI.server.config import (
     build_plugin_python_environment_root_path_from_env,
     build_plugin_storage_path_from_env,
     build_plugin_task_database_path_from_env,
+    build_provider_config_store_path_from_env,
     build_provider_configs_from_env,
     build_telegram_bot_token_from_env,
     build_telegram_polling_enabled_from_env,
@@ -96,6 +98,7 @@ from cyreneAI.server.config import (
     build_shell_timeout_seconds_from_env,
     build_vector_database_path_from_env,
 )
+from cyreneAI.infra.adapters.provider_config_stores import FileSystemProviderConfigStore
 
 
 @pytest.mark.asyncio
@@ -117,6 +120,9 @@ class FakeServerProvider:
         provider_type=ProviderType.OPENAI_RESPONSES,
         timeout=timedelta(seconds=1),
     )
+
+    def __init__(self, config: ProviderConfig | None = None) -> None:
+        self.config = config or self.__class__.config
 
     async def chat(self, request: ChatRequest) -> ChatResponse:
         return ChatResponse(
@@ -442,6 +448,31 @@ def _plugin_storage_client() -> TestClient:
     )
 
 
+def _provider_admin_client(tmp_path) -> TestClient:
+    registry = ProviderRegistry()
+    registry.register_provider(FakeServerProvider.info)
+    factory = ProviderFactory()
+
+    async def build_provider(config: ProviderConfig) -> FakeServerProvider:
+        return FakeServerProvider(config)
+
+    factory.register(ProviderType.OPENAI_RESPONSES, build_provider)
+    runtime = CyreneAIRuntime(
+        provider_manager=ProviderManager(factory),
+        context_builder=ContextWindowBuilder(),
+        provider_registry=registry,
+        provider_config_store=FileSystemProviderConfigStore(
+            tmp_path / "providers.json"
+        ),
+    )
+    return TestClient(
+        create_app(
+            runtime,
+            settings=ServerSettings(auth_enabled=False),
+        )
+    )
+
+
 def test_server_health() -> None:
     response = _client().get("/health")
 
@@ -511,6 +542,59 @@ def test_server_lists_providers_and_models() -> None:
     assert providers.json()["providers"][0]["name"] == "fake"
     assert models.status_code == 200
     assert models.json()["models"][0]["model_id"] == "runtime-model"
+
+
+def test_server_manages_provider_admin_lifecycle(tmp_path) -> None:
+    client = _provider_admin_client(tmp_path)
+
+    catalog = client.get("/providers/catalog")
+    configs_before = client.get("/providers/configs")
+    upsert = client.put(
+        "/providers/provider-1/config",
+        json={
+            "provider_id": "provider-1",
+            "provider_type": "openai_responses",
+            "api_key": "secret-key",
+            "timeout": "PT1S",
+            "enabled": True,
+        },
+    )
+    statuses = client.get("/providers/statuses")
+    inspect_response = client.get("/providers/provider-1")
+    models = client.get("/providers/provider-1/models")
+    check = client.post("/providers/provider-1/check")
+    stop = client.post("/providers/provider-1/stop")
+    start = client.post("/providers/provider-1/start")
+    reload_response = client.post("/providers/provider-1/reload")
+    delete = client.delete("/providers/provider-1/config")
+
+    assert catalog.status_code == 200
+    assert catalog.json()["providers"][0]["provider_type"] == "openai_responses"
+    assert configs_before.status_code == 200
+    assert configs_before.json()["configs"] == []
+    assert upsert.status_code == 200
+    assert upsert.json()["configured"] is True
+    assert upsert.json()["running"] is True
+    assert upsert.json()["config"]["has_api_key"] is True
+    assert "secret-key" not in upsert.text
+    assert statuses.json()["providers"][0]["provider_id"] == "provider-1"
+    assert inspect_response.json()["config"]["has_api_key"] is True
+    assert models.json()["models"][0]["model_id"] == "runtime-model"
+    assert check.json()["ok"] is True
+    assert stop.json()["status"]["running"] is False
+    assert stop.json()["status"]["enabled"] is False
+    assert start.json()["status"]["running"] is True
+    assert start.json()["status"]["enabled"] is True
+    assert reload_response.json()["action"] == "reload"
+    assert delete.status_code == 200
+    assert delete.json()["status"]["configured"] is False
+    assert delete.json()["status"]["running"] is False
+
+
+def test_server_provider_admin_requires_config_store_for_configs() -> None:
+    response = _client().get("/providers/configs")
+
+    assert response.status_code == 503
 
 
 def test_server_chat() -> None:
@@ -748,6 +832,18 @@ def test_server_uses_default_vector_database_path(monkeypatch) -> None:
     monkeypatch.delenv("CYRENEAI_VECTOR_DATABASE_PATH", raising=False)
 
     assert build_vector_database_path_from_env() == "data/vector.db"
+
+
+def test_server_builds_provider_config_store_path_from_env(monkeypatch) -> None:
+    monkeypatch.setenv("CYRENEAI_PROVIDER_CONFIG_STORE_PATH", "data/providers.json")
+
+    assert build_provider_config_store_path_from_env() == "data/providers.json"
+
+
+def test_server_uses_default_provider_config_store_path(monkeypatch) -> None:
+    monkeypatch.delenv("CYRENEAI_PROVIDER_CONFIG_STORE_PATH", raising=False)
+
+    assert build_provider_config_store_path_from_env() == "data/providers.json"
 
 
 def test_server_builds_tool_sandbox_config_from_env(monkeypatch) -> None:

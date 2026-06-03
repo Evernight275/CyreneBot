@@ -69,6 +69,14 @@ async def _run_build_runtime(tmp_path) -> None:
         "tool on",
         "tool off",
         "tool off_all",
+        "provider ls",
+        "provider catalog",
+        "provider status",
+        "provider models",
+        "provider start",
+        "provider stop",
+        "provider reload",
+        "provider check",
     ]
 
     bundle = runtime.skill_manager.build_instruction_bundle(

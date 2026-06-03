@@ -66,6 +66,20 @@ class ProviderManager:
 
         return [instance.info for instance in self._instances.values()]
 
+    def list_running_ids(self) -> list[str]:
+        """
+        列出当前运行中的 provider id。
+        """
+
+        return list(self._instances.keys())
+
+    def list_running_configs(self) -> list[ProviderConfig]:
+        """
+        列出当前运行中的 provider 配置。
+        """
+
+        return [instance.config for instance in self._instances.values()]
+
     async def list_models(self, provider_id: str) -> list[ProviderModel]:
         """
         列出 provider 可用模型。

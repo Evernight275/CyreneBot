@@ -27,6 +27,7 @@ from cyreneAI.core.schema.plugin import PluginDefinition
 from cyreneAI.core.schema.application import BotAdminConfig
 from cyreneAI.core.provider.factory import ProviderFactory
 from cyreneAI.core.provider.manager import ProviderManager
+from cyreneAI.core.provider.provider_protocol import ProviderConfigStoreProtocol
 from cyreneAI.core.provider.registry import ProviderRegistry
 from cyreneAI.core.schema.provider import ProviderConfig
 from cyreneAI.core.schema.tool import MCPStdioServerConfig, ShellCommandPolicy
@@ -48,6 +49,7 @@ from cyreneAI.infra.adapters.plugins.filesystem import (
 )
 from cyreneAI.infra.adapters.plugins.python_env import PluginPythonEnvironmentManager
 from cyreneAI.infra.adapters.plugins.sqlite import create_sqlite_plugin_task_store
+from cyreneAI.infra.adapters.provider_config_stores import FileSystemProviderConfigStore
 from cyreneAI.infra.adapters.bot_sessions.memory import InMemoryBotSessionStore
 from cyreneAI.infra.adapters.tools.sandbox import (
     InProcessToolSandboxRunner,
@@ -75,6 +77,8 @@ from cyreneAI.infra.database.sqlite.builder import create_sqlite_context_store
 async def build_cyrene_ai_runtime(
     *,
     provider_configs: list[ProviderConfig] | None = None,
+    provider_config_store: ProviderConfigStoreProtocol | None = None,
+    provider_config_store_path: str | Path | None = None,
     context_database_path: str | Path | None = None,
     skill_path: str | Path | None = None,
     context_builder: ContextBuilderProtocol | None = None,
@@ -127,7 +131,22 @@ async def build_cyrene_ai_runtime(
     register_default_providers(provider_registry, provider_factory)
     provider_manager = ProviderManager(provider_factory)
 
+    runtime_provider_config_store = provider_config_store
+    if runtime_provider_config_store is not None and provider_config_store_path is not None:
+        raise ValueError("provider_config_store and provider_config_store_path cannot both be set")
+    if runtime_provider_config_store is None and provider_config_store_path is not None:
+        runtime_provider_config_store = FileSystemProviderConfigStore(
+            _resolve_project_relative_path(provider_config_store_path)
+        )
+
+    runtime_provider_configs: dict[str, ProviderConfig] = {}
+    if runtime_provider_config_store is not None:
+        for config in await runtime_provider_config_store.list_configs():
+            runtime_provider_configs[config.provider_id] = config
     for config in provider_configs or []:
+        runtime_provider_configs[config.provider_id] = config
+
+    for config in runtime_provider_configs.values():
         if config.enabled:
             await provider_manager.add(config)
 
@@ -267,6 +286,8 @@ async def build_cyrene_ai_runtime(
 
     runtime = await build_application_runtime(
         provider_manager=provider_manager,
+        provider_registry=provider_registry,
+        provider_config_store=runtime_provider_config_store,
         context_builder=context_builder,
         context_manager=context_manager,
         skill_manager=skill_manager,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from cyreneAI.application.runtime import CyreneAIRuntime
+from cyreneAI.core.errors.base import CyreneAIError, NotFoundError
 from cyreneAI.core.errors.plugin import PluginInputError
 from cyreneAI.core.plugin.plugin_protocol import PluginRegistryProtocol
 from cyreneAI.core.schema.bot import (
@@ -18,6 +19,7 @@ from cyreneAI.core.schema.plugin import (
     PluginCommandResult,
     PluginDefinition,
 )
+from cyreneAI.core.schema.provider import ProviderConfig
 
 
 BUILTIN_BOT_COMMANDS_PLUGIN_ID = "builtin.bot_commands"
@@ -81,6 +83,22 @@ class BuiltinBotCommandExecutor:
             text = self._set_tool_enabled(command.args, enabled=False)
         elif command.name == "tool off_all":
             text = self._disable_all_tools()
+        elif command.name == "provider ls":
+            text = self._render_provider_list()
+        elif command.name == "provider catalog":
+            text = self._render_provider_catalog()
+        elif command.name == "provider status":
+            text = await self._render_provider_status(command.args)
+        elif command.name == "provider models":
+            text = await self._render_provider_models(command.args)
+        elif command.name == "provider start":
+            text = await self._start_provider(command.args)
+        elif command.name == "provider stop":
+            text = await self._stop_provider(command.args)
+        elif command.name == "provider reload":
+            text = await self._reload_provider(command.args)
+        elif command.name == "provider check":
+            text = await self._check_provider(command.args)
         else:
             text = _render_unknown_command(command.name)
 
@@ -175,6 +193,162 @@ class BuiltinBotCommandExecutor:
                 count += 1
         return f"Disabled {count} tool(s)."
 
+    def _render_provider_list(self) -> str:
+        configs = {
+            config.provider_id: config
+            for config in self._runtime.provider_manager.list_running_configs()
+        }
+        if not configs:
+            return "No providers running."
+
+        lines = ["Running providers:"]
+        for provider_id in sorted(configs):
+            config = configs[provider_id]
+            lines.append(
+                f"- {provider_id} type={config.provider_type.value} "
+                f"enabled={str(config.enabled).lower()}"
+            )
+        return "\n".join(lines)
+
+    def _render_provider_catalog(self) -> str:
+        registry = self._runtime.provider_registry
+        if registry is None:
+            return "Provider catalog is not configured."
+
+        providers = sorted(
+            registry.get_all(),
+            key=lambda provider: provider.provider_type.value,
+        )
+        if not providers:
+            return "No provider types registered."
+
+        lines = ["Provider catalog:"]
+        for provider in providers:
+            capabilities = ",".join(
+                capability.value
+                for capability in (provider.capabilities or [])
+            )
+            suffix = f" capabilities={capabilities}" if capabilities else ""
+            lines.append(
+                f"- {provider.provider_type.value}: {provider.name}{suffix}"
+            )
+        return "\n".join(lines)
+
+    async def _render_provider_status(self, args: tuple[str, ...]) -> str:
+        if not args:
+            return "Usage: /provider status <provider_id>"
+        provider_id = args[0]
+        saved_config = await self._saved_provider_config_or_none(provider_id)
+        running = self._runtime.provider_manager.exists(provider_id)
+        if saved_config is None and not running:
+            return f"Unknown provider: {provider_id}"
+
+        config = saved_config
+        if config is None and running:
+            config = self._runtime.provider_manager.get(provider_id).config
+        assert config is not None
+
+        lines = [
+            f"Provider {provider_id}:",
+            f"type: {config.provider_type.value}",
+            f"configured: {str(saved_config is not None).lower()}",
+            f"running: {str(running).lower()}",
+            f"enabled: {str(config.enabled).lower()}",
+            f"api_key: {'set' if config.api_key else 'missing'}",
+        ]
+        if config.base_url:
+            lines.append(f"base_url: {config.base_url}")
+        if config.timeout is not None:
+            lines.append(f"timeout_seconds: {config.timeout.total_seconds():g}")
+        return "\n".join(lines)
+
+    async def _render_provider_models(self, args: tuple[str, ...]) -> str:
+        if not args:
+            return "Usage: /provider models <provider_id>"
+        provider_id = args[0]
+        try:
+            models = await self._runtime.provider_manager.list_models(provider_id)
+        except CyreneAIError as exc:
+            return f"Provider models failed: {exc}"
+        if not models:
+            return f"No models reported for provider {provider_id}."
+        lines = [f"Models for {provider_id}:"]
+        lines.extend(f"- {model.model_id}" for model in models)
+        return "\n".join(lines)
+
+    async def _start_provider(self, args: tuple[str, ...]) -> str:
+        if not args:
+            return "Usage: /provider start <provider_id>"
+        store = self._runtime.provider_config_store
+        if store is None:
+            return "Provider config store is not configured."
+        provider_id = args[0]
+        try:
+            config = await store.get_config(provider_id)
+            config = config.model_copy(update={"enabled": True})
+            if self._runtime.provider_manager.exists(provider_id):
+                await self._runtime.provider_manager.reload(config)
+            else:
+                await self._runtime.provider_manager.add(config)
+            await store.upsert_config(config)
+        except CyreneAIError as exc:
+            return f"Provider start failed: {exc}"
+        return f"Provider {provider_id} started."
+
+    async def _stop_provider(self, args: tuple[str, ...]) -> str:
+        if not args:
+            return "Usage: /provider stop <provider_id>"
+        provider_id = args[0]
+        saved_config = await self._saved_provider_config_or_none(provider_id)
+        if saved_config is not None and self._runtime.provider_config_store is not None:
+            await self._runtime.provider_config_store.upsert_config(
+                saved_config.model_copy(update={"enabled": False})
+            )
+        if not self._runtime.provider_manager.exists(provider_id):
+            return f"Provider {provider_id} is not running."
+        try:
+            await self._runtime.provider_manager.remove(provider_id)
+        except CyreneAIError as exc:
+            return f"Provider stop failed: {exc}"
+        return f"Provider {provider_id} stopped."
+
+    async def _reload_provider(self, args: tuple[str, ...]) -> str:
+        if not args:
+            return "Usage: /provider reload <provider_id>"
+        provider_id = args[0]
+        config = await self._saved_provider_config_or_none(provider_id)
+        if config is None:
+            if not self._runtime.provider_manager.exists(provider_id):
+                return f"Unknown provider: {provider_id}"
+            config = self._runtime.provider_manager.get(provider_id).config
+        try:
+            await self._runtime.provider_manager.reload(config)
+        except CyreneAIError as exc:
+            return f"Provider reload failed: {exc}"
+        return f"Provider {provider_id} reloaded."
+
+    async def _check_provider(self, args: tuple[str, ...]) -> str:
+        if not args:
+            return "Usage: /provider check <provider_id>"
+        provider_id = args[0]
+        try:
+            models = await self._runtime.provider_manager.list_models(provider_id)
+        except CyreneAIError as exc:
+            return f"Provider check failed: {exc}"
+        return f"Provider {provider_id} reachable. models={len(models)}"
+
+    async def _saved_provider_config_or_none(
+        self,
+        provider_id: str,
+    ) -> ProviderConfig | None:
+        store = self._runtime.provider_config_store
+        if store is None:
+            return None
+        try:
+            return await store.get_config(provider_id)
+        except NotFoundError:
+            return None
+
 
 def _builtin_bot_commands_definition() -> PluginDefinition:
     return PluginDefinition(
@@ -236,6 +410,54 @@ def _builtin_bot_commands_definition() -> PluginDefinition:
                 name="tool off_all",
                 description="Disable all runtime tools.",
                 usage="/tool off_all",
+                admin_required=True,
+            ),
+            PluginCommandDefinition(
+                name="provider ls",
+                description="List running providers.",
+                usage="/provider ls",
+                admin_required=True,
+            ),
+            PluginCommandDefinition(
+                name="provider catalog",
+                description="List registered provider types.",
+                usage="/provider catalog",
+                admin_required=True,
+            ),
+            PluginCommandDefinition(
+                name="provider status",
+                description="Show provider status.",
+                usage="/provider status <provider_id>",
+                admin_required=True,
+            ),
+            PluginCommandDefinition(
+                name="provider models",
+                description="List provider models.",
+                usage="/provider models <provider_id>",
+                admin_required=True,
+            ),
+            PluginCommandDefinition(
+                name="provider start",
+                description="Start a saved provider.",
+                usage="/provider start <provider_id>",
+                admin_required=True,
+            ),
+            PluginCommandDefinition(
+                name="provider stop",
+                description="Stop a running provider.",
+                usage="/provider stop <provider_id>",
+                admin_required=True,
+            ),
+            PluginCommandDefinition(
+                name="provider reload",
+                description="Reload a provider.",
+                usage="/provider reload <provider_id>",
+                admin_required=True,
+            ),
+            PluginCommandDefinition(
+                name="provider check",
+                description="Check provider connectivity.",
+                usage="/provider check <provider_id>",
                 admin_required=True,
             ),
         ],

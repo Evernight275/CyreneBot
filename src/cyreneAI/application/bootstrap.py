@@ -31,6 +31,8 @@ from cyreneAI.core.plugin.plugin_protocol import (
 from cyreneAI.core.plugin.registry import PluginRegistry
 from cyreneAI.core.provider.factory import ProviderFactory
 from cyreneAI.core.provider.manager import ProviderManager
+from cyreneAI.core.provider.provider_protocol import ProviderConfigStoreProtocol
+from cyreneAI.core.provider.registry import ProviderRegistry
 from cyreneAI.core.schema.application import BotAdminConfig
 from cyreneAI.core.schema.provider import ProviderConfig
 from cyreneAI.core.skill.manager import SkillManager
@@ -49,6 +51,8 @@ async def build_cyrene_ai_runtime(
     *,
     provider_manager: ProviderManager | None = None,
     provider_factory: ProviderFactory | None = None,
+    provider_registry: ProviderRegistry | None = None,
+    provider_config_store: ProviderConfigStoreProtocol | None = None,
     provider_configs: list[ProviderConfig] | None = None,
     context_builder: ContextBuilderProtocol | None = None,
     context_manager: ContextManager | None = None,
@@ -102,6 +106,8 @@ async def build_cyrene_ai_runtime(
     runtime = CyreneAIRuntime(
         provider_manager=runtime_provider_manager,
         context_builder=context_builder or ContextWindowBuilder(),
+        provider_registry=provider_registry,
+        provider_config_store=provider_config_store,
         context_manager=context_manager,
         vector_manager=(
             VectorManager(vector_store)

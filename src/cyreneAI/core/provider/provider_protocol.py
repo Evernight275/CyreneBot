@@ -28,6 +28,38 @@ class ProviderFactoryProtocol(Protocol):
         ...
 
 
+class ProviderConfigStoreProtocol(Protocol):
+    async def list_configs(self) -> list[ProviderConfig]:
+        """
+        列出已保存 provider 配置。
+        """
+        ...
+
+    async def get_config(self, provider_id: str) -> ProviderConfig:
+        """
+        获取已保存 provider 配置。
+        """
+        ...
+
+    async def upsert_config(self, config: ProviderConfig) -> ProviderConfig:
+        """
+        新增或更新 provider 配置。
+        """
+        ...
+
+    async def delete_config(self, provider_id: str) -> None:
+        """
+        删除已保存 provider 配置。
+        """
+        ...
+
+    async def close(self) -> None:
+        """
+        关闭配置存储。
+        """
+        ...
+
+
 class ChatProviderProtocol(ProviderInstanceProtocol, Protocol):
     async def chat(self, request: ChatRequest) -> ChatResponse:
         """

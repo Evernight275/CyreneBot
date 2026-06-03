@@ -15,6 +15,7 @@ from cyreneAI.server.config import (
     build_plugin_python_environment_root_path_from_env,
     build_plugin_storage_path_from_env,
     build_plugin_task_database_path_from_env,
+    build_provider_config_store_path_from_env,
     build_provider_configs_from_env,
     build_server_settings_from_env,
     build_telegram_bot_token_from_env,
@@ -42,6 +43,7 @@ from cyreneAI.server.config import (
 async def _build_runtime():
     return await build_cyrene_ai_runtime(
         provider_configs=build_provider_configs_from_env(),
+        provider_config_store_path=build_provider_config_store_path_from_env(),
         context_database_path=build_context_database_path_from_env(),
         vector_database_path=build_vector_database_path_from_env(),
         tool_sandbox_mode=build_tool_sandbox_mode_from_env(),

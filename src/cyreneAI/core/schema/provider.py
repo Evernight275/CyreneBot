@@ -79,6 +79,10 @@ class ProviderModel(ProviderBase):
     metadata: dict[str, str] = Field(default_factory=dict)
 
 
+def _empty_provider_models() -> list[ProviderModel]:
+    return []
+
+
 class ProviderReference(ProviderBase):
     """
     提供商引用schema
@@ -102,3 +106,54 @@ class ProviderConfig(ProviderBase):
     )
     enabled: bool = True
     metadata: dict[str, str] = Field(default_factory=dict)
+
+
+class ProviderConfigSummary(ProviderBase):
+    """
+    对外展示用 provider 配置摘要，不包含密钥明文。
+    """
+
+    provider_id: str
+    provider_type: ProviderType
+    has_api_key: bool = False
+    base_url: str | None = None
+    timeout: timedelta | None = None
+    enabled: bool = True
+    metadata: dict[str, str] = Field(default_factory=dict)
+
+
+class ProviderAdminStatus(ProviderBase):
+    """
+    provider admin 视角的配置与运行状态。
+    """
+
+    provider_id: str
+    provider_type: ProviderType | None = None
+    configured: bool = False
+    running: bool = False
+    enabled: bool = False
+    info: ProviderInfo | None = None
+    config: ProviderConfigSummary | None = None
+
+
+class ProviderOperationResult(ProviderBase):
+    """
+    provider admin 操作结果。
+    """
+
+    action: str
+    provider_id: str
+    accepted: bool = True
+    detail: str | None = None
+    status: ProviderAdminStatus | None = None
+
+
+class ProviderConnectionCheckResult(ProviderBase):
+    """
+    provider 连通性检查结果。
+    """
+
+    provider_id: str
+    ok: bool
+    detail: str | None = None
+    models: list[ProviderModel] = Field(default_factory=_empty_provider_models)

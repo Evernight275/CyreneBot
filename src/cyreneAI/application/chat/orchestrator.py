@@ -30,6 +30,7 @@ from cyreneAI.core.schema.context import (
 from cyreneAI.core.schema.message import ContentPart, ContentPartType, Message, MessageRole
 from cyreneAI.core.schema.skill import SkillInstructionBundle, SkillSelectionRequest
 from cyreneAI.core.schema.tool import (
+    ToolCall,
     ToolChoice,
     ToolDefinition,
     ToolExecutionPolicy,

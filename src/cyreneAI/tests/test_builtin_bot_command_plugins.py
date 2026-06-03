@@ -46,6 +46,14 @@ def test_builtin_bot_command_plugin_is_registered_by_default() -> None:
             "tool on",
             "tool off",
             "tool off_all",
+            "provider ls",
+            "provider catalog",
+            "provider status",
+            "provider models",
+            "provider start",
+            "provider stop",
+            "provider reload",
+            "provider check",
         ]
 
         await runtime.close()

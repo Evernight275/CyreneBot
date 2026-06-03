@@ -17,7 +17,9 @@ from cyreneAI.core.plugin.plugin_protocol import (
     PluginTaskSchedulerProtocol,
     PluginStorageProtocol,
 )
+from cyreneAI.core.provider.provider_protocol import ProviderConfigStoreProtocol
 from cyreneAI.core.provider.manager import ProviderManager
+from cyreneAI.core.provider.registry import ProviderRegistry
 from cyreneAI.core.schema.application import BotAdminConfig
 from cyreneAI.core.skill.manager import SkillManager
 from cyreneAI.core.tool.manager import ToolManager
@@ -39,6 +41,8 @@ class CyreneAIRuntime:
 
     provider_manager: ProviderManager
     context_builder: ContextBuilderProtocol
+    provider_registry: ProviderRegistry | None = None
+    provider_config_store: ProviderConfigStoreProtocol | None = None
     context_manager: ContextManager | None = None
     vector_manager: VectorManager | None = None
     skill_manager: SkillManager | None = None
@@ -73,6 +77,12 @@ class CyreneAIRuntime:
             await self.provider_manager.close_all()
         except Exception as exc:
             errors.append(exc)
+
+        if self.provider_config_store is not None:
+            try:
+                await self.provider_config_store.close()
+            except Exception as exc:
+                errors.append(exc)
 
         if self.context_manager is not None:
             try:
