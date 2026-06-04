@@ -331,13 +331,14 @@ def _resolve_action_route(action: BotAction) -> tuple[str, str]:
         parsed = _parse_session_route(action.thread_id)
         if parsed is not None:
             return parsed
-        return "channel", action.thread_id
-    if action.recipient_id:
-        return "user", action.recipient_id
 
     parsed = _parse_session_route(action.session_id)
     if parsed is not None:
         return parsed
+    if action.thread_id:
+        return "channel", action.thread_id
+    if action.recipient_id:
+        return "user", action.recipient_id
     raise BotActionError("QQ action must include a channel, group, or user route")
 
 

@@ -71,7 +71,11 @@ class QQBotClient:
             if response.status_code >= 400:
                 response_body = body if isinstance(body, dict) else {"result": body}
                 raise QQBotAPIError(
-                    _qq_status_error_message(response.status_code, response_body),
+                    _qq_status_error_message(
+                        response.status_code,
+                        response_body,
+                        path=path,
+                    ),
                     error_code=response.status_code,
                     payload=cast(dict[str, Any], response_body),
                 )
@@ -189,6 +193,8 @@ def _parse_response_body(response: httpx.Response) -> Any:
 def _qq_status_error_message(
     status_code: int,
     response_body: dict[str, Any],
+    *,
+    path: str,
 ) -> str:
     detail = (
         response_body.get("message")
@@ -198,6 +204,7 @@ def _qq_status_error_message(
         or "QQ request failed"
     )
     code = response_body.get("code")
+    prefix = f"QQ request failed with status {status_code}: path={path}"
     if code is None:
-        return f"QQ request failed with status {status_code}: {detail}"
-    return f"QQ request failed with status {status_code}: code={code} message={detail}"
+        return f"{prefix} message={detail}"
+    return f"{prefix} code={code} message={detail}"

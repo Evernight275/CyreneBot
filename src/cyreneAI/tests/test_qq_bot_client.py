@@ -229,6 +229,7 @@ def test_qq_bot_client_includes_http_error_body_in_error_message() -> None:
             )
 
         assert "status 400" in str(exc_info.value)
+        assert "path=/channels/channel-1/messages" in str(exc_info.value)
         assert "code=304023" in str(exc_info.value)
         assert "invalid msg_id" in str(exc_info.value)
 
