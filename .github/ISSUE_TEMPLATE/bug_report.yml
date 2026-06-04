@@ -1,0 +1,85 @@
+name: Bug report
+description: Report a reproducible bug with logs and evidence.
+title: "[bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This tracker is not for vague failure reports. A bug report must include a reproducible path, environment, logs, and evidence. Reports without enough data may be closed without investigation.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What is broken? Be concrete. Do not write only "it does not work".
+      placeholder: "Expected X, but Y happens when..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Provide exact commands, request payloads, plugin snippet, or a minimal repository link.
+      placeholder: |
+        1. Configure ...
+        2. Run ...
+        3. Send ...
+        4. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Paste logs, traceback, screenshots, Actions run link, or terminal output. Redact secrets.
+      render: text
+      placeholder: "Paste the smallest useful evidence here."
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include OS, Python version, CyreneAI version/commit, install method, and relevant provider/channel.
+      placeholder: |
+        OS:
+        Python:
+        Commit:
+        Install method:
+        Provider/channel:
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should happen instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and boundary check
+      description: Which layer or adapter appears affected? Say if this is core, application, infra, server, plugin API, QQ, Telegram, provider, or unknown.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: quality-bar
+    attributes:
+      label: Quality bar
+      description: These are required. Do not check them unless true.
+      options:
+        - label: I provided a minimal reproduction or exact reproduction steps.
+          required: true
+        - label: I included logs, traceback, screenshots, or command output as evidence.
+          required: true
+        - label: I removed secrets and tokens from the report.
+          required: true

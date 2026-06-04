@@ -1,0 +1,71 @@
+name: Architecture proposal
+description: Propose an architectural change with import and function-level justification.
+title: "[architecture]: "
+labels:
+  - architecture
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Architecture issues are design reviews. Expect import-level and function-level scrutiny. A proposal that only says "refactor" or "make it cleaner" is not enough.
+
+  - type: textarea
+    id: purpose
+    attributes:
+      label: Design purpose
+      description: What bad abstraction, boundary leak, or maintenance cost does this address?
+    validations:
+      required: true
+
+  - type: textarea
+    id: current-path
+    attributes:
+      label: Current call path
+      description: Describe the current import/call path that allows the problem.
+      placeholder: "server -> ... -> ..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-boundary
+    attributes:
+      label: Proposed boundary
+      description: Which layer owns the rule after this change? What imports become allowed or forbidden?
+    validations:
+      required: true
+
+  - type: textarea
+    id: function-plan
+    attributes:
+      label: Function-level plan
+      description: Name the functions/classes expected to change and why each exists.
+    validations:
+      required: true
+
+  - type: textarea
+    id: rejected
+    attributes:
+      label: Rejected alternatives
+      description: Which simpler or tempting designs are rejected, and why?
+    validations:
+      required: true
+
+  - type: textarea
+    id: tests
+    attributes:
+      label: Boundary tests
+      description: Which tests must be added or updated to prevent regression?
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: quality-bar
+    attributes:
+      label: Quality bar
+      options:
+        - label: I named the current bad call/import path.
+          required: true
+        - label: I named the target owner layer.
+          required: true
+        - label: I described tests that should guard the boundary.
+          required: true

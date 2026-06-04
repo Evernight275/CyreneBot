@@ -1,0 +1,81 @@
+name: Platform/channel proposal
+description: Propose a bot channel or platform integration.
+title: "[platform]: "
+labels:
+  - platform
+body:
+  - type: markdown
+    attributes:
+      value: |
+        CyreneAI does not chase fake integrations. Platforms that lack agent-grade capability, require platform-specific rich interaction DSLs, or mainly serve enterprise approval/card workflows are likely out of scope.
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      description: Which platform/channel is proposed?
+      options:
+        - Telegram
+        - QQ official bot
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: capability
+    attributes:
+      label: Agent capability
+      description: What agent-grade capabilities does this platform expose? Include official docs links.
+      placeholder: "Inbound messages, outbound replies, direct/group sessions, webhook/websocket/polling, auth model..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: official-path
+    attributes:
+      label: Official API path
+      description: Provide official API docs and explain the auth/callback/message flow.
+    validations:
+      required: true
+
+  - type: textarea
+    id: non-goals
+    attributes:
+      label: Non-goals
+      description: Confirm what this integration will not chase.
+      placeholder: |
+        Not enterprise approval flow.
+        Not card DSL.
+        Not platform-specific rich interaction.
+        Not complex organization permission system.
+        Not "can send something, so call it supported".
+    validations:
+      required: true
+
+  - type: textarea
+    id: architecture
+    attributes:
+      label: Architecture impact
+      description: Where would the adapter live? What stays in core/application? What belongs only in infra/adapters?
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Provide official docs links, proof of API availability, and a minimal send/receive flow.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: quality-bar
+    attributes:
+      label: Quality bar
+      options:
+        - label: I provided official API documentation links.
+          required: true
+        - label: I explained why this platform is agent-grade, not only a notification/card bot.
+          required: true
+        - label: I listed explicit non-goals and unsupported platform features.
+          required: true

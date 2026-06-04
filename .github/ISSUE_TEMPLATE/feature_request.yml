@@ -1,0 +1,75 @@
+name: Feature request
+description: Propose a feature with use case, boundaries, and non-goals.
+title: "[feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A feature request must justify why the feature belongs in this project. If it can live as a plugin, script, or external integration, say why core support is still necessary.
+
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use case
+      description: What real workflow needs this? Who uses it, and how often?
+      placeholder: "When..., the user needs..., because..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: Describe the smallest feature that solves the use case.
+    validations:
+      required: true
+
+  - type: textarea
+    id: project-fit
+    attributes:
+      label: Project fit
+      description: Why should this be in CyreneAI instead of a plugin, external service, script, or platform-specific tool?
+    validations:
+      required: true
+
+  - type: textarea
+    id: boundaries
+    attributes:
+      label: Boundaries and non-goals
+      description: What should this feature explicitly refuse to support?
+      placeholder: |
+        In scope:
+        Out of scope:
+        Explicitly rejected:
+    validations:
+      required: true
+
+  - type: textarea
+    id: architecture
+    attributes:
+      label: Architecture impact
+      description: Which layers would change? Name expected imports, schemas, adapters, managers, or composition root changes.
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance evidence
+      description: What tests, screenshots, logs, or examples would prove this feature works?
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: quality-bar
+    attributes:
+      label: Quality bar
+      options:
+        - label: I explained why this does not belong only in a plugin or external integration.
+          required: true
+        - label: I listed explicit non-goals.
+          required: true
+        - label: I described how the feature should be verified.
+          required: true
