@@ -82,6 +82,28 @@ def test_map_qq_group_update_prefers_group_route_over_channel_id() -> None:
     assert event.metadata["qq_group_openid"] == "group-1"
 
 
+def test_map_qq_direct_message_update_to_dm_event() -> None:
+    event = map_qq_update_to_bot_event(
+        {
+            "t": "DIRECT_MESSAGE_CREATE",
+            "d": {
+                "id": "message-3",
+                "channel_id": "dm-channel-1",
+                "guild_id": "guild-1",
+                "author": {"id": "user-3"},
+                "content": "hello",
+            },
+        }
+    )
+
+    assert event.event_type == BotEventType.MESSAGE
+    assert event.session_id == "qq:dm:guild-1"
+    assert event.user_id == "user-3"
+    assert event.thread_id == "guild-1"
+    assert event.metadata["qq_channel_id"] == "dm-channel-1"
+    assert event.metadata["qq_guild_id"] == "guild-1"
+
+
 def test_map_qq_unknown_update_to_bot_event() -> None:
     event = map_qq_update_to_bot_event({"id": "event-3", "t": "READY", "d": {}})
 
@@ -206,6 +228,39 @@ def test_map_send_message_action_prefers_user_metadata_for_c2c_event() -> None:
         "msg_type": 0,
         "msg_id": "message-1",
         "msg_seq": 1,
+    }
+
+
+def test_map_send_message_action_prefers_dm_metadata_for_direct_message_event() -> None:
+    payload = map_bot_action_to_qq_send_message_payload(
+        BotAction(
+            action_type=BotActionType.SEND_MESSAGE,
+            channel_id="qq",
+            session_id="qq:dm:guild-1",
+            thread_id="guild-1",
+            message=BotMessage(
+                content=[
+                    ContentPart(
+                        type=ContentPartType.TEXT,
+                        text="pong",
+                    )
+                ]
+            ),
+            metadata={
+                "qq_event_type": "DIRECT_MESSAGE_CREATE",
+                "qq_channel_id": "dm-channel-1",
+                "qq_guild_id": "guild-1",
+                "qq_user_id": "user-1",
+                "qq_message_id": "message-1",
+            },
+        )
+    )
+
+    assert payload == {
+        "content": "pong",
+        "_route": "dm",
+        "_route_id": "guild-1",
+        "msg_id": "message-1",
     }
 
 

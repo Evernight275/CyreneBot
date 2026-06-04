@@ -147,8 +147,15 @@ def _message_route_attrs(event_type: str) -> tuple[str, ...]:
             "user_id",
             "user_openid",
         )
-    if event_type in {"C2C_MESSAGE_CREATE", "DIRECT_MESSAGE_CREATE"}:
+    if event_type == "C2C_MESSAGE_CREATE":
         return (
+            "user_id",
+            "user_openid",
+        )
+    if event_type == "DIRECT_MESSAGE_CREATE":
+        return (
+            "channel_id",
+            "guild_id",
             "user_id",
             "user_openid",
         )

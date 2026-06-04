@@ -142,6 +142,37 @@ def test_qq_bot_client_fetches_and_reuses_access_token() -> None:
     asyncio.run(run())
 
 
+def test_qq_bot_client_sends_dm_message() -> None:
+    async def run() -> None:
+        http_client = FakeHTTPClient([_response(200, {"id": "message-1"})])
+        client = QQBotClient(
+            token="token",
+            base_url="https://qq.example",
+            client=http_client,
+        )
+
+        result = await client.send_message(
+            {
+                "_route": "dm",
+                "_route_id": "guild-1",
+                "content": "pong",
+                "msg_id": "message-1",
+            }
+        )
+
+        assert result == {"id": "message-1"}
+        assert http_client.requests == [
+            {
+                "method": "POST",
+                "url": "https://qq.example/dms/guild-1/messages",
+                "json": {"content": "pong", "msg_id": "message-1"},
+                "headers": {"Authorization": "QQBot token"},
+            }
+        ]
+
+    asyncio.run(run())
+
+
 def test_qq_bot_client_translates_api_error() -> None:
     async def run() -> None:
         client = QQBotClient(

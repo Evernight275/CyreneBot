@@ -161,10 +161,14 @@ def _resolve_route(data: dict[str, Any], *, event_name: str = "") -> _Route:
         group_route = _group_route(data)
         if group_route is not None:
             return group_route
-    if event_name in {"C2C_MESSAGE_CREATE", "DIRECT_MESSAGE_CREATE"}:
+    if event_name == "C2C_MESSAGE_CREATE":
         user_route = _user_route(data)
         if user_route is not None:
             return user_route
+    if event_name == "DIRECT_MESSAGE_CREATE":
+        dm_route = _direct_message_route(data)
+        if dm_route is not None:
+            return dm_route
 
     channel_id = _metadata_str(data.get("channel_id"))
     if channel_id is not None:
@@ -209,6 +213,13 @@ def _user_route(data: dict[str, Any]) -> _Route | None:
     if user_id is None:
         return None
     return _Route("user", user_id)
+
+
+def _direct_message_route(data: dict[str, Any]) -> _Route | None:
+    guild_id = _metadata_str(data.get("guild_id"))
+    if guild_id is None:
+        return None
+    return _Route("dm", guild_id)
 
 
 def _message_text(data: dict[str, Any]) -> str | None:
@@ -285,12 +296,21 @@ def _resolve_action_route(action: BotAction) -> tuple[str, str]:
         )
         if route is not None:
             return route
-    if event_type in {"C2C_MESSAGE_CREATE", "DIRECT_MESSAGE_CREATE"}:
+    if event_type == "C2C_MESSAGE_CREATE":
         route = _resolve_action_route_from_keys(
             action,
             (
                 ("qq_user_openid", "user"),
                 ("qq_user_id", "user"),
+            ),
+        )
+        if route is not None:
+            return route
+    if event_type == "DIRECT_MESSAGE_CREATE":
+        route = _resolve_action_route_from_keys(
+            action,
+            (
+                ("qq_guild_id", "dm"),
             ),
         )
         if route is not None:
@@ -336,6 +356,7 @@ def _parse_session_route(value: str) -> tuple[str, str] | None:
     parts = value.split(":", maxsplit=2)
     if len(parts) == 3 and parts[0] == "qq" and parts[1] in {
         "channel",
+        "dm",
         "group",
         "user",
         "guild",

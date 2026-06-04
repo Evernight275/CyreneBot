@@ -170,6 +170,8 @@ class QQBotClient:
 def _send_message_path(*, route: str, route_id: str) -> str:
     if route == "channel":
         return f"/channels/{route_id}/messages"
+    if route == "dm":
+        return f"/dms/{route_id}/messages"
     if route == "group":
         return f"/v2/groups/{route_id}/messages"
     if route == "user":

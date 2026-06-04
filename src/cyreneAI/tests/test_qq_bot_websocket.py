@@ -49,3 +49,28 @@ def test_qq_bot_websocket_maps_group_message_object_to_update() -> None:
     assert update["d"]["group_openid"] == "group-1"
     assert update["d"]["user_openid"] == "user-2"
     assert update["d"]["author"]["id"] == "user-2"
+
+
+def test_qq_bot_websocket_maps_direct_message_object_to_update() -> None:
+    update = _message_to_update(
+        "DIRECT_MESSAGE_CREATE",
+        SimpleNamespace(
+            id="message-3",
+            content="hello",
+            channel_id="dm-channel-1",
+            guild_id="guild-1",
+            author=SimpleNamespace(id="user-3"),
+        ),
+    )
+
+    assert update == {
+        "id": "message-3",
+        "t": "DIRECT_MESSAGE_CREATE",
+        "d": {
+            "id": "message-3",
+            "content": "hello",
+            "channel_id": "dm-channel-1",
+            "guild_id": "guild-1",
+            "author": {"id": "user-3"},
+        },
+    }
