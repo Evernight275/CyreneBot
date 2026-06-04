@@ -6,7 +6,6 @@ from typing import Any
 
 from cyreneAI.core.errors.bot import BotConfigurationError
 
-
 QQWebSocketUpdateHandler = Callable[[dict[str, Any]], Awaitable[None]]
 
 

@@ -31,6 +31,8 @@ dev = [
     "uvicorn[standard]>=0.48.0",
     "python-multipart>=0.0.20",
     "qq-botpy>=1.2.1",
+    "black",
+    "ruff",
     "pyright",
     "twine",
 ]
@@ -97,6 +99,21 @@ forbidden_sdist_paths = [
 [tool.pytest.ini_options]
 testpaths = ["src/cyreneAI/tests"]
 pythonpath = ["src"]
+
+[tool.black]
+line-length = 88
+target-version = ["py312"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B"]
+ignore = [
+    "B008",
+    "E501",
+]
 
 [tool.pyright]
 include = [

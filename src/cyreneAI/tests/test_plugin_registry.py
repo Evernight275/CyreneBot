@@ -5,6 +5,7 @@ import pytest
 from cyreneAI.core.errors.base import ConflictError
 from cyreneAI.core.errors.plugin import PluginNotFoundError, PluginStateError
 from cyreneAI.core.plugin.registry import PluginRegistry
+from cyreneAI.core.schema.chat import ChatResponse
 from cyreneAI.core.schema.plugin import (
     PluginCommandDefinition,
     PluginCommandRequest,
@@ -22,7 +23,6 @@ from cyreneAI.core.schema.plugin import (
     PluginStatusReport,
     PluginTaskDefinition,
 )
-from cyreneAI.core.schema.chat import ChatResponse
 
 
 class _FakePluginExecutor:
@@ -36,7 +36,9 @@ class _FakePluginEventExecutor:
 
 
 class _FakePluginMiddlewareExecutor:
-    async def execute(self, request: PluginMiddlewareRequest, next_call) -> ChatResponse:
+    async def execute(
+        self, request: PluginMiddlewareRequest, next_call
+    ) -> ChatResponse:
         return await next_call(request)
 
 
@@ -120,7 +122,9 @@ def test_plugin_registry_rejects_duplicate_commands_and_aliases() -> None:
 
     with pytest.raises(ConflictError) as caught:
         registry.register(
-            _definition(plugin_id="builtin.status", command_name="status", aliases=["help"]),
+            _definition(
+                plugin_id="builtin.status", command_name="status", aliases=["help"]
+            ),
             _FakePluginExecutor(),
         )
     assert str(caught.value) == "该插件命令 help 已由 builtin.help 注册"
@@ -269,9 +273,7 @@ def test_plugin_registry_lists_and_resolves_events() -> None:
 
 def test_plugin_registry_lists_tasks_and_records_status() -> None:
     registry = PluginRegistry()
-    definition = _definition(
-        tasks=[PluginTaskDefinition(name="follow_up")]
-    )
+    definition = _definition(tasks=[PluginTaskDefinition(name="follow_up")])
 
     registry.register(definition, _FakePluginExecutor())
     registry.record_status(

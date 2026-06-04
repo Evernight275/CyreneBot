@@ -14,7 +14,6 @@ from cyreneAI.core.schema.agent import (
 from cyreneAI.core.schema.context import ContextItem, ContextItemType, ContextSnapshot
 from cyreneAI.core.schema.message import ContentPart, ContentPartType, MessageRole
 
-
 DEFAULT_AGENT_RUN_HISTORY_LIMIT = 10
 MAX_AGENT_RUN_HISTORY_LIMIT = 50
 TRACE_TEXT_PREVIEW_CHARS = 240
@@ -118,9 +117,13 @@ def _trace_item_from_context_item(
     fallback_index: int,
 ) -> AgentRunTraceItem:
     message = item.message
-    text = item.content or _message_text(message.content if message is not None else None)
+    text = item.content or _message_text(
+        message.content if message is not None else None
+    )
     return AgentRunTraceItem(
-        index=_metadata_int(item.metadata.get("agent_trace_index"), fallback=fallback_index),
+        index=_metadata_int(
+            item.metadata.get("agent_trace_index"), fallback=fallback_index
+        ),
         item_id=item.item_id,
         item_type=item.type.value,
         source=item.source.value,
@@ -165,9 +168,7 @@ def _message_text(content: list[ContentPart] | None) -> str:
     if not content:
         return ""
     return "".join(
-        part.text or ""
-        for part in content
-        if part.type == ContentPartType.TEXT
+        part.text or "" for part in content if part.type == ContentPartType.TEXT
     )
 
 

@@ -429,9 +429,7 @@ def test_builtin_session_clear_keeps_conversation() -> None:
         assert (
             "- work id=work status=active "
             "context_session_id=memory:user-1:conversation:work"
-        ) in (
-            listed.actions[0].message.content[0].text
-        )
+        ) in (listed.actions[0].message.content[0].text)
 
         await runtime.close()
 
@@ -840,7 +838,9 @@ def test_builtin_help_command_lists_admin_commands_for_admin() -> None:
         assert "/status - Show runtime status. [admin]" in text
         assert "/agent runs [session] [limit] - List agent runs. [admin]" in text
         assert "/agent run <snapshot_id> - Show agent run trace. [admin]" in text
-        assert "/agent trace [session] - Show latest agent trace summary. [admin]" in text
+        assert (
+            "/agent trace [session] - Show latest agent trace summary. [admin]" in text
+        )
         assert "/plugin commands [plugin_id] - List plugin commands. [admin]" in text
 
         await runtime.close()
@@ -971,7 +971,10 @@ def test_builtin_plugin_admin_commands_show_command_audit() -> None:
 
         assert list_result.actions[0].message is not None
         list_text = list_result.actions[0].message.content[0].text
-        assert "- thirdparty.hello status=enabled enabled=true kind=third-party commands=1" in list_text
+        assert (
+            "- thirdparty.hello status=enabled enabled=true kind=third-party commands=1"
+            in list_text
+        )
         assert commands_result.actions[0].message is not None
         assert commands_result.actions[0].message.content[0].text == "\n".join(
             [

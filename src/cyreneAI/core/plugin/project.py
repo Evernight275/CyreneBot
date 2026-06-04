@@ -19,7 +19,6 @@ from cyreneAI.core.schema.plugin import (
     PluginSourceType,
 )
 
-
 PLUGIN_SIGNATURE_FILENAME = ".cyreneai-plugin-signature.json"
 
 

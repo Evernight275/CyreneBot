@@ -4,8 +4,6 @@ import asyncio
 import json
 from datetime import timedelta
 
-import pytest
-
 from cyreneAI.application.chat.orchestrator import (
     ApplicationChatRequest,
     ChatOrchestrator,
@@ -13,10 +11,10 @@ from cyreneAI.application.chat.orchestrator import (
 from cyreneAI.application.runtime import CyreneAIRuntime
 from cyreneAI.core.context.builder import ContextWindowBuilder
 from cyreneAI.core.context.manager import ContextManager
-from cyreneAI.core.provider.factory import ProviderFactory
-from cyreneAI.core.provider.manager import ProviderManager
 from cyreneAI.core.plugin.manager import PluginManager
 from cyreneAI.core.plugin.registry import PluginRegistry
+from cyreneAI.core.provider.factory import ProviderFactory
+from cyreneAI.core.provider.manager import ProviderManager
 from cyreneAI.core.schema.chat import ChatFinishReason, ChatRequest, ChatResponse
 from cyreneAI.core.schema.context import (
     ContextBuildRequest,
@@ -35,13 +33,13 @@ from cyreneAI.core.schema.message import (
     Message,
     MessageRole,
 )
-from cyreneAI.core.schema.provider import ProviderConfig, ProviderInfo, ProviderType
 from cyreneAI.core.schema.plugin import (
     PluginDefinition,
     PluginMiddlewareDefinition,
     PluginMiddlewareRequest,
     PluginMiddlewareType,
 )
+from cyreneAI.core.schema.provider import ProviderConfig, ProviderInfo, ProviderType
 from cyreneAI.core.schema.skill import SkillDefinition
 from cyreneAI.core.schema.tool import (
     ToolCall,
@@ -85,9 +83,7 @@ class FakeContextStore:
 
     async def list_snapshots(self, session_id: str) -> list[ContextSnapshot]:
         return [
-            snapshot
-            for snapshot in self.snapshots
-            if snapshot.session_id == session_id
+            snapshot for snapshot in self.snapshots if snapshot.session_id == session_id
         ]
 
     async def delete_snapshot(self, snapshot_id: str) -> None:
@@ -106,9 +102,7 @@ class FakeContextStore:
             ]
         )
         self.snapshots = [
-            snapshot
-            for snapshot in self.snapshots
-            if snapshot.session_id != session_id
+            snapshot for snapshot in self.snapshots if snapshot.session_id != session_id
         ]
         return deleted_count
 
@@ -164,7 +158,9 @@ class RecordingLLMMiddlewareExecutor:
     def __init__(self) -> None:
         self.calls: list[PluginMiddlewareRequest] = []
 
-    async def execute(self, request: PluginMiddlewareRequest, next_call) -> ChatResponse:
+    async def execute(
+        self, request: PluginMiddlewareRequest, next_call
+    ) -> ChatResponse:
         self.calls.append(request)
         updated = request.model_copy(
             update={
@@ -228,7 +224,7 @@ async def _run_chat_orchestrator_request() -> None:
                         ToolCall(
                             id="call-1",
                             name="lookup",
-                            arguments="{\"key\":\"value\"}",
+                            arguments='{"key":"value"}',
                         )
                     ],
                     metadata={
@@ -241,7 +237,7 @@ async def _run_chat_orchestrator_request() -> None:
                     ToolCall(
                         id="call-1",
                         name="lookup",
-                        arguments="{\"key\":\"value\"}",
+                        arguments='{"key":"value"}',
                     )
                 ],
                 finish_reason=ChatFinishReason.TOOL_CALLS,
@@ -297,7 +293,7 @@ async def _run_chat_orchestrator_request() -> None:
     assert result.skill_bundle is not None
     assert result.skill_bundle.metadata == {"skills": ["memory"]}
     assert [tool_result.content for tool_result in result.tool_results] == [
-        "executed:{\"key\":\"value\"}"
+        'executed:{"key":"value"}'
     ]
     assert result.response.message == _message(MessageRole.ASSISTANT, "final")
     assert len(provider.requests) == 2
@@ -330,9 +326,7 @@ async def _run_chat_orchestrator_request() -> None:
     assert feedback_request.messages[-1].name == "lookup"
     assert feedback_request.messages[-1].tool_call_id == "call-1"
     assert feedback_request.messages[-1].content is not None
-    assert feedback_request.messages[-1].content[0].text == (
-        "executed:{\"key\":\"value\"}"
-    )
+    assert feedback_request.messages[-1].content[0].text == ('executed:{"key":"value"}')
 
 
 def test_chat_orchestrator_builds_context_skills_tools_and_calls_provider() -> None:
@@ -510,7 +504,7 @@ async def _run_chat_orchestrator_rejects_disallowed_tool_call() -> None:
                     ToolCall(
                         id="call-1",
                         name="delete",
-                        arguments="{\"key\":\"value\"}",
+                        arguments='{"key":"value"}',
                     )
                 ],
                 finish_reason=ChatFinishReason.TOOL_CALLS,
@@ -596,7 +590,7 @@ async def _run_chat_orchestrator_does_not_save_unanswered_tool_calls() -> None:
                         ToolCall(
                             id="call-1",
                             name="lookup",
-                            arguments="{\"key\":\"value\"}",
+                            arguments='{"key":"value"}',
                         )
                     ],
                 ),
@@ -604,7 +598,7 @@ async def _run_chat_orchestrator_does_not_save_unanswered_tool_calls() -> None:
                     ToolCall(
                         id="call-1",
                         name="lookup",
-                        arguments="{\"key\":\"value\"}",
+                        arguments='{"key":"value"}',
                     )
                 ],
                 finish_reason=ChatFinishReason.TOOL_CALLS,
@@ -618,7 +612,7 @@ async def _run_chat_orchestrator_does_not_save_unanswered_tool_calls() -> None:
                         ToolCall(
                             id="call-2",
                             name="lookup",
-                            arguments="{\"key\":\"next\"}",
+                            arguments='{"key":"next"}',
                         )
                     ],
                 ),
@@ -626,7 +620,7 @@ async def _run_chat_orchestrator_does_not_save_unanswered_tool_calls() -> None:
                     ToolCall(
                         id="call-2",
                         name="lookup",
-                        arguments="{\"key\":\"next\"}",
+                        arguments='{"key":"next"}',
                     )
                 ],
                 finish_reason=ChatFinishReason.TOOL_CALLS,

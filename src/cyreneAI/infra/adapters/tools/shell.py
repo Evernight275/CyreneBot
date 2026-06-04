@@ -277,7 +277,9 @@ class _ControlledShellExecutor:
                 await process.wait()
             raise ToolExecutionError("shell command timed out", cause=exc) from exc
         except OSError as exc:
-            raise ToolExecutionError("shell command failed to start", cause=exc) from exc
+            raise ToolExecutionError(
+                "shell command failed to start", cause=exc
+            ) from exc
 
         _validate_output_size(
             stdout=stdout,
@@ -315,7 +317,9 @@ def _parse_argv(value: object, *, policy: ShellCommandPolicy) -> list[str]:
         argv = []
         for item in value:
             if not isinstance(item, str) or not item.strip():
-                raise ToolExecutionError("command array items must be non-empty strings")
+                raise ToolExecutionError(
+                    "command array items must be non-empty strings"
+                )
             _reject_blocked_tokens(item, policy)
             argv.append(item.strip())
     else:
@@ -346,8 +350,7 @@ def _classify_command(
             fallback = rule.decision
             continue
         if subcommand is not None and subcommand in {
-            item.casefold()
-            for item in rule.subcommands
+            item.casefold() for item in rule.subcommands
         }:
             return rule.decision
     return fallback or policy.default_decision
@@ -454,7 +457,9 @@ def _head_tail_args(argv: list[str]) -> tuple[int, str]:
         try:
             count = int(argv[2])
         except ValueError as exc:
-            raise ToolExecutionError("line count must be an integer", cause=exc) from exc
+            raise ToolExecutionError(
+                "line count must be an integer", cause=exc
+            ) from exc
         if count < 1 or count > 500:
             raise ToolExecutionError("line count must be between 1 and 500")
         return count, argv[3]

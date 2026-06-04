@@ -73,9 +73,7 @@ def _validate_type(
         expected_types = [expected_type]
     elif isinstance(expected_type, list):
         expected_types = [
-            item
-            for item in cast(list[Any], expected_type)
-            if isinstance(item, str)
+            item for item in cast(list[Any], expected_type) if isinstance(item, str)
         ]
     else:
         return
@@ -118,9 +116,7 @@ def _validate_object(
     raw_required = schema.get("required")
     if isinstance(raw_required, list):
         required = [
-            key
-            for key in cast(list[Any], raw_required)
-            if isinstance(key, str)
+            key for key in cast(list[Any], raw_required) if isinstance(key, str)
         ]
     for key in required:
         if key not in value_object:

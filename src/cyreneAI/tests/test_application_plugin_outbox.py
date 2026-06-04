@@ -139,9 +139,7 @@ def test_plugin_outbox_requires_namespace_permission_for_bypass() -> None:
         assert "rate_limit_bypassed" not in first.metadata
         assert second.accepted is False
         assert second.metadata["reason"] == "min_interval"
-        assert [action.message.content[0].text for action in channel.actions] == [
-            "one"
-        ]
+        assert [action.message.content[0].text for action in channel.actions] == ["one"]
 
     asyncio.run(run())
 

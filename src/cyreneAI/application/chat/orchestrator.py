@@ -5,16 +5,19 @@ from typing import cast
 from uuid import uuid4
 
 from cyreneAI.application.runtime import CyreneAIRuntime
+from cyreneAI.application.tools.execution_context import use_tool_execution_context
 from cyreneAI.application.tools.execution_policy import (
     build_effective_tool_execution_policy,
     filter_tool_definitions_for_policy,
 )
-from cyreneAI.application.tools.execution_context import use_tool_execution_context
 from cyreneAI.core.context.context_protocol import ContextBuilderProtocol
 from cyreneAI.core.errors.base import StateError, UnsupportedError
 from cyreneAI.core.errors.tool import ToolExecutionError
 from cyreneAI.core.provider.provider_protocol import ChatProviderProtocol
-from cyreneAI.core.schema.application import ApplicationChatRequest, ApplicationChatResult
+from cyreneAI.core.schema.application import (
+    ApplicationChatRequest,
+    ApplicationChatResult,
+)
 from cyreneAI.core.schema.chat import ChatRequest, ChatResponse
 from cyreneAI.core.schema.context import (
     ContextBuildRequest,
@@ -27,7 +30,12 @@ from cyreneAI.core.schema.context import (
     ContextSnapshot,
     ContextWindow,
 )
-from cyreneAI.core.schema.message import ContentPart, ContentPartType, Message, MessageRole
+from cyreneAI.core.schema.message import (
+    ContentPart,
+    ContentPartType,
+    Message,
+    MessageRole,
+)
 from cyreneAI.core.schema.skill import SkillInstructionBundle, SkillSelectionRequest
 from cyreneAI.core.schema.tool import (
     ToolCall,
@@ -50,9 +58,7 @@ class ChatOrchestrator:
         """
         编排一次聊天请求
         """
-        history_messages = await self._load_session_history_messages(
-            request.session_id
-        )
+        history_messages = await self._load_session_history_messages(request.session_id)
         context_request = request.model_copy(
             update={
                 "messages": [
@@ -71,9 +77,7 @@ class ChatOrchestrator:
             policy=request.tool_execution_policy,
             allowed_tool_names=request.allowed_tool_names,
             constrained_tool_names=(
-                skill_bundle.allowed_tools
-                if skill_bundle is not None
-                else None
+                skill_bundle.allowed_tools if skill_bundle is not None else None
             ),
         )
         provider_request = self._build_provider_request(
@@ -432,7 +436,9 @@ def _tool_result_to_message(result: ToolResult) -> Message:
     )
 
 
-def _tool_execution_error_result(call: ToolCall, error: ToolExecutionError) -> ToolResult:
+def _tool_execution_error_result(
+    call: ToolCall, error: ToolExecutionError
+) -> ToolResult:
     error_type = error.__class__.__name__
     message = str(error)
     return ToolResult(

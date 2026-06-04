@@ -68,9 +68,7 @@ class FileSystemPluginStorageNamespace:
         if not namespace_path.exists():
             return []
         return sorted(
-            path.stem
-            for path in namespace_path.glob("*.json")
-            if path.is_file()
+            path.stem for path in namespace_path.glob("*.json") if path.is_file()
         )
 
     async def update(

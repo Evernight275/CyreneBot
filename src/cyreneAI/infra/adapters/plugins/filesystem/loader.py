@@ -9,13 +9,13 @@ from types import ModuleType
 from typing import Any
 
 from cyreneAI.core.errors.plugin import PluginConfigurationError, PluginInputError
+from cyreneAI.core.plugin.plugin_protocol import (
+    PluginPythonEnvironmentManagerProtocol,
+)
 from cyreneAI.core.plugin.project import (
     build_filesystem_plugin_source_info,
     load_plugin_manifest,
     resolve_plugin_entrypoint,
-)
-from cyreneAI.core.plugin.plugin_protocol import (
-    PluginPythonEnvironmentManagerProtocol,
 )
 from cyreneAI.core.schema.plugin import (
     PluginManifest,
@@ -36,7 +36,9 @@ class FileSystemPluginLoader:
         path: str | Path,
         *,
         plugin_assets: FileSystemPluginAssets | None = None,
-        python_environment_manager: PluginPythonEnvironmentManagerProtocol | None = None,
+        python_environment_manager: (
+            PluginPythonEnvironmentManagerProtocol | None
+        ) = None,
     ) -> None:
         self._path = Path(path)
         self._plugin_assets = plugin_assets
@@ -47,9 +49,7 @@ class FileSystemPluginLoader:
         加载插件入口对象。
         """
         if not self._path.exists():
-            raise PluginConfigurationError(
-                f"Plugin path {self._path} does not exist"
-            )
+            raise PluginConfigurationError(f"Plugin path {self._path} does not exist")
 
         return [
             _load_plugin_project(
@@ -126,8 +126,7 @@ def _load_plugin_project(
                         "python_environment": {
                             "env_path": str(environment.env_path),
                             "site_paths": [
-                                str(path)
-                                for path in environment.site_paths
+                                str(path) for path in environment.site_paths
                             ],
                             "created": environment.metadata.get("created", False),
                             "environment_key": environment.metadata.get(
@@ -155,15 +154,11 @@ def _load_plugin_project(
             f"Plugin {manifest.plugin_id} object must support configure(manifest)"
         )
     configure(manifest)
-    setattr(plugin, "__cyreneai_plugin_source__", source_info)
-    setattr(
-        plugin,
-        "__cyreneai_plugin_reloader__",
-        FileSystemPluginLoader(
-            project_path,
-            plugin_assets=plugin_assets,
-            python_environment_manager=python_environment_manager,
-        ),
+    plugin.__cyreneai_plugin_source__ = source_info
+    plugin.__cyreneai_plugin_reloader__ = FileSystemPluginLoader(
+        project_path,
+        plugin_assets=plugin_assets,
+        python_environment_manager=python_environment_manager,
     )
     return plugin
 

@@ -12,7 +12,6 @@ from cyreneAI.application.channels.webhook_handler import (
 from cyreneAI.application.runtime import CyreneAIRuntime
 from cyreneAI.core.errors.base import CyreneAIError
 
-
 logger = logging.getLogger(__name__)
 
 

@@ -24,8 +24,8 @@ from cyreneAI.core.schema.plugin import (
     PluginTaskDefinition,
 )
 from cyreneAI.core.schema.server import (
-    PluginInstallReport,
     PluginInspectionReport,
+    PluginInstallReport,
     PluginOperationResult,
     PluginPathRequestBody,
     PluginPermissionAuditReport,
@@ -36,7 +36,6 @@ from cyreneAI.core.schema.server import (
 )
 from cyreneAI.server.dependencies import get_runtime, require_admin
 from cyreneAI.server.plugin_admin import PluginAdminService
-
 
 router = APIRouter(
     prefix="/plugins",

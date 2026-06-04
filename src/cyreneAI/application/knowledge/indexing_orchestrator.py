@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import re
+from dataclasses import dataclass
 from typing import cast
 
 from cyreneAI.application.runtime import CyreneAIRuntime
@@ -118,7 +118,6 @@ def _chunk_documents_by_character(
     chunk_overlap: int,
 ) -> list[DocumentChunk]:
     chunks: list[DocumentChunk] = []
-    step = chunk_size - chunk_overlap
 
     for document in documents:
         chunks.extend(
@@ -353,9 +352,7 @@ def _build_vector_records(
         )
 
     if len(records) != len(embedding_response.embeddings):
-        raise StateError(
-            "Embedding response count does not match indexed chunk count"
-        )
+        raise StateError("Embedding response count does not match indexed chunk count")
 
     return records
 

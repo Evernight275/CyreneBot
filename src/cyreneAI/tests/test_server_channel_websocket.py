@@ -52,7 +52,9 @@ class FakeWebSocketProvider:
 
     async def chat(self, request: ChatRequest) -> ChatResponse:
         self.requests.append(request)
-        text = request.messages[-1].content[0].text if request.messages[-1].content else ""
+        text = (
+            request.messages[-1].content[0].text if request.messages[-1].content else ""
+        )
         return ChatResponse(
             provider_id=request.provider_id,
             model=request.model,

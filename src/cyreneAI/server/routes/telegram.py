@@ -16,7 +16,6 @@ from cyreneAI.core.schema.application import (
 )
 from cyreneAI.server.dependencies import get_runtime
 
-
 TELEGRAM_SECRET_TOKEN_HEADER = "x-telegram-bot-api-secret-token"
 
 router = APIRouter(

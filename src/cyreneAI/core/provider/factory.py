@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Awaitable
+from collections.abc import Awaitable, Callable
 
+from cyreneAI.core.errors.base import ConflictError
 from cyreneAI.core.errors.provider import (
     ProviderNotFoundError,
 )
-from cyreneAI.core.schema.provider import ProviderConfig, ProviderType
 from cyreneAI.core.provider.provider_protocol import ProviderInstanceProtocol
-from cyreneAI.core.errors.base import ConflictError
+from cyreneAI.core.schema.provider import ProviderConfig, ProviderType
 
 ProviderBuilder = Callable[[ProviderConfig], Awaitable[ProviderInstanceProtocol]]
 

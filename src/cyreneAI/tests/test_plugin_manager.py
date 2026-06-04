@@ -24,8 +24,8 @@ from cyreneAI.core.schema.plugin import (
     PluginMiddlewareDefinition,
     PluginMiddlewareRequest,
     PluginMiddlewareType,
-    PluginTaskDefinition,
     PluginStatusReport,
+    PluginTaskDefinition,
 )
 
 
@@ -87,7 +87,9 @@ class _FailingPluginMiddlewareExecutor:
     def __init__(self, error: Exception) -> None:
         self.error = error
 
-    async def execute(self, request: PluginMiddlewareRequest, next_call) -> ChatResponse:
+    async def execute(
+        self, request: PluginMiddlewareRequest, next_call
+    ) -> ChatResponse:
         raise self.error
 
 
@@ -146,8 +148,13 @@ def test_plugin_manager_lists_plugins_and_commands() -> None:
     assert manager.list_plugin_commands(definition.plugin_id) == definition.commands
     assert manager.list_plugin_events(definition.plugin_id) == definition.events
     assert manager.list_plugin_tasks(definition.plugin_id) == definition.tasks
-    assert manager.list_plugin_middlewares(definition.plugin_id) == definition.middlewares
-    assert manager.get_plugin_status(definition.plugin_id).plugin_id == definition.plugin_id
+    assert (
+        manager.list_plugin_middlewares(definition.plugin_id) == definition.middlewares
+    )
+    assert (
+        manager.get_plugin_status(definition.plugin_id).plugin_id
+        == definition.plugin_id
+    )
 
 
 def test_plugin_manager_gets_failed_status_without_definition() -> None:

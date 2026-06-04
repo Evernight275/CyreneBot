@@ -21,13 +21,13 @@ from cyreneAI.core.schema.tool import (
     ToolSafetyProfile,
 )
 from cyreneAI.core.schema.vector import VectorQuery, VectorRecord
-from cyreneAI.infra.adapters.channels.memory import InMemoryBotChannel
-from cyreneAI.infra.adapters.channels.qq import QQBotChannel
-from cyreneAI.infra.adapters.channels.telegram import TelegramBotChannel
 from cyreneAI.infra.adapters.bot_polling_states.memory import (
     InMemoryBotPollingStateStore,
 )
 from cyreneAI.infra.adapters.bot_sessions.memory import InMemoryBotSessionStore
+from cyreneAI.infra.adapters.channels.memory import InMemoryBotChannel
+from cyreneAI.infra.adapters.channels.qq import QQBotChannel
+from cyreneAI.infra.adapters.channels.telegram import TelegramBotChannel
 from cyreneAI.infra.adapters.plugins.filesystem import FileSystemPluginStorage
 from cyreneAI.infra.adapters.vector_stores.memory.store import InMemoryVectorStore
 
@@ -109,9 +109,9 @@ async def _run_build_runtime(tmp_path) -> None:
         _FakeToolExecutor(),
     )
     result = await runtime.tool_manager.execute(
-        _tool_call("call-1", "lookup", "{\"key\":\"value\"}")
+        _tool_call("call-1", "lookup", '{"key":"value"}')
     )
-    assert result.content == "executed:{\"key\":\"value\"}"
+    assert result.content == 'executed:{"key":"value"}'
 
     await runtime.vector_manager.upsert(
         [
@@ -122,9 +122,7 @@ async def _run_build_runtime(tmp_path) -> None:
             )
         ]
     )
-    vector_result = await runtime.vector_manager.search(
-        VectorQuery(vector=[1.0, 0.0])
-    )
+    vector_result = await runtime.vector_manager.search(VectorQuery(vector=[1.0, 0.0]))
     assert vector_result.matches[0].record.content == "alpha"
 
     await runtime.close()
@@ -223,7 +221,7 @@ async def _run_build_runtime_wires_in_process_tool_sandbox() -> None:
             _FakeToolExecutor(),
         )
         result = await runtime.tool_manager.execute(
-            _tool_call("call-1", "sandboxed_lookup", "{\"key\":\"value\"}")
+            _tool_call("call-1", "sandboxed_lookup", '{"key":"value"}')
         )
 
         assert result.metadata["sandbox"]["mode"] == "in_process"
@@ -261,7 +259,7 @@ async def _run_build_runtime_wires_subprocess_tool_sandbox() -> None:
             _FakeToolExecutor(),
         )
         result = await runtime.tool_manager.execute(
-            _tool_call("call-1", "sandboxed_lookup", "{\"key\":\"value\"}")
+            _tool_call("call-1", "sandboxed_lookup", '{"key":"value"}')
         )
 
         assert result.content == "sandbox:value"
@@ -536,9 +534,9 @@ async def _run_build_runtime_loads_plugin_paths(tmp_path) -> None:
         assert [
             plugin.plugin_id for plugin in runtime.plugin_manager.list_plugins()
         ] == ["demo.hello"]
-        assert [
-            command.name for command in runtime.plugin_manager.list_commands()
-        ] == ["hello"]
+        assert [command.name for command in runtime.plugin_manager.list_commands()] == [
+            "hello"
+        ]
     finally:
         await runtime.close()
 
@@ -608,9 +606,7 @@ async def _run_build_runtime_rejects_duplicate_bot_polling_state_config(
 def test_build_cyrene_ai_runtime_rejects_duplicate_bot_polling_state_config(
     tmp_path,
 ) -> None:
-    asyncio.run(
-        _run_build_runtime_rejects_duplicate_bot_polling_state_config(tmp_path)
-    )
+    asyncio.run(_run_build_runtime_rejects_duplicate_bot_polling_state_config(tmp_path))
 
 
 async def _run_build_runtime_rejects_duplicate_bot_session_config() -> None:

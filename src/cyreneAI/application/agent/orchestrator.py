@@ -8,11 +8,11 @@ from uuid import uuid4
 
 from cyreneAI.application.agent.planner import AgentPlanner
 from cyreneAI.application.runtime import CyreneAIRuntime
+from cyreneAI.application.tools.execution_context import use_tool_execution_context
 from cyreneAI.application.tools.execution_policy import (
     build_effective_tool_execution_policy,
     filter_tool_definitions_for_policy,
 )
-from cyreneAI.application.tools.execution_context import use_tool_execution_context
 from cyreneAI.core.errors.base import StateError, UnsupportedError
 from cyreneAI.core.errors.tool import ToolExecutionError
 from cyreneAI.core.provider.provider_protocol import ChatProviderProtocol
@@ -36,7 +36,12 @@ from cyreneAI.core.schema.context import (
     ContextSnapshot,
     ContextWindow,
 )
-from cyreneAI.core.schema.message import ContentPart, ContentPartType, Message, MessageRole
+from cyreneAI.core.schema.message import (
+    ContentPart,
+    ContentPartType,
+    Message,
+    MessageRole,
+)
 from cyreneAI.core.schema.skill import SkillInstructionBundle, SkillSelectionRequest
 from cyreneAI.core.schema.tool import (
     ToolCall,
@@ -45,7 +50,6 @@ from cyreneAI.core.schema.tool import (
     ToolExecutionPolicy,
     ToolResult,
 )
-
 
 logger = logging.getLogger(__name__)
 
@@ -61,9 +65,7 @@ class AgentOrchestrator:
     async def run(self, request: AgentRunRequest) -> AgentRunResult:
         provider = self._get_chat_provider(request.provider_id)
         request_messages = _build_initial_messages(request)
-        history_messages = await self._load_session_history_messages(
-            request.session_id
-        )
+        history_messages = await self._load_session_history_messages(request.session_id)
         context_messages = [
             *history_messages,
             *request_messages,
@@ -85,9 +87,7 @@ class AgentOrchestrator:
                 else None
             ),
         )
-        tools = self._list_tool_definitions(
-            tool_execution_policy=tool_execution_policy
-        )
+        tools = self._list_tool_definitions(tool_execution_policy=tool_execution_policy)
         plan = AgentPlanner().build_plan(
             request=request,
             tools=tools,
@@ -197,7 +197,9 @@ class AgentOrchestrator:
                 tool_results=tool_results,
             )
             if tool_limit_exceeded:
-                final_request = _build_tool_limit_final_response_request(current_request)
+                final_request = _build_tool_limit_final_response_request(
+                    current_request
+                )
                 final_response = await self._chat_provider(provider, final_request)
                 response = _ensure_tool_limit_final_response(
                     request=final_request,
@@ -440,7 +442,9 @@ class AgentOrchestrator:
         )
         for call in executable_calls:
             if self._runtime.tool_manager is None:
-                results.append(_tool_error_result(call, "No tool manager is configured"))
+                results.append(
+                    _tool_error_result(call, "No tool manager is configured")
+                )
                 continue
             with use_tool_execution_context(
                 session_id=_optional_string(request.metadata.get("session_id")),
@@ -486,8 +490,9 @@ class AgentOrchestrator:
                 config=config,
                 error="Agent memory retrieval requires a tool manager",
             )
-        if self._runtime.tool_registry is None or not self._runtime.tool_registry.exists(
-            "search_memory"
+        if (
+            self._runtime.tool_registry is None
+            or not self._runtime.tool_registry.exists("search_memory")
         ):
             return _memory_retrieval_failure(
                 config=config,
@@ -755,11 +760,7 @@ def _build_run_metadata(
     memory_metadata: dict[str, object],
     plan: AgentPlan | None,
 ) -> dict[str, object]:
-    tool_results = [
-        tool_result
-        for step in steps
-        for tool_result in step.tool_results
-    ]
+    tool_results = [tool_result for step in steps for tool_result in step.tool_results]
     return {
         **request.metadata,
         **memory_metadata,
@@ -1061,8 +1062,7 @@ def _append_agent_trace_segment(
         if assistant_message is not None:
             trace_messages.append(assistant_message)
         trace_messages.extend(
-            _tool_result_to_message(result)
-            for result in step.tool_results
+            _tool_result_to_message(result) for result in step.tool_results
         )
 
     if not trace_messages:
@@ -1233,9 +1233,7 @@ def _response_has_text(response: ChatResponse) -> bool:
     if message is None or not message.content:
         return False
     return any(
-        bool(part.text)
-        for part in message.content
-        if part.type == ContentPartType.TEXT
+        bool(part.text) for part in message.content if part.type == ContentPartType.TEXT
     )
 
 

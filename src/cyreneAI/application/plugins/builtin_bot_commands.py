@@ -8,6 +8,12 @@ from cyreneAI.application.runtime import CyreneAIRuntime
 from cyreneAI.core.errors.base import CyreneAIError, NotFoundError, ValidationError
 from cyreneAI.core.errors.plugin import PluginInputError
 from cyreneAI.core.plugin.plugin_protocol import PluginRegistryProtocol
+from cyreneAI.core.schema.agent import (
+    AgentRunHistoryItem,
+    AgentRunHistoryListResult,
+    AgentRunTraceItem,
+    AgentRunTraceResult,
+)
 from cyreneAI.core.schema.bot import (
     BotAction,
     BotActionType,
@@ -15,24 +21,17 @@ from cyreneAI.core.schema.bot import (
     BotEvent,
     BotMessage,
 )
-from cyreneAI.core.schema.agent import (
-    AgentRunHistoryItem,
-    AgentRunHistoryListResult,
-    AgentRunTraceItem,
-    AgentRunTraceResult,
-)
 from cyreneAI.core.schema.message import ContentPart, ContentPartType
 from cyreneAI.core.schema.plugin import (
+    PluginCapability,
     PluginCommandArgumentDefinition,
     PluginCommandArgumentKind,
-    PluginCapability,
     PluginCommandDefinition,
     PluginCommandRequest,
     PluginCommandResult,
     PluginDefinition,
 )
 from cyreneAI.core.schema.provider import ProviderConfig
-
 
 BUILTIN_BOT_COMMANDS_PLUGIN_ID = "builtin.bot_commands"
 
@@ -182,9 +181,7 @@ class BuiltinBotCommandExecutor:
                         )
                     continue
                 if definition.builtin:
-                    builtin_lines.append(
-                        _render_command_help_line(command, definition)
-                    )
+                    builtin_lines.append(_render_command_help_line(command, definition))
                 else:
                     third_party_lines.append(
                         _render_command_help_line(command, definition)
@@ -442,9 +439,10 @@ class BuiltinBotCommandExecutor:
                 f"Context snapshots deleted: {deleted_count}."
             )
 
-        context_session_id = _metadata_string(
-            request.metadata.get("context_session_id")
-        ) or _request_event(request).session_id
+        context_session_id = (
+            _metadata_string(request.metadata.get("context_session_id"))
+            or _request_event(request).session_id
+        )
         deleted_count = await self._clear_context_session(context_session_id)
         if deleted_count is None:
             return "Context manager is not configured."
@@ -481,9 +479,7 @@ class BuiltinBotCommandExecutor:
             or _request_event(request).session_id
         )
         try:
-            context_session_id = await self._resolve_agent_context_session_id(
-                request
-            )
+            context_session_id = await self._resolve_agent_context_session_id(request)
             result = await AgentRunHistoryReader(self._runtime).latest_run(
                 context_session_id
             )
@@ -556,8 +552,7 @@ class BuiltinBotCommandExecutor:
         if store is not None:
             try:
                 saved_configs = {
-                    config.provider_id: config
-                    for config in await store.list_configs()
+                    config.provider_id: config for config in await store.list_configs()
                 }
             except CyreneAIError as exc:
                 return f"Provider list failed: {exc}"
@@ -594,8 +589,7 @@ class BuiltinBotCommandExecutor:
         lines = ["Provider catalog:"]
         for provider in providers:
             capabilities = ",".join(
-                capability.value
-                for capability in (provider.capabilities or [])
+                capability.value for capability in (provider.capabilities or [])
             )
             suffix = f" capabilities={capabilities}" if capabilities else ""
             lines.append(
@@ -712,13 +706,9 @@ class BuiltinBotCommandExecutor:
         if manager is None:
             return "Plugins are disabled."
         definitions = {
-            definition.plugin_id: definition
-            for definition in manager.list_plugins()
+            definition.plugin_id: definition for definition in manager.list_plugins()
         }
-        statuses = {
-            status.plugin_id: status
-            for status in manager.list_statuses()
-        }
+        statuses = {status.plugin_id: status for status in manager.list_statuses()}
         plugin_ids = sorted(set(definitions) | set(statuses))
         if not plugin_ids:
             return "No plugins registered."
@@ -751,16 +741,14 @@ class BuiltinBotCommandExecutor:
             return "Plugins are disabled."
         plugin_filter = args[0] if args else None
         definitions = {
-            definition.plugin_id: definition
-            for definition in manager.list_plugins()
+            definition.plugin_id: definition for definition in manager.list_plugins()
         }
-        statuses = {
-            status.plugin_id: status
-            for status in manager.list_statuses()
-        }
+        statuses = {status.plugin_id: status for status in manager.list_statuses()}
         plugin_ids = sorted(set(definitions) | set(statuses))
         if plugin_filter is not None:
-            plugin_ids = [plugin_id for plugin_id in plugin_ids if plugin_id == plugin_filter]
+            plugin_ids = [
+                plugin_id for plugin_id in plugin_ids if plugin_id == plugin_filter
+            ]
             if not plugin_ids:
                 return f"Unknown plugin: {plugin_filter}"
 
@@ -1218,10 +1206,7 @@ def _render_agent_run_trace_result(
         lines.append(f"last_assistant: {_truncate_line(run.last_assistant, 160)}")
     if result.trace_items:
         lines.append("trace:")
-        lines.extend(
-            _render_agent_run_trace_line(item)
-            for item in result.trace_items
-        )
+        lines.extend(_render_agent_run_trace_line(item) for item in result.trace_items)
     return "\n".join(lines)
 
 

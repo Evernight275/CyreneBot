@@ -71,7 +71,7 @@ async def _run_tool_manager_execution() -> None:
     call = ToolCall(
         id="call-1",
         name="lookup",
-        arguments="{\"key\":\"value\"}",
+        arguments='{"key":"value"}',
     )
 
     result = await manager.execute(call)
@@ -80,7 +80,7 @@ async def _run_tool_manager_execution() -> None:
     assert executor.calls == [call]
     assert result.call_id == "call-1"
     assert result.name == "lookup"
-    assert result.content == "executed:{\"key\":\"value\"}"
+    assert result.content == 'executed:{"key":"value"}'
     assert result.metadata["tool_policy"]["policy_enforced"] is True
     assert result.metadata["tool_policy"]["risk_level"] == "trusted"
 
@@ -112,11 +112,11 @@ async def _run_tool_manager_rejects_invalid_arguments() -> None:
 
     invalid_calls = [
         ToolCall(id="call-1", name="lookup", arguments="{}"),
-        ToolCall(id="call-2", name="lookup", arguments="{\"key\": 1}"),
+        ToolCall(id="call-2", name="lookup", arguments='{"key": 1}'),
         ToolCall(
             id="call-3",
             name="lookup",
-            arguments="{\"key\":\"value\",\"extra\":true}",
+            arguments='{"key":"value","extra":true}',
         ),
     ]
 
@@ -222,9 +222,7 @@ async def _run_tool_manager_blocks_sandbox_required_tools() -> None:
 
     assert result.metadata["tool_policy"]["sandbox_required"] is True
     assert result.metadata["tool_policy"]["allow_sandbox_bypass"] is True
-    assert executor.calls == [
-        ToolCall(id="call-2", name="run_process", arguments="{}")
-    ]
+    assert executor.calls == [ToolCall(id="call-2", name="run_process", arguments="{}")]
 
 
 def test_tool_manager_blocks_sandbox_required_tools() -> None:
@@ -255,9 +253,7 @@ async def _run_tool_manager_delegates_sandbox_required_tools() -> None:
     assert result.metadata["sandbox"]["mode"] == "fake"
     assert result.metadata["tool_policy"]["sandbox_used"] is True
     assert result.metadata["tool_policy"]["sandbox_mode"] == "fake"
-    assert executor.calls == [
-        ToolCall(id="call-1", name="run_process", arguments="{}")
-    ]
+    assert executor.calls == [ToolCall(id="call-1", name="run_process", arguments="{}")]
 
 
 def test_tool_manager_delegates_sandbox_required_tools() -> None:
@@ -277,7 +273,7 @@ async def _run_tool_manager_truncates_oversized_result() -> None:
     manager = ToolManager(registry)
 
     result = await manager.execute(
-        ToolCall(id="call-1", name="lookup", arguments="{\"key\":\"value\"}"),
+        ToolCall(id="call-1", name="lookup", arguments='{"key":"value"}'),
     )
 
     assert result.content == "execu"

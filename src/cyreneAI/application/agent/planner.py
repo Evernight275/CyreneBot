@@ -10,7 +10,7 @@ from cyreneAI.core.schema.agent import (
     AgentPlanStep,
     AgentRunRequest,
 )
-from cyreneAI.core.schema.message import ContentPart, ContentPartType, Message
+from cyreneAI.core.schema.message import ContentPartType, Message
 from cyreneAI.core.schema.skill import SkillInstructionBundle
 from cyreneAI.core.schema.tool import ToolDefinition
 
@@ -137,7 +137,11 @@ def _step_tool_names(
     memory_query: str | None,
 ) -> list[str]:
     lowered = objective.lower()
-    if memory_query is not None and "memory" in lowered and "search_memory" in selected_tool_names:
+    if (
+        memory_query is not None
+        and "memory" in lowered
+        and "search_memory" in selected_tool_names
+    ):
         return ["search_memory"]
     if "tool" in lowered:
         return selected_tool_names
@@ -189,7 +193,9 @@ def _selected_skill_names(skill_bundle: SkillInstructionBundle | None) -> list[s
         return []
     names = skill_bundle.metadata.get("skills")
     if isinstance(names, list):
-        return [name for name in cast(list[object], names) if isinstance(name, str) and name]
+        return [
+            name for name in cast(list[object], names) if isinstance(name, str) and name
+        ]
     return [instruction.name for instruction in skill_bundle.instructions]
 
 

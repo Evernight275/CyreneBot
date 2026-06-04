@@ -17,7 +17,6 @@ from cyreneAI.core.schema.application import (
     ApplicationImageGenerationRequest,
     ApplicationImageGenerationResult,
 )
-from cyreneAI.core.schema.provider import ProviderInfo, ProviderModel
 from cyreneAI.core.schema.plugin import (
     PluginCommandRequest,
     PluginEventRequest,
@@ -25,6 +24,7 @@ from cyreneAI.core.schema.plugin import (
     PluginPermission,
     PluginTaskRequest,
 )
+from cyreneAI.core.schema.provider import ProviderInfo, ProviderModel
 
 
 class PluginDependency:

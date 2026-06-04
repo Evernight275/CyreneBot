@@ -63,7 +63,9 @@ async def _run_real_embedding() -> None:
         assert response.model
         assert len(response.embeddings) == 2
         assert response.embeddings[0].embedding
-        assert all(isinstance(value, float) for value in response.embeddings[0].embedding)
+        assert all(
+            isinstance(value, float) for value in response.embeddings[0].embedding
+        )
 
         print()
         print("openai-compatible real embedding response:")

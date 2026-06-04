@@ -43,7 +43,9 @@ class FakeEmbeddingProvider:
 
     async def embed(self, request: EmbeddingRequest) -> EmbeddingResponse:
         self.requests.append(request)
-        embeddings = [] if self.empty else [EmbeddingVector(index=0, embedding=[1.0, 0.0])]
+        embeddings = (
+            [] if self.empty else [EmbeddingVector(index=0, embedding=[1.0, 0.0])]
+        )
         return EmbeddingResponse(
             provider_id=request.provider_id,
             model=request.model,

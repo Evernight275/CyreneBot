@@ -148,9 +148,7 @@ def map_tool_config(tool_choice: ToolChoice | None) -> dict[str, Any] | None:
         }
     }
     if tool_choice.mode == "tool" and tool_choice.name:
-        config["function_calling_config"]["allowed_function_names"] = [
-            tool_choice.name
-        ]
+        config["function_calling_config"]["allowed_function_names"] = [tool_choice.name]
     return config
 
 
@@ -192,7 +190,11 @@ def map_google_genai_response(provider_id: str, response: Any) -> ChatResponse:
         tool_calls=tool_calls,
         finish_reason=map_finish_reason(candidate, tool_calls),
         usage=map_usage(getattr(response, "usage_metadata", None)),
-        raw=response.model_dump(mode="json") if hasattr(response, "model_dump") else None,
+        raw=(
+            response.model_dump(mode="json")
+            if hasattr(response, "model_dump")
+            else None
+        ),
     )
 
 
@@ -226,7 +228,9 @@ def map_tool_arguments(arguments: Any) -> str | None:
     return json.dumps(arguments, ensure_ascii=False)
 
 
-def map_finish_reason(candidate: Any | None, tool_calls: list[ToolCall]) -> ChatFinishReason:
+def map_finish_reason(
+    candidate: Any | None, tool_calls: list[ToolCall]
+) -> ChatFinishReason:
     if tool_calls:
         return ChatFinishReason.TOOL_CALLS
     reason = getattr(candidate, "finish_reason", None)
@@ -271,7 +275,9 @@ def map_google_image_generation_request(
 
 
 def should_use_google_generate_images(request: ImageGenerationRequest) -> bool:
-    api_type = request.metadata.get("google_api_type") or request.metadata.get("api_type")
+    api_type = request.metadata.get("google_api_type") or request.metadata.get(
+        "api_type"
+    )
     if isinstance(api_type, str):
         normalized_api_type = api_type.strip().lower()
         if normalized_api_type in {"generate_images", "imagen"}:
@@ -314,9 +320,7 @@ def _map_response_modalities(request: ImageGenerationRequest) -> list[str]:
     raw_modalities = request.metadata.get("response_modalities")
     if isinstance(raw_modalities, list):
         modalities = [
-            str(item).upper()
-            for item in cast(list[Any], raw_modalities)
-            if item
+            str(item).upper() for item in cast(list[Any], raw_modalities) if item
         ]
         if modalities:
             return modalities
@@ -346,7 +350,9 @@ def map_google_image_generation_response(
     model: str,
     response: Any,
 ) -> ImageGenerationResponse:
-    generated_images = cast(list[Any], getattr(response, "generated_images", None) or [])
+    generated_images = cast(
+        list[Any], getattr(response, "generated_images", None) or []
+    )
     return ImageGenerationResponse(
         provider_id=provider_id,
         model=model,
@@ -358,7 +364,11 @@ def map_google_image_generation_response(
             )
             if image is not None
         ],
-        raw=response.model_dump(mode="json") if hasattr(response, "model_dump") else None,
+        raw=(
+            response.model_dump(mode="json")
+            if hasattr(response, "model_dump")
+            else None
+        ),
     )
 
 
@@ -389,7 +399,9 @@ def map_google_content_image_generation_response(
     revised_prompt = "\n".join(text_parts) or None
     if revised_prompt:
         images = [
-            image.model_copy(update={"revised_prompt": image.revised_prompt or revised_prompt})
+            image.model_copy(
+                update={"revised_prompt": image.revised_prompt or revised_prompt}
+            )
             for image in images
         ]
 
@@ -397,7 +409,11 @@ def map_google_content_image_generation_response(
         provider_id=provider_id,
         model=model,
         images=images,
-        raw=response.model_dump(mode="json") if hasattr(response, "model_dump") else None,
+        raw=(
+            response.model_dump(mode="json")
+            if hasattr(response, "model_dump")
+            else None
+        ),
     )
 
 

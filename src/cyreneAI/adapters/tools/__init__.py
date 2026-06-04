@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from cyreneAI.adapters.tools.python import define_python_tool
 from cyreneAI.infra.adapters.tools.http.executor import HttpToolExecutor
 from cyreneAI.infra.adapters.tools.mcp_stdio import register_mcp_stdio_tools
 from cyreneAI.infra.adapters.tools.python_callable.executor import (
@@ -18,7 +19,6 @@ from cyreneAI.infra.adapters.tools.shell import (
 )
 from cyreneAI.infra.adapters.tools.subprocess.executor import SubprocessToolExecutor
 from cyreneAI.infra.adapters.tools.web_search import register_web_search_tool
-from cyreneAI.adapters.tools.python import define_python_tool
 
 __all__ = [
     "HttpToolExecutor",

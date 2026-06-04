@@ -3,14 +3,13 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator, Awaitable, Callable, Generator
 from typing import Any, TypeAlias
 
+from cyreneAI.core.schema.chat import ChatResponse
 from cyreneAI.core.schema.plugin import (
     PluginCommandResult,
     PluginEventResult,
     PluginTaskResult,
 )
-from cyreneAI.core.schema.chat import ChatResponse
 from cyreneAI.core.schema.tool import ToolResult
-
 
 PluginCommandHandlerResult: TypeAlias = str | PluginCommandResult
 PluginCommandGenerator: TypeAlias = Generator[

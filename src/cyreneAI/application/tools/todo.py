@@ -180,7 +180,9 @@ def _parse_arguments(call: ToolCall) -> dict[str, Any]:
     try:
         parsed = json.loads(call.arguments)
     except json.JSONDecodeError as exc:
-        raise ToolExecutionError("Tool arguments must be valid JSON", cause=exc) from exc
+        raise ToolExecutionError(
+            "Tool arguments must be valid JSON", cause=exc
+        ) from exc
     if not isinstance(parsed, dict):
         raise ToolExecutionError("Tool arguments must be a JSON object")
     return cast(dict[str, Any], parsed)

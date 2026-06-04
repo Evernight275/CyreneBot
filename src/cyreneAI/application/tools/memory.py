@@ -9,7 +9,6 @@ from uuid import uuid4
 
 from cyreneAI.application.runtime import CyreneAIRuntime
 from cyreneAI.application.tools.execution_context import get_tool_execution_context
-from cyreneAI.core.errors.base import StateError
 from cyreneAI.core.errors.tool import ToolExecutionError
 from cyreneAI.core.schema.tool import (
     ToolCall,
@@ -22,7 +21,6 @@ from cyreneAI.core.schema.tool import (
 from cyreneAI.core.schema.vector import VectorQuery, VectorRecord
 from cyreneAI.core.tool.tool_protocol import ToolExecutorProtocol, ToolRegistryProtocol
 from cyreneAI.core.vector.manager import VectorManager
-
 
 _MEMORY_KIND = "agent_memory"
 _DEFAULT_NAMESPACE = "default"
@@ -312,7 +310,9 @@ def _parse_arguments(call: ToolCall) -> dict[str, Any]:
     try:
         parsed = json.loads(call.arguments)
     except json.JSONDecodeError as exc:
-        raise ToolExecutionError("Tool arguments must be valid JSON", cause=exc) from exc
+        raise ToolExecutionError(
+            "Tool arguments must be valid JSON", cause=exc
+        ) from exc
     if not isinstance(parsed, dict):
         raise ToolExecutionError("Tool arguments must be a JSON object")
     return cast(dict[str, Any], parsed)

@@ -23,7 +23,6 @@ from cyreneAI.core.schema.plugin import (
     PluginTaskStatus,
 )
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -371,9 +370,7 @@ class ApplicationPluginTaskScheduler:
         key = (plugin_id, normalized_name)
         definition = self._definitions.get(key)
         if definition is None:
-            raise PluginNotFoundError(
-                f"插件任务 {plugin_id}:{normalized_name} 不存在"
-            )
+            raise PluginNotFoundError(f"插件任务 {plugin_id}:{normalized_name} 不存在")
         return definition
 
     def _forget_task(self, task_id: str) -> None:

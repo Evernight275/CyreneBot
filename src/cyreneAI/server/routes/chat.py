@@ -29,10 +29,7 @@ async def chat(
                 session_id=body.metadata.get("session_id", "http"),
                 provider_id=body.provider_id,
                 model=body.model,
-                messages=[
-                    message.to_core_message()
-                    for message in body.messages
-                ],
+                messages=[message.to_core_message() for message in body.messages],
                 temperature=body.temperature,
                 max_tokens=body.max_tokens,
                 tool_choice=body.tool_choice,

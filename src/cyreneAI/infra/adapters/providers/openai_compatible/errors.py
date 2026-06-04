@@ -1,34 +1,72 @@
-from openai import (
-    APIError as OpenAIAPIError,
-    APIResponseValidationError as OpenAIResponseValidationError,
-    APIStatusError as OpenAIStatusError,
-    APIConnectionError as OpenAIConnectionError,
-    APITimeoutError as OpenAITimeoutError,
-    BadRequestError as OpenAIBadRequestError,
-    AuthenticationError as OpenAIAuthenticationError,
-    OAuthError as OpenAIOAuthError,
-    PermissionDeniedError as OpenAIPermissionDeniedError,
-    NotFoundError as OpenAINotFoundError,
-    ConflictError as OpenAIConflictError,
-    UnprocessableEntityError as OpenAIUnprocessableEntityError,
-    RateLimitError as OpenAIRateLimitError,
-    InternalServerError as OpenAIServerError,
-    LengthFinishReasonError as OpenAILengthFinishReasonError,
-    ContentFilterFinishReasonError as OpenAIContentFilterFinishReasonError,
-    InvalidWebhookSignatureError as OpenAIInvalidWebhookSignatureError,
-    WebSocketConnectionClosedError as OpenAIWebSocketConnectionClosedError,
-    WebSocketQueueFullError as OpenAIWebSocketQueueFullError,
-)
 import json
 from typing import Any, NoReturn, cast
+
+from openai import (
+    APIConnectionError as OpenAIConnectionError,
+)
+from openai import (
+    APIError as OpenAIAPIError,
+)
+from openai import (
+    APIResponseValidationError as OpenAIResponseValidationError,
+)
+from openai import (
+    APIStatusError as OpenAIStatusError,
+)
+from openai import (
+    APITimeoutError as OpenAITimeoutError,
+)
+from openai import (
+    AuthenticationError as OpenAIAuthenticationError,
+)
+from openai import (
+    BadRequestError as OpenAIBadRequestError,
+)
+from openai import (
+    ConflictError as OpenAIConflictError,
+)
+from openai import (
+    ContentFilterFinishReasonError as OpenAIContentFilterFinishReasonError,
+)
+from openai import (
+    InternalServerError as OpenAIServerError,
+)
+from openai import (
+    InvalidWebhookSignatureError as OpenAIInvalidWebhookSignatureError,
+)
+from openai import (
+    LengthFinishReasonError as OpenAILengthFinishReasonError,
+)
+from openai import (
+    NotFoundError as OpenAINotFoundError,
+)
+from openai import (
+    OAuthError as OpenAIOAuthError,
+)
+from openai import (
+    PermissionDeniedError as OpenAIPermissionDeniedError,
+)
+from openai import (
+    RateLimitError as OpenAIRateLimitError,
+)
+from openai import (
+    UnprocessableEntityError as OpenAIUnprocessableEntityError,
+)
+from openai import (
+    WebSocketConnectionClosedError as OpenAIWebSocketConnectionClosedError,
+)
+from openai import (
+    WebSocketQueueFullError as OpenAIWebSocketQueueFullError,
+)
+
 from cyreneAI.core.errors.provider import (
-    ProviderError,
-    ProviderUnavailableError,
-    ProviderRequestError,
-    ProviderResponseError,
-    ProviderRequestTimeoutError,
-    ProviderRateLimitError,
     ProviderAuthorizationError,
+    ProviderError,
+    ProviderRateLimitError,
+    ProviderRequestError,
+    ProviderRequestTimeoutError,
+    ProviderResponseError,
+    ProviderUnavailableError,
 )
 
 

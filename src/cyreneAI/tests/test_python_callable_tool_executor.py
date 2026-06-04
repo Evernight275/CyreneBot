@@ -17,7 +17,7 @@ from cyreneAI.infra.adapters.tools.python_callable.executor import (
 def test_parse_tool_arguments_accepts_empty_and_json_object() -> None:
     assert parse_tool_arguments(None) == {}
     assert parse_tool_arguments("") == {}
-    assert parse_tool_arguments("{\"key\":\"value\"}") == {"key": "value"}
+    assert parse_tool_arguments('{"key":"value"}') == {"key": "value"}
 
 
 def test_parse_tool_arguments_rejects_invalid_json() -> None:
@@ -42,7 +42,7 @@ async def _run_sync_callable_tool() -> ToolResult:
         ToolCall(
             id="call-1",
             name="lookup",
-            arguments="{\"key\":\"answer\"}",
+            arguments='{"key":"answer"}',
         )
     )
 
@@ -52,7 +52,7 @@ def test_python_callable_tool_executor_works_with_core_tool_manager() -> None:
 
     assert result.call_id == "call-1"
     assert result.name == "lookup"
-    assert result.content == "{\"value\": \"answer\"}"
+    assert result.content == '{"value": "answer"}'
 
 
 async def _run_async_callable_tool() -> ToolResult:
@@ -64,7 +64,7 @@ async def _run_async_callable_tool() -> ToolResult:
         ToolCall(
             id="call-1",
             name="lookup",
-            arguments="{\"key\":\"answer\"}",
+            arguments='{"key":"answer"}',
         )
     )
 

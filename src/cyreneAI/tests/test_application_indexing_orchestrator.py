@@ -207,7 +207,9 @@ def test_indexing_orchestrator_chunks_documents_by_paragraph() -> None:
         assert result.chunks[0].metadata["end"] == 35
         assert result.chunks[1].metadata["start"] == 37
         assert result.chunks[1].metadata["end"] == 43
-        assert provider.requests[0].metadata["chunk_strategy"] == ChunkStrategy.PARAGRAPH
+        assert (
+            provider.requests[0].metadata["chunk_strategy"] == ChunkStrategy.PARAGRAPH
+        )
         assert result.metadata["chunk_strategy"] == ChunkStrategy.PARAGRAPH
 
     asyncio.run(run())

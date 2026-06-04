@@ -222,9 +222,7 @@ def _format_retrieval_metadata(match: VectorSearchMatch) -> str:
     metadata = _retrieval_metadata(match)
     if not metadata:
         return ""
-    return "metadata: " + ", ".join(
-        f"{key}={value}" for key, value in metadata.items()
-    )
+    return "metadata: " + ", ".join(f"{key}={value}" for key, value in metadata.items())
 
 
 def _compact_retrieval_metadata(match: VectorSearchMatch) -> str:

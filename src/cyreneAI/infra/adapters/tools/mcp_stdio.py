@@ -230,7 +230,9 @@ class _MCPStdioSession:
         while True:
             line = await process.stdout.readline()
             if not line:
-                raise ToolExecutionError(f"MCP server {self._config.name} closed stdout")
+                raise ToolExecutionError(
+                    f"MCP server {self._config.name} closed stdout"
+                )
             if line in {b"\r\n", b"\n"}:
                 break
             text = line.decode("ascii", errors="replace").strip()
@@ -244,7 +246,9 @@ class _MCPStdioSession:
         try:
             parsed = json.loads(body.decode("utf-8"))
         except json.JSONDecodeError as exc:
-            raise ToolExecutionError("MCP message body is not valid JSON", cause=exc) from exc
+            raise ToolExecutionError(
+                "MCP message body is not valid JSON", cause=exc
+            ) from exc
         if not isinstance(parsed, dict):
             raise ToolExecutionError("MCP message body must be an object")
         return cast(dict[str, Any], parsed)

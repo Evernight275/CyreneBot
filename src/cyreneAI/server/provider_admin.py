@@ -28,10 +28,7 @@ class ProviderAdminService:
 
     async def list_configs(self) -> list[ProviderConfigSummary]:
         store = self._provider_config_store()
-        return [
-            _config_summary(config)
-            for config in await store.list_configs()
-        ]
+        return [_config_summary(config) for config in await store.list_configs()]
 
     async def list_statuses(self) -> list[ProviderAdminStatus]:
         provider_ids = set(self._runtime.provider_manager.list_running_ids())
@@ -39,8 +36,7 @@ class ProviderAdminService:
         configs: dict[str, ProviderConfig] = {}
         if store is not None:
             configs = {
-                config.provider_id: config
-                for config in await store.list_configs()
+                config.provider_id: config for config in await store.list_configs()
             }
             provider_ids.update(configs)
 
@@ -51,7 +47,9 @@ class ProviderAdminService:
 
     async def inspect(self, provider_id: str) -> ProviderAdminStatus:
         saved_config = await self._get_saved_config_or_none(provider_id)
-        if saved_config is None and not self._runtime.provider_manager.exists(provider_id):
+        if saved_config is None and not self._runtime.provider_manager.exists(
+            provider_id
+        ):
             raise NotFoundError(f"Provider not found: {provider_id}")
         return self._build_status(provider_id, saved_config=saved_config)
 
@@ -201,9 +199,7 @@ class ProviderAdminService:
             enabled=display_config.enabled if display_config is not None else False,
             info=info,
             config=(
-                _config_summary(display_config)
-                if display_config is not None
-                else None
+                _config_summary(display_config) if display_config is not None else None
             ),
         )
 

@@ -12,7 +12,6 @@ from cyreneAI.infra.adapters.plugins.filesystem import (
     FileSystemPluginLoader,
 )
 
-
 PROJECT_ROOT = Path(__file__).parents[3]
 DEMO_PLUGIN_PATH = PROJECT_ROOT / "examples" / "plugins" / "demo_hello"
 
@@ -50,10 +49,12 @@ def test_demo_plugin_project_loads_and_handles_command() -> None:
         )
         try:
             assert runtime.plugin_manager is not None
-            assert [plugin.plugin_id for plugin in runtime.plugin_manager.list_plugins()] == [
-                "demo.hello"
-            ]
-            assert [command.name for command in runtime.plugin_manager.list_commands()] == [
+            assert [
+                plugin.plugin_id for plugin in runtime.plugin_manager.list_plugins()
+            ] == ["demo.hello"]
+            assert [
+                command.name for command in runtime.plugin_manager.list_commands()
+            ] == [
                 "hello",
                 "providers",
                 "asset",

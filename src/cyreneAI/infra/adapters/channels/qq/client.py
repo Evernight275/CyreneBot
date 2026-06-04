@@ -26,9 +26,7 @@ class QQBotClient:
         client: httpx.AsyncClient | None = None,
     ) -> None:
         if not token and not (app_id and app_secret):
-            raise BotConfigurationError(
-                "QQ bot token or app_id/app_secret is required"
-            )
+            raise BotConfigurationError("QQ bot token or app_id/app_secret is required")
         self._token = token
         self._app_id = app_id
         self._app_secret = app_secret
@@ -48,9 +46,7 @@ class QQBotClient:
         if not isinstance(route, str) or not isinstance(route_id, str):
             raise QQBotAPIError("QQ send payload must include _route and _route_id")
         request_payload = {
-            key: value
-            for key, value in payload.items()
-            if not key.startswith("_")
+            key: value for key, value in payload.items() if not key.startswith("_")
         }
         return await self.request(
             _send_message_path(route=route, route_id=route_id),
@@ -186,8 +182,8 @@ def _send_message_path(*, route: str, route_id: str) -> str:
 def _parse_response_body(response: httpx.Response) -> Any:
     try:
         return response.json()
-    except ValueError:
-        raise QQBotAPIError("QQ response body must be JSON")
+    except ValueError as exc:
+        raise QQBotAPIError("QQ response body must be JSON") from exc
 
 
 def _qq_status_error_message(

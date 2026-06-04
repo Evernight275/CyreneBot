@@ -4,6 +4,7 @@ import asyncio
 
 import pytest
 
+from cyreneAI.api import CyreneBot, Depends
 from cyreneAI.application.bootstrap import build_cyrene_ai_runtime
 from cyreneAI.core.bot.registry import BotChannelRegistry
 from cyreneAI.core.bot.session_manager import BotSessionManager
@@ -13,7 +14,6 @@ from cyreneAI.core.errors.plugin import (
     PluginConfigurationError,
     PluginStateError,
 )
-from cyreneAI.core.context.builder import ContextWindowBuilder
 from cyreneAI.core.plugin.registry import PluginRegistry
 from cyreneAI.core.provider.factory import ProviderFactory
 from cyreneAI.core.provider.manager import ProviderManager
@@ -31,7 +31,6 @@ from cyreneAI.core.schema.message import (
     Message,
     MessageRole,
 )
-from cyreneAI.core.schema.provider import ProviderConfig, ProviderInfo, ProviderType
 from cyreneAI.core.schema.plugin import (
     PluginCapability,
     PluginCommandDefinition,
@@ -44,10 +43,10 @@ from cyreneAI.core.schema.plugin import (
     PluginManifest,
     PluginPermission,
 )
+from cyreneAI.core.schema.provider import ProviderConfig, ProviderInfo, ProviderType
 from cyreneAI.core.schema.tool import ToolCall, ToolDefinition, ToolResult
 from cyreneAI.infra.adapters.bot_sessions.memory import InMemoryBotSessionStore
 from cyreneAI.infra.adapters.channels.memory import InMemoryBotChannel
-from cyreneAI.api import CyreneBot, Depends
 
 
 class _HelloExecutor:
@@ -98,7 +97,7 @@ class _FakeLLMProvider:
                         type=ContentPartType.TEXT,
                         text=f"llm:{prompt}",
                     )
-                ]
+                ],
             ),
             finish_reason=ChatFinishReason.STOP,
         )
@@ -257,9 +256,9 @@ def test_plugin_host_loads_third_party_command_from_loader() -> None:
         try:
             assert runtime.plugin_manager is not None
             assert runtime.plugin_host is not None
-            assert [item.plugin_id for item in runtime.plugin_manager.list_plugins()] == [
-                "thirdparty.hello"
-            ]
+            assert [
+                item.plugin_id for item in runtime.plugin_manager.list_plugins()
+            ] == ["thirdparty.hello"]
             assert [item.name for item in runtime.plugin_manager.list_commands()] == [
                 "hello"
             ]
@@ -1264,9 +1263,7 @@ class _ConflictHelloPlugin:
 def test_plugin_host_conflict_without_fail_fast_keeps_other_plugins() -> None:
     async def run() -> None:
         runtime = await build_cyrene_ai_runtime(
-            plugin_loaders=[
-                _FakePluginLoader(_HelloPlugin(), _ConflictHelloPlugin())
-            ],
+            plugin_loaders=[_FakePluginLoader(_HelloPlugin(), _ConflictHelloPlugin())],
             plugin_fail_fast=False,
             register_builtin_plugins=False,
         )
@@ -1327,9 +1324,7 @@ def test_plugin_host_conflict_without_fail_fast_cleans_up_tool() -> None:
 
     async def run() -> None:
         runtime = await build_cyrene_ai_runtime(
-            plugin_loaders=[
-                _FakePluginLoader(_HelloPlugin(), ConflictToolPlugin())
-            ],
+            plugin_loaders=[_FakePluginLoader(_HelloPlugin(), ConflictToolPlugin())],
             plugin_fail_fast=False,
             register_builtin_plugins=False,
         )
@@ -1377,9 +1372,7 @@ def test_plugin_host_register_error_without_fail_fast_keeps_other_plugins() -> N
     async def run() -> None:
         runtime = await build_cyrene_ai_runtime(
             plugin_registry=BrokenRegisterRegistry(),
-            plugin_loaders=[
-                _FakePluginLoader(BrokenRegisterPlugin(), _HelloPlugin())
-            ],
+            plugin_loaders=[_FakePluginLoader(BrokenRegisterPlugin(), _HelloPlugin())],
             plugin_fail_fast=False,
             register_builtin_plugins=False,
         )

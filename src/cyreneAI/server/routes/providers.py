@@ -5,7 +5,12 @@ from typing import Any, NoReturn, cast
 from fastapi import APIRouter, Depends, HTTPException
 
 from cyreneAI.application.runtime import CyreneAIRuntime
-from cyreneAI.core.errors.base import ConflictError, CyreneAIError, NotFoundError, StateError
+from cyreneAI.core.errors.base import (
+    ConflictError,
+    CyreneAIError,
+    NotFoundError,
+    StateError,
+)
 from cyreneAI.core.errors.provider import ProviderError
 from cyreneAI.core.schema.provider import (
     ProviderAdminStatus,

@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 from cyreneAI.core.schema.base import CyreneAISchema
 
 

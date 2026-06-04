@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from cyreneAI.api.plugin import (
+    Arg,
+    Choice,
     CyreneBot,
     CyreneRouter,
     Depends,
-    Arg,
-    Choice,
     Flag,
     Option,
     PluginCommandAsyncGenerator,

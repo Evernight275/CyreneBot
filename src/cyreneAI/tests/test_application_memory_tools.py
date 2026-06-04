@@ -3,8 +3,8 @@ from __future__ import annotations
 import asyncio
 import json
 
-from cyreneAI.bootstrap import build_cyrene_ai_runtime
 from cyreneAI.application.tools.execution_context import use_tool_execution_context
+from cyreneAI.bootstrap import build_cyrene_ai_runtime
 from cyreneAI.core.schema.tool import ToolCall
 from cyreneAI.infra.adapters.vector_stores.memory.store import InMemoryVectorStore
 

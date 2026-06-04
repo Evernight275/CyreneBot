@@ -8,8 +8,8 @@ import pytest
 from openai.types import CreateEmbeddingResponse
 from openai.types.chat import ChatCompletion
 
-from cyreneAI.core.schema.chat import ChatFinishReason, ChatRequest
 from cyreneAI.core.errors.provider import ProviderConfigurationError, ProviderError
+from cyreneAI.core.schema.chat import ChatFinishReason, ChatRequest
 from cyreneAI.core.schema.embedding import EmbeddingRequest
 from cyreneAI.core.schema.message import (
     ContentPart,
@@ -177,7 +177,7 @@ async def _run_chat_with_tool_call() -> None:
                             "type": "function",
                             "function": {
                                 "name": "lookup",
-                                "arguments": "{\"key\":\"value\"}",
+                                "arguments": '{"key":"value"}',
                             },
                         }
                     ],
@@ -248,7 +248,7 @@ async def _run_chat_with_tool_call() -> None:
     assert response.finish_reason == ChatFinishReason.TOOL_CALLS
     assert response.tool_calls[0].id == "call-1"
     assert response.tool_calls[0].name == "lookup"
-    assert response.tool_calls[0].arguments == "{\"key\":\"value\"}"
+    assert response.tool_calls[0].arguments == '{"key":"value"}'
 
     await instance.close()
     assert client.closed is True
@@ -317,7 +317,7 @@ def _request_with_reasoning_content() -> ChatRequest:
                     ToolCall(
                         id="call-1",
                         name="lookup",
-                        arguments="{\"key\":\"value\"}",
+                        arguments='{"key":"value"}',
                     )
                 ],
                 metadata={
@@ -427,7 +427,9 @@ def test_openai_compatible_instance_lists_string_models() -> None:
 
 def test_openai_compatible_instance_translates_model_list_errors() -> None:
     async def run() -> None:
-        error = AttributeError("'str' object has no attribute '_set_private_attributes'")
+        error = AttributeError(
+            "'str' object has no attribute '_set_private_attributes'"
+        )
         instance = OpenAICompatibleProviderInstance(
             config=ProviderConfig(
                 provider_id="test",

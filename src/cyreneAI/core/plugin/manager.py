@@ -29,7 +29,6 @@ from cyreneAI.core.schema.plugin import (
     PluginTaskDefinition,
 )
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -102,7 +101,9 @@ class PluginManager:
         definition = self.get_plugin(plugin_id)
         if not definition.enabled:
             return []
-        return [middleware for middleware in definition.middlewares if middleware.enabled]
+        return [
+            middleware for middleware in definition.middlewares if middleware.enabled
+        ]
 
     def get_plugin_status(self, plugin_id: str) -> PluginStatusReport:
         """
@@ -179,9 +180,7 @@ class PluginManager:
         """
         _, command, executor = self._registry.resolve_command(request.command.name)
         if command.admin_required and not request.is_admin:
-            raise PluginAuthorizationError(
-                f"插件命令 {command.name} 需要管理员权限"
-            )
+            raise PluginAuthorizationError(f"插件命令 {command.name} 需要管理员权限")
 
         try:
             return await executor.execute(request)

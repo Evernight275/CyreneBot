@@ -1,8 +1,9 @@
 from typing import Protocol
-from cyreneAI.core.schema.provider import ProviderInfo, ProviderConfig, ProviderModel
+
 from cyreneAI.core.schema.chat import ChatRequest, ChatResponse
 from cyreneAI.core.schema.embedding import EmbeddingRequest, EmbeddingResponse
 from cyreneAI.core.schema.image import ImageGenerationRequest, ImageGenerationResponse
+from cyreneAI.core.schema.provider import ProviderConfig, ProviderInfo, ProviderModel
 
 
 class ProviderInstanceProtocol(Protocol):

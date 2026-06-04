@@ -33,10 +33,7 @@ class FileSystemDocumentLoader:
         """
         documents = [
             document
-            for document in (
-                self._load_file(path)
-                for path in self._iter_files()
-            )
+            for document in (self._load_file(path) for path in self._iter_files())
             if document is not None
         ]
         _validate_document_count(
@@ -56,9 +53,7 @@ class FileSystemDocumentLoader:
 
         pattern = "**/*" if self._recursive else "*"
         return sorted(
-            path
-            for path in self._path.glob(pattern)
-            if self._is_supported_file(path)
+            path for path in self._path.glob(pattern) if self._is_supported_file(path)
         )
 
     def _is_supported_file(self, path: Path) -> bool:

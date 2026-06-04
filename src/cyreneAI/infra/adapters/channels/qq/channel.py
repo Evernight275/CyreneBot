@@ -14,7 +14,6 @@ from cyreneAI.infra.adapters.channels.qq.mapper import (
 )
 from cyreneAI.infra.adapters.channels.qq.websocket import QQBotWebSocketUpdateSource
 
-
 QQWebSocketUpdateHandler = Callable[[dict[str, Any]], Awaitable[None]]
 
 
@@ -38,9 +37,7 @@ class QQBotChannel:
         websocket_source: QQBotWebSocketUpdateSource | None = None,
     ) -> None:
         if bot_client is None and not token and not (app_id and app_secret):
-            raise BotConfigurationError(
-                "QQ bot token or app_id/app_secret is required"
-            )
+            raise BotConfigurationError("QQ bot token or app_id/app_secret is required")
         self.channel_id = channel_id
         self._client = bot_client or QQBotClient(
             token=token,

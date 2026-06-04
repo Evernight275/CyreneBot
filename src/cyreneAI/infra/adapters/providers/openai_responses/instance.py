@@ -6,6 +6,7 @@ from cyreneAI.core.errors.provider import ProviderConfigurationError
 from cyreneAI.core.schema.chat import ChatRequest, ChatResponse
 from cyreneAI.core.schema.image import ImageGenerationRequest, ImageGenerationResponse
 from cyreneAI.core.schema.provider import ProviderConfig, ProviderInfo, ProviderModel
+from cyreneAI.infra.adapters.providers.model_mapper import map_provider_model
 from cyreneAI.infra.adapters.providers.openai_responses.errors import raise_openai_error
 from cyreneAI.infra.adapters.providers.openai_responses.mapper import (
     map_image_generation_request,
@@ -13,7 +14,6 @@ from cyreneAI.infra.adapters.providers.openai_responses.mapper import (
     map_responses_request,
     map_responses_response,
 )
-from cyreneAI.infra.adapters.providers.model_mapper import map_provider_model
 
 
 class OpenAIResponsesProviderInstance:
@@ -24,7 +24,9 @@ class OpenAIResponsesProviderInstance:
         client: Any | None = None,
     ) -> None:
         if not config.api_key:
-            raise ProviderConfigurationError("openai-responses provider 必需提供api_key")
+            raise ProviderConfigurationError(
+                "openai-responses provider 必需提供api_key"
+            )
 
         self.config = config
         self.info = info

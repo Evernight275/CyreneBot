@@ -119,9 +119,7 @@ class ContextWindow(ContextBase):
     """
 
     window_id: str
-    segments: list[ContextSegment] = Field(
-        default_factory=_empty_context_segments
-    )
+    segments: list[ContextSegment] = Field(default_factory=_empty_context_segments)
     budget: ContextBudget | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -154,7 +152,5 @@ class ContextBuildResult(ContextBase):
     """
 
     window: ContextWindow
-    dropped_items: list[ContextItem] = Field(
-        default_factory=_empty_context_items
-    )
+    dropped_items: list[ContextItem] = Field(default_factory=_empty_context_items)
     metadata: dict[str, Any] = Field(default_factory=dict)

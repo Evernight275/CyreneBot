@@ -21,7 +21,12 @@ from cyreneAI.core.schema.context import (
     ContextSnapshot,
     ContextWindow,
 )
-from cyreneAI.core.schema.message import ContentPart, ContentPartType, Message, MessageRole
+from cyreneAI.core.schema.message import (
+    ContentPart,
+    ContentPartType,
+    Message,
+    MessageRole,
+)
 
 
 class FakeContextStore:
@@ -39,9 +44,7 @@ class FakeContextStore:
 
     async def list_snapshots(self, session_id: str) -> list[ContextSnapshot]:
         return [
-            snapshot
-            for snapshot in self.snapshots
-            if snapshot.session_id == session_id
+            snapshot for snapshot in self.snapshots if snapshot.session_id == session_id
         ]
 
     async def delete_snapshot(self, snapshot_id: str) -> None:
@@ -60,9 +63,7 @@ class FakeContextStore:
             ]
         )
         self.snapshots = [
-            snapshot
-            for snapshot in self.snapshots
-            if snapshot.session_id != session_id
+            snapshot for snapshot in self.snapshots if snapshot.session_id != session_id
         ]
         return deleted_count
 

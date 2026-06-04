@@ -1,6 +1,8 @@
 from __future__ import annotations
+
 from enum import StrEnum
 from typing import Any, Literal
+
 from pydantic import Field
 
 from cyreneAI.core.schema.base import CyreneAISchema

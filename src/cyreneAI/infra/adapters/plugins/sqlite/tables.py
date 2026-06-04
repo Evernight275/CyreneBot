@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import Column, DateTime, JSON, MetaData, String, Table
+from sqlalchemy import JSON, Column, DateTime, MetaData, String, Table
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 metadata = MetaData()

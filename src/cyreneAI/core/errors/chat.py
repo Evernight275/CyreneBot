@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from cyreneAI.core.errors.base import (
     CyreneAIError,
-    ValidationError,
     RequestError,
     ResponseError,
+    ValidationError,
 )
 
 

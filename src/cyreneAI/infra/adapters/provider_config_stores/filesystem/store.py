@@ -20,10 +20,7 @@ class FileSystemProviderConfigStore:
 
     async def list_configs(self) -> list[ProviderConfig]:
         data = self._load()
-        return [
-            ProviderConfig.model_validate(item)
-            for item in data.values()
-        ]
+        return [ProviderConfig.model_validate(item) for item in data.values()]
 
     async def get_config(self, provider_id: str) -> ProviderConfig:
         data = self._load()
@@ -71,12 +68,12 @@ class FileSystemProviderConfigStore:
                     raise StateError("Provider config store entries must be objects")
                 config = ProviderConfig.model_validate(item)
                 if config.provider_id != provider_id:
-                    raise StateError(
-                        "Provider config store key must match provider_id"
-                    )
+                    raise StateError("Provider config store key must match provider_id")
                 data[provider_id] = cast(dict[str, Any], item)
         except PydanticValidationError as exc:
-            raise StateError("Provider config store contains invalid config", cause=exc) from exc
+            raise StateError(
+                "Provider config store contains invalid config", cause=exc
+            ) from exc
         return data
 
     def _save(self, data: dict[str, dict[str, Any]]) -> None:

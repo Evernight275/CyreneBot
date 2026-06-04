@@ -126,7 +126,7 @@ def test_map_google_genai_response_builds_core_response() -> None:
     assert response.message.tool_calls[0].id == "lookup"
     assert response.tool_calls[0].id == "lookup"
     assert response.tool_calls[0].name == "lookup"
-    assert response.tool_calls[0].arguments == "{\"key\": \"value\"}"
+    assert response.tool_calls[0].arguments == '{"key": "value"}'
 
 
 def test_map_google_genai_request_preserves_tool_feedback_turn() -> None:
@@ -140,7 +140,7 @@ def test_map_google_genai_request_preserves_tool_feedback_turn() -> None:
                     ToolCall(
                         id="call-1",
                         name="lookup",
-                        arguments="{\"key\":\"value\"}",
+                        arguments='{"key":"value"}',
                     )
                 ],
             ),

@@ -45,10 +45,10 @@ from cyreneAI.core.schema.tool import (
     ToolResult,
     ToolSafetyProfile,
 )
-from cyreneAI.core.tool.manager import ToolManager
-from cyreneAI.core.tool.registry import ToolRegistry
 from cyreneAI.core.skill.manager import SkillManager
 from cyreneAI.core.skill.registry import SkillRegistry
+from cyreneAI.core.tool.manager import ToolManager
+from cyreneAI.core.tool.registry import ToolRegistry
 
 
 def _message(role: MessageRole, text: str) -> Message:
@@ -150,9 +150,7 @@ class FakeContextStore:
 
     async def list_snapshots(self, session_id: str) -> list[ContextSnapshot]:
         return [
-            snapshot
-            for snapshot in self.snapshots
-            if snapshot.session_id == session_id
+            snapshot for snapshot in self.snapshots if snapshot.session_id == session_id
         ]
 
     async def delete_snapshot(self, snapshot_id: str) -> None:
@@ -171,9 +169,7 @@ class FakeContextStore:
             ]
         )
         self.snapshots = [
-            snapshot
-            for snapshot in self.snapshots
-            if snapshot.session_id != session_id
+            snapshot for snapshot in self.snapshots if snapshot.session_id != session_id
         ]
         return deleted_count
 
@@ -217,7 +213,7 @@ async def _run_agent_executes_tool_and_returns_final_response() -> None:
     tool_call = ToolCall(
         id="call-1",
         name="lookup",
-        arguments="{\"query\":\"delta\"}",
+        arguments='{"query":"delta"}',
     )
     provider = FakeChatProvider(
         [
@@ -264,7 +260,9 @@ async def _run_agent_executes_tool_and_returns_final_response() -> None:
     assert result.steps[0].tool_calls == [tool_call]
     assert result.steps[0].tool_results[0].content == "executed:lookup"
     assert result.context_snapshot.session_id == "session-1"
-    assert result.context_snapshot.window.segments[-1].role == ContextSegmentRole.WORKING
+    assert (
+        result.context_snapshot.window.segments[-1].role == ContextSegmentRole.WORKING
+    )
     assert result.context_snapshot.metadata["completed"] is True
     assert result.context_snapshot.metadata["stop_reason"] == "final_response"
     assert isinstance(result.context_snapshot.metadata["finished_at"], str)
@@ -344,7 +342,9 @@ async def _run_agent_builds_prompt_from_context_window() -> None:
     ]
     assert context_store.snapshots == [result.context_snapshot]
     assert result.context_snapshot.window.segments[1].segment_id == "retrieved"
-    assert result.context_snapshot.window.segments[-1].role == ContextSegmentRole.WORKING
+    assert (
+        result.context_snapshot.window.segments[-1].role == ContextSegmentRole.WORKING
+    )
 
 
 def test_agent_orchestrator_builds_prompt_from_context_window() -> None:
@@ -445,7 +445,9 @@ async def _run_agent_stops_after_max_steps() -> None:
 
     assert result.completed is False
     assert result.stop_reason == AgentStopReason.MAX_STEPS
-    assert result.response.message == _message(MessageRole.ASSISTANT, "final after tool")
+    assert result.response.message == _message(
+        MessageRole.ASSISTANT, "final after tool"
+    )
     assert len(result.steps) == 2
     assert result.steps[0].tool_calls == [tool_call]
     assert result.steps[0].tool_results[0].name == "lookup"
@@ -461,8 +463,8 @@ def test_agent_orchestrator_stops_after_max_steps() -> None:
 
 
 async def _run_agent_completes_multi_step_tool_loop() -> None:
-    first_call = ToolCall(id="call-1", name="lookup", arguments="{\"step\":1}")
-    second_call = ToolCall(id="call-2", name="lookup", arguments="{\"step\":2}")
+    first_call = ToolCall(id="call-1", name="lookup", arguments='{"step":1}')
+    second_call = ToolCall(id="call-2", name="lookup", arguments='{"step":2}')
     provider = FakeChatProvider(
         [
             ChatResponse(
@@ -513,7 +515,9 @@ async def _run_agent_completes_multi_step_tool_loop() -> None:
 
     assert result.completed is True
     assert result.stop_reason == AgentStopReason.FINAL_RESPONSE
-    assert result.response.message == _message(MessageRole.ASSISTANT, "multi-step final")
+    assert result.response.message == _message(
+        MessageRole.ASSISTANT, "multi-step final"
+    )
     assert len(result.steps) == 3
     assert executor.calls == [first_call, second_call]
     assert result.metadata["tool_call_count"] == 2

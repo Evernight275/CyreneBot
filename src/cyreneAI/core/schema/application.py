@@ -5,13 +5,13 @@ from typing import Any, Literal
 
 from pydantic import Field, model_validator
 
-from cyreneAI.core.schema.base import CyreneAISchema
 from cyreneAI.core.schema.agent import (
     AgentMemoryRetrievalConfig,
     AgentPlanningConfig,
     AgentRunResult,
     AgentToolSelectionConfig,
 )
+from cyreneAI.core.schema.base import CyreneAISchema
 from cyreneAI.core.schema.bot import (
     BotAction,
     BotConversationState,

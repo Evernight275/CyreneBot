@@ -7,8 +7,8 @@ import re
 import sys
 from contextlib import suppress
 from pathlib import Path
-from types import ModuleType
 from textwrap import dedent
+from types import ModuleType
 from typing import Any, Sequence
 
 from cyreneAI.api.testing import PluginTestClient
@@ -29,7 +29,6 @@ from cyreneAI.core.schema.plugin import (
     PluginManifest,
     PluginSignatureStatus,
 )
-
 
 PLUGIN_TEMPLATE_NAMES = ("basic", "storage", "task", "event", "proactive", "llm")
 
@@ -289,11 +288,14 @@ def generate_plugin_documentation(
     _check_manifest_capabilities(manifest, plugin)
     client = _build_test_client(plugin, manifest)
     if output_format == "json":
-        return json.dumps(
-            _documentation_payload(project_path, manifest, client),
-            ensure_ascii=False,
-            indent=2,
-        ) + "\n"
+        return (
+            json.dumps(
+                _documentation_payload(project_path, manifest, client),
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n"
+        )
     if output_format != "markdown":
         raise PluginCheckError(f"unsupported docs format: {output_format}")
     return _documentation_markdown(manifest, client)
@@ -453,9 +455,13 @@ def _check_plugin_setup(plugin: object, manifest: PluginManifest) -> None:
     try:
         _build_test_client(plugin, manifest)
     except PluginError as exc:
-        raise PluginCheckError(f"plugin {manifest.plugin_id} setup failed: {exc}") from exc
+        raise PluginCheckError(
+            f"plugin {manifest.plugin_id} setup failed: {exc}"
+        ) from exc
     except Exception as exc:
-        raise PluginCheckError(f"plugin {manifest.plugin_id} setup failed: {exc}") from exc
+        raise PluginCheckError(
+            f"plugin {manifest.plugin_id} setup failed: {exc}"
+        ) from exc
 
 
 def _build_test_client(plugin: object, manifest: PluginManifest) -> PluginTestClient:
@@ -616,8 +622,7 @@ def _template_capabilities_permissions(template: str) -> tuple[list[str], list[s
 
 def _main_text(template: str) -> str:
     if template == "storage":
-        return dedent(
-            '''\
+        return dedent("""\
             from cyreneAI.api import CyreneBot, Depends
 
 
@@ -633,11 +638,9 @@ def _main_text(template: str) -> str:
             @plugin.command
             async def recall(storage=Depends("storage")) -> str:
                 return await storage.get("name", "Nobody yet.")
-            '''
-        )
+            """)
     if template == "task":
-        return dedent(
-            '''\
+        return dedent("""\
             from cyreneAI.api import CyreneBot, Depends
             from cyreneAI.core.schema.plugin import PluginTaskResult
 
@@ -658,11 +661,9 @@ def _main_text(template: str) -> str:
             @plugin.task("cleanup")
             async def cleanup(request) -> PluginTaskResult:
                 return PluginTaskResult(metadata={"payload": request.payload})
-            '''
-        )
+            """)
     if template == "event":
-        return dedent(
-            '''\
+        return dedent("""\
             from cyreneAI.api import CyreneBot
             from cyreneAI.core.schema.plugin import PluginEventResult
 
@@ -673,11 +674,9 @@ def _main_text(template: str) -> str:
             @plugin.event("message")
             async def on_message(event) -> PluginEventResult:
                 return PluginEventResult(metadata={"text": event.text})
-            '''
-        )
+            """)
     if template == "proactive":
-        return dedent(
-            '''\
+        return dedent("""\
             from cyreneAI.api import CyreneBot, Depends
 
 
@@ -708,11 +707,9 @@ def _main_text(template: str) -> str:
                 session_id = request.payload["session_id"]
                 last_text = await storage.get("last_text", "")
                 await outbox.send(session_id, text=f"Following up on: {last_text}")
-            '''
-        )
+            """)
     if template == "llm":
-        return dedent(
-            '''\
+        return dedent("""\
             from cyreneAI.api import CyreneBot, Depends, Rest
 
 
@@ -722,10 +719,8 @@ def _main_text(template: str) -> str:
             @plugin.command
             async def ask(prompt: Rest[str], llm=Depends("llm")) -> str:
                 return await llm.chat(prompt)
-            '''
-        )
-    return dedent(
-        f'''\
+            """)
+    return dedent("""\
         from cyreneAI.api import CyreneBot
 
 
@@ -734,15 +729,13 @@ def _main_text(template: str) -> str:
 
         @plugin.command
         async def hello(name: str = "world") -> str:
-            return f"Hello, {{name}}!"
-        '''
-    )
+            return f"Hello, {name}!"
+        """)
 
 
 def _test_text(template: str) -> str:
     if template == "storage":
-        return dedent(
-            '''\
+        return dedent("""\
             import asyncio
 
             from main import plugin
@@ -760,11 +753,9 @@ def _test_text(template: str) -> str:
                     assert recall.has_text("Cyrene")
 
                 asyncio.run(run())
-            '''
-        )
+            """)
     if template == "task":
-        return dedent(
-            '''\
+        return dedent("""\
             import asyncio
 
             from main import plugin
@@ -781,11 +772,9 @@ def _test_text(template: str) -> str:
                     assert client.scheduled_tasks[0]["task_name"] == "cleanup"
 
                 asyncio.run(run())
-            '''
-        )
+            """)
     if template == "event":
-        return dedent(
-            '''\
+        return dedent("""\
             import asyncio
 
             from main import plugin
@@ -801,11 +790,9 @@ def _test_text(template: str) -> str:
                     assert result.metadata == [{"text": "hello"}]
 
                 asyncio.run(run())
-            '''
-        )
+            """)
     if template == "proactive":
-        return dedent(
-            '''\
+        return dedent("""\
             import asyncio
 
             from main import plugin
@@ -826,11 +813,9 @@ def _test_text(template: str) -> str:
                     assert client.sent_messages[0]["text"] == "Following up on: hello"
 
                 asyncio.run(run())
-            '''
-        )
+            """)
     if template == "llm":
-        return dedent(
-            '''\
+        return dedent("""\
             import asyncio
 
             from main import plugin
@@ -854,10 +839,8 @@ def _test_text(template: str) -> str:
                     assert result.has_text("fake: hello")
 
                 asyncio.run(run())
-            '''
-        )
-    return dedent(
-        '''\
+            """)
+    return dedent("""\
         import asyncio
 
         from main import plugin
@@ -872,13 +855,11 @@ def _test_text(template: str) -> str:
                 assert result.has_text("Hello, Cyrene!")
 
             asyncio.run(run())
-        '''
-    )
+        """)
 
 
 def _readme_text(name: str, template: str) -> str:
-    return dedent(
-        f'''\
+    return dedent(f"""\
         # {name}
 
         CyreneAI {template} plugin project.
@@ -888,8 +869,7 @@ def _readme_text(name: str, template: str) -> str:
         cyrene-plugin docs .
         pytest
         ```
-        '''
-    )
+        """)
 
 
 def _documentation_payload(
@@ -900,21 +880,11 @@ def _documentation_payload(
     return {
         "project_path": str(project_path),
         "plugin": manifest.to_definition().model_dump(mode="json"),
-        "commands": [
-            command.model_dump(mode="json")
-            for command in client.commands
-        ],
-        "tasks": [
-            task.model_dump(mode="json")
-            for task in client.tasks
-        ],
-        "events": [
-            event.model_dump(mode="json")
-            for event in client.events
-        ],
+        "commands": [command.model_dump(mode="json") for command in client.commands],
+        "tasks": [task.model_dump(mode="json") for task in client.tasks],
+        "events": [event.model_dump(mode="json") for event in client.events],
         "middlewares": [
-            middleware.model_dump(mode="json")
-            for middleware in client.middlewares
+            middleware.model_dump(mode="json") for middleware in client.middlewares
         ],
     }
 
@@ -1022,8 +992,7 @@ def _inline_list(values: Any) -> str:
 
 def _pyproject_text(plugin_id: str) -> str:
     package_name = plugin_id.replace("_", "-")
-    return dedent(
-        f'''\
+    return dedent(f"""\
         [project]
         name = "{package_name}"
         version = "0.1.0"
@@ -1035,8 +1004,7 @@ def _pyproject_text(plugin_id: str) -> str:
 
         [tool.pytest.ini_options]
         pythonpath = ["."]
-        '''
-    )
+        """)
 
 
 if __name__ == "__main__":

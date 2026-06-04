@@ -4,10 +4,9 @@ from cyreneAI.core.schema.bot import BotCommand
 from cyreneAI.core.schema.chat import ChatRequest
 from cyreneAI.core.schema.message import Message, MessageRole
 from cyreneAI.core.schema.plugin import (
+    PluginCapability,
     PluginCommandArgumentDefinition,
     PluginCommandArgumentKind,
-    PluginLifecycleStatus,
-    PluginCapability,
     PluginCommandDefinition,
     PluginCommandRequest,
     PluginCommandResult,
@@ -17,6 +16,7 @@ from cyreneAI.core.schema.plugin import (
     PluginEventRequest,
     PluginEventResult,
     PluginEventType,
+    PluginLifecycleStatus,
     PluginManifest,
     PluginMessageReceipt,
     PluginMiddlewareDefinition,

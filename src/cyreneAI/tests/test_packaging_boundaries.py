@@ -4,7 +4,6 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
@@ -21,9 +20,7 @@ def test_setuptools_uses_package_whitelist() -> None:
 
     assert project["name"] == "cyreneai-plugin-sdk"
     assert project["dependencies"] == ["pydantic"]
-    assert pyproject["project"]["scripts"] == {
-        "cyrene-plugin": "cyreneAI.api.cli:main"
-    }
+    assert pyproject["project"]["scripts"] == {"cyrene-plugin": "cyreneAI.api.cli:main"}
     assert setuptools_config["include-package-data"] is False
     assert package_find["where"] == ["src"]
     assert package_find["include"] == [

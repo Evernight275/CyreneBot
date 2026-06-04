@@ -48,7 +48,9 @@ async def _use_vector_store(store: VectorStoreProtocol) -> None:
     await store.upsert([record])
 
     assert await store.get("record-1") == record
-    assert (await store.search(VectorQuery(vector=[1.0, 0.0]))).matches[0].record == record
+    assert (await store.search(VectorQuery(vector=[1.0, 0.0]))).matches[
+        0
+    ].record == record
 
     await store.delete("record-1")
     assert store.records == {}

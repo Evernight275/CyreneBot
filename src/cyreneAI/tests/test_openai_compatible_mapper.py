@@ -41,7 +41,7 @@ def test_map_chat_request_builds_openai_compatible_payload() -> None:
                     ToolCall(
                         id="call-1",
                         name="lookup",
-                        arguments="{\"key\":\"value\"}",
+                        arguments='{"key":"value"}',
                     )
                 ],
                 metadata={
@@ -49,7 +49,7 @@ def test_map_chat_request_builds_openai_compatible_payload() -> None:
                         "reasoning_content": "thinking before tool call",
                     }
                 },
-            )
+            ),
         ],
         temperature=0,
         max_tokens=16,
@@ -84,7 +84,7 @@ def test_map_chat_request_builds_openai_compatible_payload() -> None:
                     "type": "function",
                     "function": {
                         "name": "lookup",
-                        "arguments": "{\"key\":\"value\"}",
+                        "arguments": '{"key":"value"}',
                     },
                 }
             ],
@@ -130,9 +130,10 @@ def test_map_chat_request_filters_empty_assistant_messages() -> None:
         model="test-model",
         messages=[
             Message(role=MessageRole.ASSISTANT),
-            Message(role=MessageRole.USER, content=[
-                ContentPart(type=ContentPartType.TEXT, text="hello")
-            ]),
+            Message(
+                role=MessageRole.USER,
+                content=[ContentPart(type=ContentPartType.TEXT, text="hello")],
+            ),
         ],
     )
 
@@ -166,7 +167,7 @@ def test_map_chat_response_builds_core_response() -> None:
                             "type": "function",
                             "function": {
                                 "name": "lookup",
-                                "arguments": "{\"key\":\"value\"}",
+                                "arguments": '{"key":"value"}',
                             },
                         }
                     ],
@@ -202,7 +203,7 @@ def test_map_chat_response_builds_core_response() -> None:
     }
     assert response.tool_calls[0].id == "call-1"
     assert response.tool_calls[0].name == "lookup"
-    assert response.tool_calls[0].arguments == "{\"key\":\"value\"}"
+    assert response.tool_calls[0].arguments == '{"key":"value"}'
 
 
 def test_map_chat_response_normalizes_content_and_extracts_think_tags() -> None:

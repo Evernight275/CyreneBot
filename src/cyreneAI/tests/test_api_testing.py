@@ -18,7 +18,12 @@ from cyreneAI.api import (
 )
 from cyreneAI.core.errors.plugin import PluginAuthorizationError
 from cyreneAI.core.schema.chat import ChatRequest, ChatResponse
-from cyreneAI.core.schema.message import ContentPart, ContentPartType, Message, MessageRole
+from cyreneAI.core.schema.message import (
+    ContentPart,
+    ContentPartType,
+    Message,
+    MessageRole,
+)
 from cyreneAI.core.schema.plugin import PluginEventResult, PluginTaskResult
 
 
@@ -151,7 +156,7 @@ def test_plugin_test_client_binds_choice_arguments() -> None:
         plugin = CyreneBot()
 
         @plugin.command("/run")
-        async def run_mode(mode: Choice["fast", "safe"] = "safe"):
+        async def run_mode(mode: Choice["fast", "safe"] = "safe"):  # noqa: F821
             return mode
 
         client = PluginTestClient(plugin)
@@ -531,7 +536,9 @@ def test_plugin_test_client_combines_command_event_task_and_middleware() -> None
 
         @plugin.middleware("llm")
         async def trace(request, next, storage=Depends("storage")):
-            await storage.set("middleware_session", request.chat_request.metadata["session_id"])
+            await storage.set(
+                "middleware_session", request.chat_request.metadata["session_id"]
+            )
             return await next(request)
 
         client = PluginTestClient(plugin)

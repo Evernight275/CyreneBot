@@ -24,9 +24,7 @@ from cyreneAI.core.schema.usage import TokenUsage
 
 def map_responses_request(request: ChatRequest) -> dict[str, Any]:
     input_items = [
-        item
-        for message in request.messages
-        for item in map_input_message(message)
+        item for message in request.messages for item in map_input_message(message)
     ]
     payload: dict[str, Any] = {
         "model": request.model,
@@ -97,8 +95,7 @@ def drop_unanswered_function_calls(items: list[dict[str, Any]]) -> list[dict[str
     return [
         item
         for item in items
-        if item.get("type") != "function_call"
-        or item.get("call_id") in output_call_ids
+        if item.get("type") != "function_call" or item.get("call_id") in output_call_ids
     ]
 
 
@@ -183,7 +180,11 @@ def map_responses_response(provider_id: str, response: Any) -> ChatResponse:
         tool_calls=tool_calls,
         finish_reason=map_finish_reason(response, tool_calls),
         usage=map_usage(getattr(response, "usage", None)),
-        raw=response.model_dump(mode="json") if hasattr(response, "model_dump") else None,
+        raw=(
+            response.model_dump(mode="json")
+            if hasattr(response, "model_dump")
+            else None
+        ),
     )
 
 
@@ -274,5 +275,9 @@ def map_image_generation_response(
             )
             for index, item in enumerate(data)
         ],
-        raw=response.model_dump(mode="json") if hasattr(response, "model_dump") else None,
+        raw=(
+            response.model_dump(mode="json")
+            if hasattr(response, "model_dump")
+            else None
+        ),
     )

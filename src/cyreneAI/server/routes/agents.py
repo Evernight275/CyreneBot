@@ -73,10 +73,7 @@ async def run_agent(
                 provider_id=body.provider_id,
                 model=body.model,
                 goal=body.goal,
-                messages=[
-                    message.to_core_message()
-                    for message in body.messages
-                ],
+                messages=[message.to_core_message() for message in body.messages],
                 context_budget=body.context_budget,
                 additional_context_segments=body.additional_context_segments,
                 max_steps=body.max_steps,

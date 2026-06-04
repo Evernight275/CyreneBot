@@ -20,7 +20,6 @@ from cyreneAI.core.schema.tool import (
 )
 from cyreneAI.core.tool.tool_protocol import ToolExecutorProtocol, ToolRegistryProtocol
 
-
 _MAX_TEXT_LENGTH = 200_000
 _MAX_JSON_TEXT_LENGTH = 200_000
 _MAX_JSON_PATH_SEGMENTS = 64
@@ -220,7 +219,9 @@ class _TextSearchToolExecutor:
             arguments.get("case_sensitive"),
             default=False,
         )
-        max_matches = _positive_int(arguments.get("max_matches"), default=20, maximum=100)
+        max_matches = _positive_int(
+            arguments.get("max_matches"), default=20, maximum=100
+        )
         matches = (
             _regex_matches(
                 text=text,
@@ -264,7 +265,9 @@ def _parse_arguments(call: ToolCall) -> dict[str, Any]:
     try:
         parsed = json.loads(call.arguments)
     except json.JSONDecodeError as exc:
-        raise ToolExecutionError("Tool arguments must be valid JSON", cause=exc) from exc
+        raise ToolExecutionError(
+            "Tool arguments must be valid JSON", cause=exc
+        ) from exc
     if not isinstance(parsed, dict):
         raise ToolExecutionError("Tool arguments must be a JSON object")
     return cast(dict[str, Any], parsed)
@@ -400,7 +403,9 @@ def _evaluate_expression(expression: str) -> float | int:
     try:
         parsed = ast.parse(expression, mode="eval")
     except SyntaxError as exc:
-        raise ToolExecutionError("expression must be valid arithmetic", cause=exc) from exc
+        raise ToolExecutionError(
+            "expression must be valid arithmetic", cause=exc
+        ) from exc
     node_count = sum(1 for _ in ast.walk(parsed))
     if node_count > _MAX_CALC_NODES:
         raise ToolExecutionError("expression is too complex")
@@ -525,7 +530,9 @@ def _regex_matches(
     try:
         pattern = re.compile(query, flags=flags)
     except re.error as exc:
-        raise ToolExecutionError("query must be a valid regular expression", cause=exc) from exc
+        raise ToolExecutionError(
+            "query must be a valid regular expression", cause=exc
+        ) from exc
     matches: list[dict[str, Any]] = []
     for match in pattern.finditer(text):
         matches.append(_match_payload(text, match.start(), match.end()))

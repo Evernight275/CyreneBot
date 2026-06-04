@@ -8,7 +8,9 @@ from datetime import UTC, datetime
 from cyreneAI.application.agent.orchestrator import AgentOrchestrator
 from cyreneAI.application.agent.request_builder import build_agent_run_request
 from cyreneAI.application.chat.orchestrator import ChatOrchestrator
-from cyreneAI.application.generation.image_orchestrator import ImageGenerationOrchestrator
+from cyreneAI.application.generation.image_orchestrator import (
+    ImageGenerationOrchestrator,
+)
 from cyreneAI.application.runtime import CyreneAIRuntime
 from cyreneAI.core.errors.base import ConflictError
 from cyreneAI.core.errors.plugin import (
@@ -18,10 +20,11 @@ from cyreneAI.core.errors.plugin import (
     PluginNotFoundError,
     PluginStateError,
 )
+from cyreneAI.core.plugin.install_policy import PluginInstallPolicy
 from cyreneAI.core.plugin.plugin_protocol import (
-    PluginExecutorProtocol,
     PluginAssetsNamespaceProtocol,
     PluginEventExecutorProtocol,
+    PluginExecutorProtocol,
     PluginLLMNamespaceProtocol,
     PluginLoaderProtocol,
     PluginMiddlewareExecutorProtocol,
@@ -34,20 +37,24 @@ from cyreneAI.core.plugin.plugin_protocol import (
     PluginTaskExecutorProtocol,
     PluginTaskNamespaceProtocol,
 )
-from cyreneAI.core.plugin.install_policy import PluginInstallPolicy
-from cyreneAI.core.schema.application import (
-    ApplicationChatRequest,
-    ApplicationChatResult,
-    ApplicationImageGenerationRequest,
-    ApplicationImageGenerationResult,
-)
 from cyreneAI.core.schema.agent import (
     AgentMemoryRetrievalConfig,
     AgentPlanningConfig,
     AgentRunResult,
     AgentToolSelectionConfig,
 )
-from cyreneAI.core.schema.message import ContentPart, ContentPartType, Message, MessageRole
+from cyreneAI.core.schema.application import (
+    ApplicationChatRequest,
+    ApplicationChatResult,
+    ApplicationImageGenerationRequest,
+    ApplicationImageGenerationResult,
+)
+from cyreneAI.core.schema.message import (
+    ContentPart,
+    ContentPartType,
+    Message,
+    MessageRole,
+)
 from cyreneAI.core.schema.plugin import (
     PluginCapability,
     PluginCommandDefinition,
@@ -61,7 +68,6 @@ from cyreneAI.core.schema.plugin import (
     PluginManifest,
     PluginMiddlewareDefinition,
     PluginMiddlewareRequest,
-    PluginMiddlewareType,
     PluginPermission,
     PluginPermissionAuditDecision,
     PluginPermissionAuditRecord,
@@ -75,7 +81,6 @@ from cyreneAI.core.schema.skill import SkillDefinition
 from cyreneAI.core.schema.tool import ToolChoice, ToolDefinition, ToolExecutionPolicy
 from cyreneAI.core.skill.skill_protocol import SkillRegistryProtocol
 from cyreneAI.core.tool.tool_protocol import ToolExecutorProtocol
-
 
 logger = logging.getLogger(__name__)
 
@@ -166,9 +171,7 @@ class PluginHost:
                 if manifest.plugin_id in self._disabled_plugin_ids
                 else "disabled_by_manifest"
             )
-            definition = manifest.to_definition().model_copy(
-                update={"enabled": False}
-            )
+            definition = manifest.to_definition().model_copy(update={"enabled": False})
             self._registry.register(definition)
             self._remember_module_metadata(module, definition)
             self._registry.record_status(
@@ -239,7 +242,9 @@ class PluginHost:
             ) from exc
 
         definition = setup_context.build_definition()
-        command_executor, event_executor, middleware_executor = setup_context.build_executors()
+        command_executor, event_executor, middleware_executor = (
+            setup_context.build_executors()
+        )
         # 先记录 setup 已注册的运行时资源名，确保后续注册失败时也能回收。
         self._plugin_tool_names[definition.plugin_id] = setup_context.tool_names
         self._plugin_skill_names[definition.plugin_id] = setup_context.skill_names
@@ -353,10 +358,16 @@ class PluginHost:
             self._unregister_plugin(plugin_id, missing_ok=True)
             try:
                 restored = self.register(old_module)
-                if restored is not None and not old_definition.enabled and restored.enabled:
+                if (
+                    restored is not None
+                    and not old_definition.enabled
+                    and restored.enabled
+                ):
                     self._registry.set_enabled(plugin_id, False)
             except Exception:
-                logger.exception("Plugin reload rollback failed: plugin_id=%s", plugin_id)
+                logger.exception(
+                    "Plugin reload rollback failed: plugin_id=%s", plugin_id
+                )
             raise
 
     def _remember_module_metadata(
@@ -417,9 +428,11 @@ class ApplicationPluginRuntimeContext:
         allowed = permission in self._permissions
         self._record_permission_audit(
             permission,
-            PluginPermissionAuditDecision.ALLOWED
-            if allowed
-            else PluginPermissionAuditDecision.DENIED,
+            (
+                PluginPermissionAuditDecision.ALLOWED
+                if allowed
+                else PluginPermissionAuditDecision.DENIED
+            ),
         )
         if not allowed:
             raise PluginAuthorizationError(f"插件缺少权限: {permission}")
@@ -437,7 +450,11 @@ class ApplicationPluginRuntimeContext:
                 plugin_id=self._plugin_id,
                 permission=permission,
                 decision=decision,
-                reason=None if decision == PluginPermissionAuditDecision.ALLOWED else "missing_permission",
+                reason=(
+                    None
+                    if decision == PluginPermissionAuditDecision.ALLOWED
+                    else "missing_permission"
+                ),
                 created_at=datetime.now(UTC),
             )
         )
@@ -899,11 +916,12 @@ class ApplicationPluginSetupContext:
         definition = self._manifest.to_definition()
         for task in self._tasks:
             if _normalize_task_name(task.name) not in self._task_executor_names:
-                raise PluginConfigurationError(
-                    f"插件任务 {task.name} 未注册执行器"
-                )
+                raise PluginConfigurationError(f"插件任务 {task.name} 未注册执行器")
         for event in self._events:
-            if _normalize_event_type(event.event_type) not in self._event_executor_names:
+            if (
+                _normalize_event_type(event.event_type)
+                not in self._event_executor_names
+            ):
                 raise PluginConfigurationError(
                     f"插件事件 {event.event_type} 未注册执行器"
                 )
@@ -917,9 +935,7 @@ class ApplicationPluginSetupContext:
                 )
         for tool in self._tools:
             if tool.name not in self._tool_names:
-                raise PluginConfigurationError(
-                    f"插件工具 {tool.name} 未注册执行器"
-                )
+                raise PluginConfigurationError(f"插件工具 {tool.name} 未注册执行器")
         return definition.model_copy(
             update={
                 "commands": list(self._commands),
@@ -995,7 +1011,9 @@ class ApplicationPluginSetupContext:
         self,
         definition: PluginEventDefinition,
     ) -> None:
-        existing_names = {_normalize_event_type(event.event_type) for event in self._events}
+        existing_names = {
+            _normalize_event_type(event.event_type) for event in self._events
+        }
         definition_name = _normalize_event_type(definition.event_type)
         if definition_name in existing_names:
             return
@@ -1101,9 +1119,7 @@ def _chat_response_text(message: Message | None) -> str:
     if message is None or not message.content:
         return ""
     return "".join(
-        part.text or ""
-        for part in message.content
-        if part.type == ContentPartType.TEXT
+        part.text or "" for part in message.content if part.type == ContentPartType.TEXT
     )
 
 

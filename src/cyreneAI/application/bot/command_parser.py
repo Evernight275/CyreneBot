@@ -3,7 +3,7 @@ from __future__ import annotations
 import shlex
 
 from cyreneAI.core.errors.bot import BotInputError
-from cyreneAI.core.schema.bot import BotEvent, BotEventType, BotCommand
+from cyreneAI.core.schema.bot import BotCommand, BotEvent, BotEventType
 from cyreneAI.core.schema.message import ContentPartType
 
 

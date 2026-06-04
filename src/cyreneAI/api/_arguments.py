@@ -14,8 +14,8 @@ from typing import (
 from cyreneAI.api._depends import PluginDependency, _resolve_dependency
 from cyreneAI.core.errors.plugin import PluginConfigurationError, PluginInputError
 from cyreneAI.core.schema.plugin import (
-    PluginCommandArgumentKind,
     PluginCommandArgumentDefinition,
+    PluginCommandArgumentKind,
     PluginCommandRequest,
     PluginEventRequest,
     PluginMiddlewareRequest,
@@ -692,9 +692,8 @@ def _is_command_argument_value(
     ),
     type_hints: dict[str, Any] | None,
 ) -> bool:
-    return (
-        isinstance(request, PluginCommandRequest)
-        and _is_command_argument_parameter(parameter, type_hints)
+    return isinstance(request, PluginCommandRequest) and _is_command_argument_parameter(
+        parameter, type_hints
     )
 
 
@@ -728,9 +727,11 @@ def _command_argument_type_for_parameter(
         )
     if marked_argument_type is not None:
         return cast(type, marked_argument_type)
-    return _command_argument_type(
-        annotation
-    ) or _command_argument_type_from_default(parameter) or str
+    return (
+        _command_argument_type(annotation)
+        or _command_argument_type_from_default(parameter)
+        or str
+    )
 
 
 def _command_argument_kind_for_parameter(
@@ -815,7 +816,11 @@ def _annotation_metadata(annotation: Any) -> "_CommandArgumentMetadata":
             marked_type = _string_generic_argument_type(normalized, "Option")
             result.base_type = marked_type if isinstance(marked_type, type) else None
             result.invalid_marker = marked_type is _INVALID_MARKED_ARGUMENT
-        if normalized.endswith("Flag") or "Flag," in normalized or "Flag]" in normalized:
+        if (
+            normalized.endswith("Flag")
+            or "Flag," in normalized
+            or "Flag]" in normalized
+        ):
             result.is_flag = True
             result.base_type = bool
         return result

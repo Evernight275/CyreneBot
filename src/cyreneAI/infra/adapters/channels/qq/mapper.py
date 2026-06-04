@@ -12,7 +12,6 @@ from cyreneAI.core.schema.bot import (
 )
 from cyreneAI.core.schema.message import ContentPart, ContentPartType
 
-
 QQ_MESSAGE_EVENT_TYPES = {
     "AT_MESSAGE_CREATE",
     "C2C_MESSAGE_CREATE",
@@ -309,9 +308,7 @@ def _resolve_action_route(action: BotAction) -> tuple[str, str]:
     if event_type == "DIRECT_MESSAGE_CREATE":
         route = _resolve_action_route_from_keys(
             action,
-            (
-                ("qq_guild_id", "dm"),
-            ),
+            (("qq_guild_id", "dm"),),
         )
         if route is not None:
             return route
@@ -354,13 +351,18 @@ def _resolve_action_route_from_keys(
 
 def _parse_session_route(value: str) -> tuple[str, str] | None:
     parts = value.split(":", maxsplit=2)
-    if len(parts) == 3 and parts[0] == "qq" and parts[1] in {
-        "channel",
-        "dm",
-        "group",
-        "user",
-        "guild",
-    }:
+    if (
+        len(parts) == 3
+        and parts[0] == "qq"
+        and parts[1]
+        in {
+            "channel",
+            "dm",
+            "group",
+            "user",
+            "guild",
+        }
+    ):
         route = "channel" if parts[1] == "guild" else parts[1]
         return route, parts[2]
     return None

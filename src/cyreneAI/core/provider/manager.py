@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from cyreneAI.core.errors.base import ConflictError, NotFoundError, StateError
 from cyreneAI.core.errors.provider import ProviderError
-from cyreneAI.core.schema.provider import ProviderInfo, ProviderConfig, ProviderModel
 from cyreneAI.core.provider.provider_protocol import (
     ProviderFactoryProtocol,
     ProviderInstanceProtocol,
 )
+from cyreneAI.core.schema.provider import ProviderConfig, ProviderInfo, ProviderModel
 
 
 class ProviderManager:
@@ -151,7 +151,4 @@ class ProviderManager:
 
 
 def _catalog_models(info: ProviderInfo) -> list[ProviderModel]:
-    return [
-        ProviderModel(model_id=model_id)
-        for model_id in (info.models or [])
-    ]
+    return [ProviderModel(model_id=model_id) for model_id in (info.models or [])]

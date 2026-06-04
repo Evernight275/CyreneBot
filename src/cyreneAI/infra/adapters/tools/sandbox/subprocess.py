@@ -39,10 +39,7 @@ class SubprocessToolSandboxRunner:
         max_stderr_bytes: int = 65_536,
         max_error_message_chars: int = 1_000,
     ) -> None:
-        self._commands = {
-            name: tuple(command)
-            for name, command in commands.items()
-        }
+        self._commands = {name: tuple(command) for name, command in commands.items()}
         for name, command in self._commands.items():
             if not command:
                 raise ToolConfigurationError(

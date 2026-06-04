@@ -5,14 +5,15 @@ from datetime import timedelta
 
 from cyreneAI.application.chat.rag_orchestrator import (
     ApplicationRAGChatRequest,
-    RAGContextFormat,
     RAGChatOrchestrator,
+    RAGContextFormat,
 )
 from cyreneAI.application.runtime import CyreneAIRuntime
 from cyreneAI.core.context.builder import ContextWindowBuilder
 from cyreneAI.core.provider.factory import ProviderFactory
 from cyreneAI.core.provider.manager import ProviderManager
 from cyreneAI.core.schema.chat import ChatFinishReason, ChatRequest, ChatResponse
+from cyreneAI.core.schema.context import ContextSegmentRole
 from cyreneAI.core.schema.embedding import (
     EmbeddingRequest,
     EmbeddingResponse,
@@ -27,7 +28,6 @@ from cyreneAI.core.schema.message import (
 from cyreneAI.core.schema.provider import ProviderConfig, ProviderInfo, ProviderType
 from cyreneAI.core.schema.tool import ToolCall, ToolDefinition, ToolResult
 from cyreneAI.core.schema.vector import VectorRecord
-from cyreneAI.core.schema.context import ContextSegmentRole
 from cyreneAI.core.tool.manager import ToolManager
 from cyreneAI.core.tool.registry import ToolRegistry
 from cyreneAI.core.vector.manager import VectorManager

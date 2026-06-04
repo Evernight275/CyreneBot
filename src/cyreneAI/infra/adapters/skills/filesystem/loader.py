@@ -24,9 +24,7 @@ class FileSystemSkillLoader:
         加载技能定义
         """
         if not self._path.exists():
-            raise SkillConfigurationError(
-                f"Skill path {self._path} does not exist"
-            )
+            raise SkillConfigurationError(f"Skill path {self._path} does not exist")
 
         if self._path.is_file():
             return _load_skill_file(self._path)
@@ -63,7 +61,6 @@ def _load_skill_file(path: Path) -> list[SkillDefinition]:
 def _map_skill_payload(payload: Any) -> list[SkillDefinition]:
     if isinstance(payload, list):
         return [
-            SkillDefinition.model_validate(item)
-            for item in cast(list[Any], payload)
+            SkillDefinition.model_validate(item) for item in cast(list[Any], payload)
         ]
     return [SkillDefinition.model_validate(payload)]

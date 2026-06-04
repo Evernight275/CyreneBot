@@ -45,7 +45,6 @@ from cyreneAI.infra.adapters.plugins.filesystem import (
     FileSystemPluginStorage,
 )
 
-
 PROJECT_ROOT = Path(__file__).parents[3]
 DEMO_PLUGIN_PATH = PROJECT_ROOT / "examples" / "plugins" / "proactive_reply_demo"
 
@@ -186,12 +185,10 @@ def test_proactive_reply_demo_schedules_and_sends_follow_up(tmp_path) -> None:
         try:
             assert runtime.plugin_manager is not None
             plugins = runtime.plugin_manager.list_plugins()
-            assert [plugin.plugin_id for plugin in plugins] == [
-                "demo.proactive_reply"
-            ]
-            assert [command.name for command in runtime.plugin_manager.list_commands()] == [
-                "proactive status"
-            ]
+            assert [plugin.plugin_id for plugin in plugins] == ["demo.proactive_reply"]
+            assert [
+                command.name for command in runtime.plugin_manager.list_commands()
+            ] == ["proactive status"]
             assert plugins[0].events[0].event_type == PluginEventType.MESSAGE
             assert plugins[0].tasks[0].name == "follow_up"
 
@@ -297,7 +294,7 @@ def test_proactive_reply_demo_telegram_follow_up_calls_tool_before_send(
         tool_call = ToolCall(
             id="call-1",
             name="lookup_lunch_context",
-            arguments="{\"topic\":\"lunch\"}",
+            arguments='{"topic":"lunch"}',
         )
         provider = FakeChatProvider(
             [

@@ -49,7 +49,7 @@ def test_init_plugin_project_creates_minimal_runnable_plugin(tmp_path: Path) -> 
     plugin_module = _load_generated_main(project_path)
 
     async def run() -> None:
-        client = PluginTestClient(getattr(plugin_module, "plugin"))
+        client = PluginTestClient(plugin_module.plugin)
         result = await client.command("/hello Cyrene")
 
         assert result.has_text("Hello, Cyrene!")
@@ -86,9 +86,10 @@ def test_cli_init_command_reports_created_project(
     captured = capsys.readouterr()
     assert exit_code == 0
     assert f"Initialized CyreneAI plugin at {project_path}" in captured.out
-    assert json.loads((project_path / "plugin.json").read_text("utf-8"))[
-        "plugin_id"
-    ] == "demo.cli"
+    assert (
+        json.loads((project_path / "plugin.json").read_text("utf-8"))["plugin_id"]
+        == "demo.cli"
+    )
 
 
 def test_cli_init_command_defaults_to_current_directory(
@@ -105,9 +106,10 @@ def test_cli_init_command_defaults_to_current_directory(
     captured = capsys.readouterr()
     assert exit_code == 0
     assert f"Initialized CyreneAI plugin at {Path('.')}" in captured.out
-    assert json.loads((project_path / "plugin.json").read_text("utf-8"))[
-        "plugin_id"
-    ] == "same_level_plugin"
+    assert (
+        json.loads((project_path / "plugin.json").read_text("utf-8"))["plugin_id"]
+        == "same_level_plugin"
+    )
 
 
 def test_cli_init_command_returns_error_for_existing_project(

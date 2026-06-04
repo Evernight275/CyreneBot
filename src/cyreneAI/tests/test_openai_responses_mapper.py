@@ -101,7 +101,7 @@ def test_map_responses_response_builds_core_response() -> None:
                 "type": "function_call",
                 "call_id": "call-1",
                 "name": "lookup",
-                "arguments": "{\"key\":\"value\"}",
+                "arguments": '{"key":"value"}',
             },
         ],
         parallel_tool_calls=True,
@@ -137,7 +137,7 @@ def test_map_responses_response_builds_core_response() -> None:
     assert mapped.message.tool_calls[0].id == "call-1"
     assert mapped.tool_calls[0].id == "call-1"
     assert mapped.tool_calls[0].name == "lookup"
-    assert mapped.tool_calls[0].arguments == "{\"key\":\"value\"}"
+    assert mapped.tool_calls[0].arguments == '{"key":"value"}'
 
 
 def test_map_responses_request_preserves_tool_feedback_turn() -> None:
@@ -151,7 +151,7 @@ def test_map_responses_request_preserves_tool_feedback_turn() -> None:
                     ToolCall(
                         id="call-1",
                         name="lookup",
-                        arguments="{\"key\":\"value\"}",
+                        arguments='{"key":"value"}',
                     )
                 ],
             ),
@@ -171,7 +171,7 @@ def test_map_responses_request_preserves_tool_feedback_turn() -> None:
             "type": "function_call",
             "call_id": "call-1",
             "name": "lookup",
-            "arguments": "{\"key\":\"value\"}",
+            "arguments": '{"key":"value"}',
         },
         {
             "type": "function_call_output",
@@ -196,7 +196,7 @@ def test_map_responses_request_drops_unanswered_tool_call_history() -> None:
                     ToolCall(
                         id="call-orphan",
                         name="lookup",
-                        arguments="{\"key\":\"value\"}",
+                        arguments='{"key":"value"}',
                     )
                 ],
             ),
@@ -232,7 +232,7 @@ def test_map_responses_response_preserves_tool_only_message() -> None:
                 "type": "function_call",
                 "call_id": "call-1",
                 "name": "lookup",
-                "arguments": "{\"key\":\"value\"}",
+                "arguments": '{"key":"value"}',
             },
         ],
         parallel_tool_calls=True,

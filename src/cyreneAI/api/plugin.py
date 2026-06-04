@@ -18,7 +18,6 @@ from cyreneAI.api._types import (
     PluginToolHandlerResult,
 )
 
-
 __all__ = [
     "CyreneBot",
     "CyreneRouter",

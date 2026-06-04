@@ -24,7 +24,7 @@ async def _run_subprocess_tool() -> None:
         ToolCall(
             id="call-1",
             name="lookup",
-            arguments="{\"key\":\"answer\"}",
+            arguments='{"key":"answer"}',
         )
     )
 

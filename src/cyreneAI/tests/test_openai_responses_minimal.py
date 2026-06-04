@@ -7,7 +7,9 @@ from cyreneAI.core.provider.factory import ProviderFactory
 from cyreneAI.core.provider.manager import ProviderManager
 from cyreneAI.core.provider.registry import ProviderRegistry
 from cyreneAI.core.schema.provider import ProviderConfig, ProviderType
-from cyreneAI.infra.bootstrap.registrations.openai_responses import register_openai_responses_provider
+from cyreneAI.infra.bootstrap.registrations.openai_responses import (
+    register_openai_responses_provider,
+)
 
 
 async def main() -> None:

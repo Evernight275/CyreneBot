@@ -55,9 +55,7 @@ def test_csv_document_loader_loads_rows(tmp_path) -> None:
 def test_csv_document_loader_skips_rows_without_content(tmp_path) -> None:
     file_path = tmp_path / "articles.csv"
     file_path.write_text(
-        "id,text\n"
-        "article-1,alpha\n"
-        "article-2,\n",
+        "id,text\n" "article-1,alpha\n" "article-2,\n",
         encoding="utf-8",
     )
 
@@ -73,8 +71,7 @@ def test_csv_document_loader_skips_rows_without_content(tmp_path) -> None:
 def test_csv_document_loader_uses_fallback_document_ids(tmp_path) -> None:
     file_path = tmp_path / "articles.csv"
     file_path.write_text(
-        "text\n"
-        "alpha\n",
+        "text\n" "alpha\n",
         encoding="utf-8",
     )
 
@@ -86,8 +83,7 @@ def test_csv_document_loader_uses_fallback_document_ids(tmp_path) -> None:
 def test_csv_document_loader_supports_custom_delimiter(tmp_path) -> None:
     file_path = tmp_path / "articles.tsv"
     file_path.write_text(
-        "id\ttext\n"
-        "article-1\talpha\n",
+        "id\ttext\n" "article-1\talpha\n",
         encoding="utf-8",
     )
 

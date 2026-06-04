@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any
-from urllib.parse import quote_plus, urlencode, urlparse, urlunparse, parse_qsl
+from urllib.parse import parse_qsl, quote_plus, urlencode, urlparse, urlunparse
 from urllib.request import Request, urlopen
 
 from cyreneAI.core.errors.tool import ToolExecutionError
@@ -86,7 +85,9 @@ class _WebSearchToolExecutor:
             raise ToolExecutionError("query is required")
         max_results = arguments.get("max_results")
         if max_results is not None and (
-            not isinstance(max_results, int) or isinstance(max_results, bool) or max_results < 1
+            not isinstance(max_results, int)
+            or isinstance(max_results, bool)
+            or max_results < 1
         ):
             raise ToolExecutionError("max_results must be a positive integer")
 
@@ -135,9 +136,7 @@ def _build_url(url_template: str, *, query: str, max_results: int) -> str:
     query_items = dict(parse_qsl(parsed.query, keep_blank_values=True))
     query_items.setdefault("q", query)
     query_items.setdefault("limit", str(max_results))
-    return urlunparse(
-        parsed._replace(query=urlencode(query_items))
-    )
+    return urlunparse(parsed._replace(query=urlencode(query_items)))
 
 
 def _compact_json_text(text: str) -> str:

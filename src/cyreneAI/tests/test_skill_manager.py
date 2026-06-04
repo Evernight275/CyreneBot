@@ -22,9 +22,7 @@ def test_skill_manager_selects_skills_and_builds_instruction_bundle() -> None:
     manager = SkillManager(registry)
 
     selections = manager.select(SkillSelectionRequest(text="Use memory."))
-    bundle = manager.build_instruction_bundle(
-        SkillSelectionRequest(text="Use memory.")
-    )
+    bundle = manager.build_instruction_bundle(SkillSelectionRequest(text="Use memory."))
 
     assert [selection.definition.name for selection in selections] == ["memory"]
     assert [instruction.name for instruction in bundle.instructions] == ["memory"]

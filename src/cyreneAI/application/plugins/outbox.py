@@ -13,7 +13,6 @@ from cyreneAI.core.schema.bot import BotAction, BotActionType, BotMessage
 from cyreneAI.core.schema.message import ContentPart, ContentPartType
 from cyreneAI.core.schema.plugin import PluginMessageReceipt
 
-
 DEFAULT_MIN_INTERVAL_SECONDS = 30.0
 DEFAULT_MAX_PER_SESSION_PER_HOUR = 12
 DEFAULT_MAX_PER_PLUGIN_PER_HOUR = 60

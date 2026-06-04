@@ -4,9 +4,6 @@ from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import ValidationError as PydanticValidationError
-from sqlalchemy import delete, insert, select, update
-from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncEngine
 
 from cyreneAI.core.context.context_protocol import ContextStoreProtocol
 from cyreneAI.core.errors.context import (
@@ -16,6 +13,9 @@ from cyreneAI.core.errors.context import (
 )
 from cyreneAI.core.schema.context import ContextSnapshot
 from cyreneAI.infra.database.sqlalchemy.context_tables import context_snapshots
+from sqlalchemy import delete, insert, select, update
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 
 class SQLAlchemyContextStore(ContextStoreProtocol):

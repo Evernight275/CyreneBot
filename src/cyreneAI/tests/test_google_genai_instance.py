@@ -23,10 +23,10 @@ from cyreneAI.core.schema.provider import (
     ProviderInfo,
     ProviderType,
 )
+from cyreneAI.infra.adapters.providers.google_genai import instance as instance_module
 from cyreneAI.infra.adapters.providers.google_genai.instance import (
     GoogleGenAIProviderInstance,
 )
-from cyreneAI.infra.adapters.providers.google_genai import instance as instance_module
 
 
 def _provider_info() -> ProviderInfo:

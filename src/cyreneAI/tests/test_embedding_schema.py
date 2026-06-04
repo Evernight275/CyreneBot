@@ -25,9 +25,7 @@ def test_embedding_request_and_response_defaults_are_isolated() -> None:
 
     first_response = EmbeddingResponse(provider_id="provider-1")
     second_response = EmbeddingResponse(provider_id="provider-1")
-    first_response.embeddings.append(
-        EmbeddingVector(index=0, embedding=[0.1, 0.2])
-    )
+    first_response.embeddings.append(EmbeddingVector(index=0, embedding=[0.1, 0.2]))
 
     assert second_request.metadata == {}
     assert second_response.embeddings == []

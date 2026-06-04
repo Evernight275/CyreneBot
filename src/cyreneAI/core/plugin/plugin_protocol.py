@@ -4,18 +4,18 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any, Protocol
 
-from cyreneAI.core.schema.application import (
-    ApplicationChatResult,
-    ApplicationImageGenerationRequest,
-    ApplicationImageGenerationResult,
-)
 from cyreneAI.core.schema.agent import (
     AgentMemoryRetrievalConfig,
     AgentPlanningConfig,
     AgentRunResult,
     AgentToolSelectionConfig,
 )
-from cyreneAI.core.schema.tool import ToolChoice, ToolDefinition, ToolExecutionPolicy
+from cyreneAI.core.schema.application import (
+    ApplicationChatResult,
+    ApplicationImageGenerationRequest,
+    ApplicationImageGenerationResult,
+)
+from cyreneAI.core.schema.chat import ChatResponse
 from cyreneAI.core.schema.plugin import (
     PluginCommandDefinition,
     PluginCommandRequest,
@@ -40,9 +40,9 @@ from cyreneAI.core.schema.plugin import (
     PluginTaskResult,
     PluginTaskStatus,
 )
-from cyreneAI.core.schema.chat import ChatResponse
 from cyreneAI.core.schema.provider import ProviderInfo, ProviderModel
 from cyreneAI.core.schema.skill import SkillDefinition
+from cyreneAI.core.schema.tool import ToolChoice, ToolDefinition, ToolExecutionPolicy
 from cyreneAI.core.tool.tool_protocol import ToolExecutorProtocol
 
 
@@ -860,7 +860,9 @@ class PluginRegistryProtocol(Protocol):
     def resolve_events(
         self,
         event: PluginEvent,
-    ) -> list[tuple[PluginDefinition, PluginEventDefinition, PluginEventExecutorProtocol]]:
+    ) -> list[
+        tuple[PluginDefinition, PluginEventDefinition, PluginEventExecutorProtocol]
+    ]:
         """
         根据窄事件解析匹配的插件事件订阅与执行器。
         """

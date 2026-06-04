@@ -16,6 +16,8 @@ from cyreneAI.core.bot.session_manager import BotSessionManager
 from cyreneAI.core.context.builder import ContextWindowBuilder
 from cyreneAI.core.context.manager import ContextManager
 from cyreneAI.core.errors.bot import BotActionError, BotStateError
+from cyreneAI.core.plugin.manager import PluginManager
+from cyreneAI.core.plugin.registry import PluginRegistry
 from cyreneAI.core.provider.factory import ProviderFactory
 from cyreneAI.core.provider.manager import ProviderManager
 from cyreneAI.core.schema.bot import (
@@ -33,8 +35,6 @@ from cyreneAI.core.schema.message import (
     Message,
     MessageRole,
 )
-from cyreneAI.core.plugin.manager import PluginManager
-from cyreneAI.core.plugin.registry import PluginRegistry
 from cyreneAI.core.schema.provider import ProviderConfig, ProviderInfo, ProviderType
 from cyreneAI.infra.adapters.bot_sessions.memory import InMemoryBotSessionStore
 from cyreneAI.infra.adapters.channels.memory import InMemoryBotChannel
@@ -334,10 +334,7 @@ def test_bot_dispatcher_routes_context_by_active_conversation() -> None:
 
         default_context_id = "memory:user-1:conversation:default"
         work_context_id = "memory:user-1:conversation:work"
-        assert [
-            request.metadata["session_id"]
-            for request in provider.requests
-        ] == [
+        assert [request.metadata["session_id"] for request in provider.requests] == [
             default_context_id,
             work_context_id,
             default_context_id,

@@ -4,7 +4,6 @@ from cyreneAI.core.bot.registry import BotChannelRegistry
 from cyreneAI.core.schema.bot import BotChannelDefinition
 from cyreneAI.infra.adapters.channels.qq import QQBotChannel
 
-
 QQ_BOT_CHANNEL_DEFINITION = BotChannelDefinition(
     channel_id="qq",
     name="QQ Bot Channel",

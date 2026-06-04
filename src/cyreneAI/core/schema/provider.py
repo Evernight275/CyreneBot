@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from enum import StrEnum
-from pydantic import Field
 from datetime import timedelta
+from enum import StrEnum
+
+from pydantic import Field
+
 from cyreneAI.core.schema.base import CyreneAISchema
 
 

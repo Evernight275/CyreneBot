@@ -160,11 +160,7 @@ def _task_from_row(row: dict[str, Any]) -> PluginScheduledTask:
         payload=dict(row["payload"] or {}),
         run_at=_ensure_utc(row["run_at"]),
         status=PluginTaskStatus(str(row["status"])),
-        last_error=(
-            str(row["last_error"])
-            if row["last_error"] is not None
-            else None
-        ),
+        last_error=(str(row["last_error"]) if row["last_error"] is not None else None),
         created_at=_ensure_utc(row["created_at"]),
         updated_at=_ensure_utc(row["updated_at"]),
     )

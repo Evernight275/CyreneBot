@@ -17,7 +17,6 @@ from cyreneAI.core.schema.application import (
 )
 from cyreneAI.server.dependencies import get_runtime
 
-
 QQ_VALIDATION_OPCODE = 13
 
 router = APIRouter(

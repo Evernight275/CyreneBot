@@ -19,8 +19,10 @@ from cyreneAI.infra.database.sqlalchemy.context_tables import (
     context_snapshots,
     create_context_tables,
 )
-from cyreneAI.infra.database.sqlite.builder import create_sqlite_async_engine
-from cyreneAI.infra.database.sqlite.builder import create_sqlite_context_store
+from cyreneAI.infra.database.sqlite.builder import (
+    create_sqlite_async_engine,
+    create_sqlite_context_store,
+)
 
 
 def _snapshot(
@@ -74,9 +76,7 @@ def test_sqlalchemy_context_store_persists_snapshot_lifecycle(tmp_path) -> None:
 async def _run_store_overwrite(database_path) -> None:
     store = await create_sqlite_context_store(database_path)
     try:
-        await store.save_snapshot(
-            _snapshot("snapshot-1", "session-1", value="first")
-        )
+        await store.save_snapshot(_snapshot("snapshot-1", "session-1", value="first"))
         latest = _snapshot("snapshot-1", "session-1", value="latest")
         await store.save_snapshot(latest)
 

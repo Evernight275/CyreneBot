@@ -9,7 +9,6 @@ from cyreneAI.application.runtime import CyreneAIRuntime
 from cyreneAI.server.auth import verify_admin_credentials, verify_admin_session
 from cyreneAI.server.config import ServerSettings
 
-
 _admin_basic = HTTPBasic(auto_error=False)
 
 

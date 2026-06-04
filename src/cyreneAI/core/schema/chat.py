@@ -1,11 +1,13 @@
 from __future__ import annotations
+
 from enum import StrEnum
-from typing import Literal, Any
+from typing import Any
+
 from pydantic import Field
 
 from cyreneAI.core.schema.base import CyreneAISchema
 from cyreneAI.core.schema.message import Message
-from cyreneAI.core.schema.tool import ToolDefinition, ToolCall, ToolChoice
+from cyreneAI.core.schema.tool import ToolCall, ToolChoice, ToolDefinition
 from cyreneAI.core.schema.usage import TokenUsage
 
 

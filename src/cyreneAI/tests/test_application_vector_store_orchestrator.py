@@ -4,12 +4,12 @@ import asyncio
 
 import pytest
 
-from cyreneAI.application.runtime import CyreneAIRuntime
 from cyreneAI.application.knowledge.vector_store_orchestrator import (
     ApplicationVectorSearchRequest,
     ApplicationVectorUpsertRequest,
     VectorStoreOrchestrator,
 )
+from cyreneAI.application.runtime import CyreneAIRuntime
 from cyreneAI.core.context.builder import ContextWindowBuilder
 from cyreneAI.core.errors.base import StateError
 from cyreneAI.core.provider.factory import ProviderFactory

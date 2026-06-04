@@ -54,10 +54,10 @@ def test_define_python_tool_works_with_core_tool_registry() -> None:
             ToolCall(
                 id="call-1",
                 name="lookup",
-                arguments="{\"key\":\"answer\"}",
+                arguments='{"key":"answer"}',
             )
         )
 
-        assert result.content == "{\"value\": \"answer\"}"
+        assert result.content == '{"value": "answer"}'
 
     asyncio.run(run())

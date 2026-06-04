@@ -1,17 +1,17 @@
 from __future__ import annotations
 
-from cyreneAI.application.runtime import CyreneAIRuntime
-from cyreneAI.application.tools import (
-    register_core_builtin_tools,
-    register_memory_tools,
-    register_todo_tools,
-)
 from cyreneAI.application.plugins.builtin_bot_commands import (
     register_builtin_bot_command_plugins,
 )
 from cyreneAI.application.plugins.host import PluginHost
 from cyreneAI.application.plugins.outbox import ApplicationPluginOutbox
 from cyreneAI.application.plugins.tasks import ApplicationPluginTaskScheduler
+from cyreneAI.application.runtime import CyreneAIRuntime
+from cyreneAI.application.tools import (
+    register_core_builtin_tools,
+    register_memory_tools,
+    register_todo_tools,
+)
 from cyreneAI.core.bot.bot_protocol import BotChannelRegistryProtocol
 from cyreneAI.core.bot.polling_protocol import BotPollingStateStoreProtocol
 from cyreneAI.core.bot.session_manager import BotSessionManager
@@ -63,7 +63,9 @@ async def build_cyrene_ai_runtime(
     plugin_loaders: list[PluginLoaderProtocol] | None = None,
     plugin_storage: PluginStorageProtocol | None = None,
     plugin_assets: PluginAssetsProtocol | None = None,
-    plugin_python_environment_manager: PluginPythonEnvironmentManagerProtocol | None = None,
+    plugin_python_environment_manager: (
+        PluginPythonEnvironmentManagerProtocol | None
+    ) = None,
     plugin_task_scheduler: PluginTaskSchedulerProtocol | None = None,
     plugin_task_store: PluginTaskStoreProtocol | None = None,
     disabled_plugin_ids: list[str] | None = None,
@@ -83,7 +85,9 @@ async def build_cyrene_ai_runtime(
     """
     runtime_provider_manager = provider_manager
     if runtime_provider_manager is None:
-        runtime_provider_manager = ProviderManager(provider_factory or ProviderFactory())
+        runtime_provider_manager = ProviderManager(
+            provider_factory or ProviderFactory()
+        )
 
     for config in provider_configs or []:
         if config.enabled:
@@ -110,9 +114,7 @@ async def build_cyrene_ai_runtime(
         provider_config_store=provider_config_store,
         context_manager=context_manager,
         vector_manager=(
-            VectorManager(vector_store)
-            if vector_store is not None
-            else None
+            VectorManager(vector_store) if vector_store is not None else None
         ),
         skill_manager=skill_manager,
         plugin_manager=runtime_plugin_manager,

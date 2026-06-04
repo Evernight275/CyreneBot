@@ -1,6 +1,5 @@
 from cyreneAI.core.provider.provider_protocol import ProviderInstanceProtocol
 from cyreneAI.core.schema.provider import ProviderConfig, ProviderInfo
-
 from cyreneAI.infra.adapters.providers.openai_compatible.instance import (
     OpenAICompatibleProviderInstance,
 )

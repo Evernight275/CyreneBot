@@ -14,11 +14,11 @@ from cyreneAI.core.plugin.plugin_protocol import (
     PluginAssetsProtocol,
     PluginOutboxProtocol,
     PluginPythonEnvironmentManagerProtocol,
-    PluginTaskSchedulerProtocol,
     PluginStorageProtocol,
+    PluginTaskSchedulerProtocol,
 )
-from cyreneAI.core.provider.provider_protocol import ProviderConfigStoreProtocol
 from cyreneAI.core.provider.manager import ProviderManager
+from cyreneAI.core.provider.provider_protocol import ProviderConfigStoreProtocol
 from cyreneAI.core.provider.registry import ProviderRegistry
 from cyreneAI.core.schema.application import BotAdminConfig
 from cyreneAI.core.skill.manager import SkillManager
@@ -50,7 +50,9 @@ class CyreneAIRuntime:
     plugin_host: PluginHost | None = None
     plugin_storage: PluginStorageProtocol | None = None
     plugin_assets: PluginAssetsProtocol | None = None
-    plugin_python_environment_manager: PluginPythonEnvironmentManagerProtocol | None = None
+    plugin_python_environment_manager: PluginPythonEnvironmentManagerProtocol | None = (
+        None
+    )
     plugin_outbox: PluginOutboxProtocol | None = None
     plugin_task_scheduler: PluginTaskSchedulerProtocol | None = None
     tool_registry: ToolRegistryProtocol | None = None

@@ -11,7 +11,6 @@ from cyreneAI.core.bot.bot_protocol import BotEventPollerProtocol
 from cyreneAI.core.schema.application import ApplicationChannelEventsRequest
 from cyreneAI.core.schema.bot import BotEvent
 
-
 logger = logging.getLogger(__name__)
 
 

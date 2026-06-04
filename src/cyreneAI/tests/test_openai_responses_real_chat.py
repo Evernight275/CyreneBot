@@ -23,7 +23,9 @@ from cyreneAI.core.schema.message import (
 )
 from cyreneAI.core.schema.provider import ProviderConfig, ProviderType
 from cyreneAI.core.schema.tool import ToolChoice, ToolDefinition
-from cyreneAI.infra.bootstrap.registrations.openai_responses import register_openai_responses_provider
+from cyreneAI.infra.bootstrap.registrations.openai_responses import (
+    register_openai_responses_provider,
+)
 
 
 def _skip(reason: str) -> None:

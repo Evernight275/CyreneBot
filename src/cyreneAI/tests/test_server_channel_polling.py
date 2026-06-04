@@ -73,7 +73,9 @@ class FakePollingProvider:
 
     async def chat(self, request: ChatRequest) -> ChatResponse:
         self.requests.append(request)
-        text = request.messages[-1].content[0].text if request.messages[-1].content else ""
+        text = (
+            request.messages[-1].content[0].text if request.messages[-1].content else ""
+        )
         return ChatResponse(
             provider_id=request.provider_id,
             model=request.model,
@@ -206,7 +208,9 @@ def test_channel_polling_runner_processes_events_and_advances_offset() -> None:
         ]
         assert provider.requests[0].metadata["polling_channel_id"] == "telegram"
         assert provider.requests[0].metadata["source"] == "test"
-        assert [action.message.content for action in channel.actions if action.message] == [
+        assert [
+            action.message.content for action in channel.actions if action.message
+        ] == [
             _content("reply:one"),
             _content("reply:two"),
         ]
@@ -249,7 +253,9 @@ def test_channel_polling_runner_persists_offset_and_skips_processed_events() -> 
         assert [request.messages[-1].content for request in provider.requests] == [
             _content("two"),
         ]
-        assert [action.message.content for action in channel.actions if action.message] == [
+        assert [
+            action.message.content for action in channel.actions if action.message
+        ] == [
             _content("reply:two"),
         ]
 
@@ -289,7 +295,9 @@ def test_channel_polling_runner_advances_offset_after_poison_event() -> None:
             _content("one"),
             _content("two"),
         ]
-        assert [action.message.content for action in channel.actions if action.message] == [
+        assert [
+            action.message.content for action in channel.actions if action.message
+        ] == [
             _content("reply:two"),
         ]
 

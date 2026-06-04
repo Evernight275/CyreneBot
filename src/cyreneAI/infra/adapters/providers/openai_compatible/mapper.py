@@ -1,37 +1,38 @@
 from __future__ import annotations
+
 import re
 from typing import Any, cast
 
+from openai.types import CreateEmbeddingResponse
+from openai.types.chat import (
+    ChatCompletion,
+    ChatCompletionMessageParam,
+    ChatCompletionToolChoiceOptionParam,
+    ChatCompletionToolParam,
+)
+
 from cyreneAI.core.schema.chat import (
+    ChatFinishReason,
     ChatRequest,
     ChatResponse,
-    ChatFinishReason,
 )
 from cyreneAI.core.schema.embedding import (
     EmbeddingRequest,
     EmbeddingResponse,
     EmbeddingVector,
 )
-from cyreneAI.core.schema.usage import TokenUsage
+from cyreneAI.core.schema.message import (
+    ContentPart,
+    ContentPartType,
+    Message,
+    MessageRole,
+)
 from cyreneAI.core.schema.tool import (
-    ToolDefinition,
     ToolCall,
     ToolChoice,
+    ToolDefinition,
 )
-from cyreneAI.core.schema.message import (
-    MessageRole,
-    ContentPartType,
-    ContentPart,
-    Message,
-)
-
-from openai.types.chat import (
-    ChatCompletion,
-    ChatCompletionMessageParam,
-    ChatCompletionToolParam,
-    ChatCompletionToolChoiceOptionParam,
-)
-from openai.types import CreateEmbeddingResponse
+from cyreneAI.core.schema.usage import TokenUsage
 
 
 def map_chat_request(

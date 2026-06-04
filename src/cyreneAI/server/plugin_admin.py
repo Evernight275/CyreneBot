@@ -31,8 +31,8 @@ from cyreneAI.core.schema.plugin import (
     PluginTaskStatus,
 )
 from cyreneAI.core.schema.server import (
-    PluginInstallReport,
     PluginInspectionReport,
+    PluginInstallReport,
     PluginOperationResult,
     PluginPathRequestBody,
     PluginPermissionAuditReport,

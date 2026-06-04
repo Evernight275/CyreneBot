@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import json
-from textwrap import dedent
 from dataclasses import dataclass
 from pathlib import Path
+from textwrap import dedent
 
 import pytest
 
@@ -58,8 +58,7 @@ def _write_hello_plugin(path) -> None:
         encoding="utf-8",
     )
     (path / "main.py").write_text(
-        dedent(
-            '''
+        dedent('''
             from cyreneAI.api import CyreneBot, text
 
             plugin = CyreneBot()
@@ -69,8 +68,7 @@ def _write_hello_plugin(path) -> None:
                 """Say hello."""
                 name = request.command.args_text or "world"
                 return text(request, f"Hello, {name}!")
-            '''
-        ),
+            '''),
         encoding="utf-8",
     )
 
@@ -129,9 +127,9 @@ def test_filesystem_plugin_loader_loads_plugin_json_project(tmp_path) -> None:
             assert source.version == "0.1.0"
             assert source.signature_status == "unsigned"
             assert source.isolation_mode == "in_process"
-            assert [command.name for command in runtime.plugin_manager.list_commands()] == [
-                "hello"
-            ]
+            assert [
+                command.name for command in runtime.plugin_manager.list_commands()
+            ] == ["hello"]
 
             result = await runtime.plugin_manager.execute_command(
                 PluginCommandRequest(
@@ -153,7 +151,9 @@ def test_filesystem_plugin_loader_loads_plugin_json_project(tmp_path) -> None:
     asyncio.run(run())
 
 
-def test_filesystem_plugin_loader_uses_python_environment_import_paths(tmp_path) -> None:
+def test_filesystem_plugin_loader_uses_python_environment_import_paths(
+    tmp_path,
+) -> None:
     plugin_path = tmp_path / "demo_dep"
     dependency_path = tmp_path / "dependency_site"
     plugin_path.mkdir()
@@ -175,15 +175,13 @@ def test_filesystem_plugin_loader_uses_python_environment_import_paths(tmp_path)
         encoding="utf-8",
     )
     (plugin_path / "main.py").write_text(
-        dedent(
-            """
+        dedent("""
             from cyreneAI.api import CyreneBot
             import demo_dependency
 
             plugin = CyreneBot()
             plugin.plugin_value = demo_dependency.VALUE
-            """
-        ),
+            """),
         encoding="utf-8",
     )
     manager = _FakePluginPythonEnvironmentManager(dependency_path)
@@ -192,7 +190,7 @@ def test_filesystem_plugin_loader_uses_python_environment_import_paths(tmp_path)
         plugin_path,
         python_environment_manager=manager,
     ).load()[0]
-    source = getattr(plugin, "__cyreneai_plugin_source__")
+    source = plugin.__cyreneai_plugin_source__
 
     assert plugin.plugin_value == "from managed env"
     assert manager.calls[0]["plugin_id"] == "demo.dep"
@@ -236,7 +234,7 @@ def test_filesystem_plugin_loader_records_valid_signature(tmp_path) -> None:
     sign_plugin_project(plugin_path, signed_by="tester")
 
     plugin = FileSystemPluginLoader(plugin_path).load()[0]
-    source = getattr(plugin, "__cyreneai_plugin_source__")
+    source = plugin.__cyreneai_plugin_source__
 
     assert source.signature_status == "valid"
     assert source.signed_by == "tester"

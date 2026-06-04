@@ -20,7 +20,12 @@ from cyreneAI.core.schema.bot import (
     BotMessage,
 )
 from cyreneAI.core.schema.chat import ChatRequest, ChatResponse
-from cyreneAI.core.schema.message import ContentPart, ContentPartType, Message, MessageRole
+from cyreneAI.core.schema.message import (
+    ContentPart,
+    ContentPartType,
+    Message,
+    MessageRole,
+)
 from cyreneAI.core.schema.plugin import (
     PluginCommandDefinition,
     PluginCommandRequest,
@@ -355,8 +360,7 @@ class _PluginTestRuntimeContext:
     ) -> None:
         self._manifest = manifest
         self._dependencies = {
-            key.strip().lower(): value
-            for key, value in dependencies.items()
+            key.strip().lower(): value for key, value in dependencies.items()
         }
         self._enforce_permissions = enforce_permissions
 
@@ -488,9 +492,7 @@ class _PluginTestAssets:
         if prefix:
             prefix = f"{prefix}/"
         return sorted(
-            item
-            for item in self.files
-            if not prefix or item.startswith(prefix)
+            item for item in self.files if not prefix or item.startswith(prefix)
         )
 
     def add_text(self, path: str, content: str) -> None:
@@ -595,8 +597,7 @@ class _PluginTestSetupContext:
         for entry in self.commands:
             names.add(_normalize_command_name(entry.definition.name))
             names.update(
-                _normalize_command_name(alias)
-                for alias in entry.definition.aliases
+                _normalize_command_name(alias) for alias in entry.definition.aliases
             )
         return names
 
@@ -635,10 +636,7 @@ class _PluginTestSetupContext:
         for entry in self.commands:
             names = {
                 _normalize_command_name(entry.definition.name),
-                *[
-                    _normalize_command_name(alias)
-                    for alias in entry.definition.aliases
-                ],
+                *[_normalize_command_name(alias) for alias in entry.definition.aliases],
             }
             if normalized_name in names:
                 return entry
@@ -656,9 +654,7 @@ class _PluginTestSetupContext:
         event_type: PluginEventType,
     ) -> list[_PluginTestEventEntry]:
         entries = [
-            entry
-            for entry in self.events
-            if entry.definition.event_type == event_type
+            entry for entry in self.events if entry.definition.event_type == event_type
         ]
         if not entries:
             raise PluginNotFoundError(f"插件事件订阅不存在: {event_type}")

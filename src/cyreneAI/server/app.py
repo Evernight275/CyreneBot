@@ -20,9 +20,8 @@ from cyreneAI.server.routes import (
     plugins,
     providers,
     qq,
+    telegram,
 )
-from cyreneAI.server.routes import telegram
-
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -173,9 +172,7 @@ def _log_plugin_startup_state(runtime: CyreneAIRuntime) -> None:
     commands = plugin_manager.list_commands()
     statuses = plugin_manager.list_statuses()
     plugin_items = [
-        f"{plugin.plugin_id}@{plugin.version}"
-        for plugin in plugins
-        if plugin.enabled
+        f"{plugin.plugin_id}@{plugin.version}" for plugin in plugins if plugin.enabled
     ]
     command_items = [
         _format_plugin_command(command.name, command.usage, command.aliases)

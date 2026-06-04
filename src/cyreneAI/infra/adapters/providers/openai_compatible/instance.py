@@ -1,6 +1,16 @@
 from typing import Any, cast
 
 from openai import AsyncOpenAI
+
+from cyreneAI.core.errors.provider import ProviderConfigurationError
+from cyreneAI.core.schema.chat import ChatRequest, ChatResponse
+from cyreneAI.core.schema.embedding import EmbeddingRequest, EmbeddingResponse
+from cyreneAI.core.schema.provider import (
+    ProviderConfig,
+    ProviderInfo,
+    ProviderModel,
+)
+from cyreneAI.infra.adapters.providers.model_mapper import map_provider_model
 from cyreneAI.infra.adapters.providers.openai_compatible.errors import (
     raise_openai_error,
 )
@@ -10,15 +20,6 @@ from cyreneAI.infra.adapters.providers.openai_compatible.mapper import (
     map_embedding_request,
     map_embedding_response,
 )
-from cyreneAI.core.schema.provider import (
-    ProviderConfig,
-    ProviderInfo,
-    ProviderModel,
-)
-from cyreneAI.core.errors.provider import ProviderConfigurationError
-from cyreneAI.core.schema.chat import ChatRequest, ChatResponse
-from cyreneAI.core.schema.embedding import EmbeddingRequest, EmbeddingResponse
-from cyreneAI.infra.adapters.providers.model_mapper import map_provider_model
 
 
 class OpenAICompatibleProviderInstance:
@@ -92,6 +93,5 @@ def _is_deepseek_provider(config: ProviderConfig) -> bool:
         *config.metadata.values(),
     ]
     return any(
-        isinstance(value, str) and "deepseek" in value.casefold()
-        for value in values
+        isinstance(value, str) and "deepseek" in value.casefold() for value in values
     )

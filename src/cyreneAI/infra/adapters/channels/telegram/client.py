@@ -134,7 +134,11 @@ class TelegramBotClient:
                 )
             response.raise_for_status()
             result: Any = response_body.get("result")
-            return cast(dict[str, Any], result) if isinstance(result, dict) else {"result": result}
+            return (
+                cast(dict[str, Any], result)
+                if isinstance(result, dict)
+                else {"result": result}
+            )
         except Exception as exc:
             raise_telegram_error(exc)
 
@@ -161,6 +165,6 @@ class TelegramBotClient:
 def _parse_response_body(response: httpx.Response) -> Any:
     try:
         return response.json()
-    except ValueError:
+    except ValueError as exc:
         response.raise_for_status()
-        raise TelegramBotAPIError("Telegram response body must be JSON")
+        raise TelegramBotAPIError("Telegram response body must be JSON") from exc

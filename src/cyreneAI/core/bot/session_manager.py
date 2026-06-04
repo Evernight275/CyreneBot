@@ -8,8 +8,11 @@ from cyreneAI.core.bot.session_protocol import (
     BotSessionStoreProtocol,
 )
 from cyreneAI.core.errors.base import ConflictError
-from cyreneAI.core.errors.bot import BotInputError, BotStateError
-from cyreneAI.core.errors.bot import BotSessionNotFoundError
+from cyreneAI.core.errors.bot import (
+    BotInputError,
+    BotSessionNotFoundError,
+    BotStateError,
+)
 from cyreneAI.core.schema.bot import (
     BotConversationRef,
     BotConversationState,
@@ -18,7 +21,6 @@ from cyreneAI.core.schema.bot import (
     BotSessionStatus,
     BotSessionUpdate,
 )
-
 
 DEFAULT_BOT_CONVERSATION_NAME = "default"
 
@@ -165,7 +167,10 @@ class BotSessionManager:
         conversation = _find_conversation_or_raise(state, old_name_or_id)
         normalized_name = _normalize_conversation_name(new_name)
         existing = _find_conversation(state, normalized_name)
-        if existing is not None and existing.conversation_id != conversation.conversation_id:
+        if (
+            existing is not None
+            and existing.conversation_id != conversation.conversation_id
+        ):
             raise ConflictError(f"Bot conversation already exists: {normalized_name}")
 
         renamed = conversation.model_copy(
@@ -175,9 +180,7 @@ class BotSessionManager:
             }
         )
         conversations = [
-            renamed
-            if item.conversation_id == conversation.conversation_id
-            else item
+            renamed if item.conversation_id == conversation.conversation_id else item
             for item in state.conversations
         ]
         state = state.model_copy(update={"conversations": conversations})

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime, timedelta
 
+from cyreneAI.api import CyreneBot, Depends
 from cyreneAI.bootstrap import build_cyrene_ai_runtime
 from cyreneAI.core.schema.bot import BotCommand
 from cyreneAI.core.schema.plugin import (
@@ -14,7 +15,6 @@ from cyreneAI.core.schema.plugin import (
     PluginScheduledTask,
     PluginTaskStatus,
 )
-from cyreneAI.api import CyreneBot, Depends
 from cyreneAI.infra.adapters.plugins.sqlite import create_sqlite_plugin_task_store
 
 

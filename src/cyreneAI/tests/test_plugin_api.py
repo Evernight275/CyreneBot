@@ -1,9 +1,21 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Annotated
 
 import pytest
 
+from cyreneAI.api import (
+    Arg,
+    Choice,
+    CyreneBot,
+    CyreneRouter,
+    Depends,
+    Flag,
+    Option,
+    Rest,
+    text,
+)
 from cyreneAI.core.errors.plugin import (
     PluginAuthorizationError,
     PluginConfigurationError,
@@ -26,19 +38,6 @@ from cyreneAI.core.schema.plugin import (
     PluginTaskResult,
 )
 from cyreneAI.core.schema.tool import ToolCall, ToolDefinition
-from typing import Annotated
-
-from cyreneAI.api import (
-    Arg,
-    Choice,
-    CyreneBot,
-    CyreneRouter,
-    Depends,
-    Flag,
-    Option,
-    Rest,
-    text,
-)
 
 
 def _event(text_value: str = "/hello") -> BotEvent:
@@ -310,7 +309,7 @@ def test_cyrene_bot_command_decorator_records_choice_schema_and_alias() -> None:
 
     @plugin.command("/run")
     async def run(
-        mode: Annotated[Choice["fast", "safe"], Arg(alias="-m")] = "safe",
+        mode: Annotated[Choice["fast", "safe"], Arg(alias="-m")] = "safe",  # noqa: F821
     ):
         return mode
 
@@ -1620,7 +1619,7 @@ def test_cyrene_bot_command_executor_binds_and_validates_choice_arguments() -> N
 
         @plugin.command("/run")
         async def run_mode(
-            mode: Option[Choice["fast", "safe"]] = "safe",
+            mode: Option[Choice["fast", "safe"]] = "safe",  # noqa: F821
             limit: Option[int] = 10,
         ):
             return f"{mode}:{limit}"
@@ -1746,7 +1745,9 @@ def test_cyrene_bot_command_executor_reports_missing_option_value_with_usage() -
         )
 
         @plugin.command("/search")
-        async def search(query: Rest[str], limit: Option[int] = 10, verbose: Flag = False):
+        async def search(
+            query: Rest[str], limit: Option[int] = 10, verbose: Flag = False
+        ):
             return query
 
         class Context:
@@ -1782,7 +1783,9 @@ def test_cyrene_bot_command_executor_reports_missing_option_value_with_usage() -
             )
 
         assert "参数 limit 缺少值" in str(exc_info.value)
-        assert "用法: /search <query...> [--limit:int=10] [--verbose]" in str(exc_info.value)
+        assert "用法: /search <query...> [--limit:int=10] [--verbose]" in str(
+            exc_info.value
+        )
 
     asyncio.run(run())
 

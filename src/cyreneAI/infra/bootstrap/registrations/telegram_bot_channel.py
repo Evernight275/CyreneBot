@@ -4,7 +4,6 @@ from cyreneAI.core.bot.registry import BotChannelRegistry
 from cyreneAI.core.schema.bot import BotChannelDefinition
 from cyreneAI.infra.adapters.channels.telegram import TelegramBotChannel
 
-
 TELEGRAM_BOT_CHANNEL_DEFINITION = BotChannelDefinition(
     channel_id="telegram",
     name="Telegram Bot Channel",

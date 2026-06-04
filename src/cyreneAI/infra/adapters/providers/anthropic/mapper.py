@@ -184,7 +184,11 @@ def map_anthropic_response(provider_id: str, response: Any) -> ChatResponse:
         tool_calls=tool_calls,
         finish_reason=map_finish_reason(getattr(response, "stop_reason", None)),
         usage=map_usage(getattr(response, "usage", None)),
-        raw=response.model_dump(mode="json") if hasattr(response, "model_dump") else None,
+        raw=(
+            response.model_dump(mode="json")
+            if hasattr(response, "model_dump")
+            else None
+        ),
     )
 
 

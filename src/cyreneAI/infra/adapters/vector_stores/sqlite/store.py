@@ -76,7 +76,9 @@ class SQLiteVectorStore(VectorStoreProtocol):
                         )
                     )
         except SQLAlchemyError as exc:
-            raise VectorStoreError("Failed to upsert vector records", cause=exc) from exc
+            raise VectorStoreError(
+                "Failed to upsert vector records", cause=exc
+            ) from exc
 
     async def get(self, record_id: str) -> VectorRecord:
         """
@@ -113,7 +115,9 @@ class SQLiteVectorStore(VectorStoreProtocol):
                 result = await connection.execute(statement)
                 payloads = result.scalars().all()
         except SQLAlchemyError as exc:
-            raise VectorStoreError("Failed to search vector records", cause=exc) from exc
+            raise VectorStoreError(
+                "Failed to search vector records", cause=exc
+            ) from exc
         if (
             self._max_search_candidates >= 0
             and len(payloads) > self._max_search_candidates
@@ -178,7 +182,9 @@ def _map_vector_record(payload: Any) -> VectorRecord:
     try:
         return VectorRecord.model_validate(payload)
     except PydanticValidationError as exc:
-        raise VectorInputError("Stored vector record payload is invalid", cause=exc) from exc
+        raise VectorInputError(
+            "Stored vector record payload is invalid", cause=exc
+        ) from exc
 
 
 def _validate_vector(vector: list[float], *, label: str) -> None:
@@ -198,5 +204,8 @@ def _cosine_similarity(left: list[float], right: list[float]) -> float:
     right_norm = sqrt(sum(value * value for value in right))
     if left_norm == 0 or right_norm == 0:
         raise VectorInputError("Vector cannot be zero")
-    dot = sum(left_value * right_value for left_value, right_value in zip(left, right))
+    dot = sum(
+        left_value * right_value
+        for left_value, right_value in zip(left, right, strict=True)
+    )
     return dot / (left_norm * right_norm)

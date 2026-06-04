@@ -4,15 +4,14 @@ import asyncio
 import importlib
 import json
 import logging
-from datetime import UTC, datetime
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
 
 from cyreneAI.api.cli import init_plugin_project
-from cyreneAI.bootstrap import build_cyrene_ai_runtime
 from cyreneAI.application.runtime import CyreneAIRuntime
+from cyreneAI.bootstrap import build_cyrene_ai_runtime
 from cyreneAI.core.bot.registry import BotChannelRegistry
 from cyreneAI.core.context.builder import ContextWindowBuilder
 from cyreneAI.core.context.manager import ContextManager
@@ -73,14 +72,15 @@ from cyreneAI.core.schema.provider import (
     ProviderModel,
     ProviderType,
 )
+from cyreneAI.infra.adapters.provider_config_stores import FileSystemProviderConfigStore
 from cyreneAI.server import create_app
 from cyreneAI.server.app import (
     _log_plugin_startup_state,
     create_app_with_runtime_builder,
 )
 from cyreneAI.server.config import (
-    build_bot_admin_config_from_env,
     ServerSettings,
+    build_bot_admin_config_from_env,
     build_bot_polling_state_database_path_from_env,
     build_context_database_path_from_env,
     build_controlled_shell_enabled_from_env,
@@ -102,6 +102,9 @@ from cyreneAI.server.config import (
     build_qq_webhook_provider_id_from_env,
     build_qq_webhook_secret_from_env,
     build_qq_websocket_enabled_from_env,
+    build_shell_command_policy_from_env,
+    build_shell_cwd_root_path_from_env,
+    build_shell_timeout_seconds_from_env,
     build_telegram_bot_token_from_env,
     build_telegram_polling_enabled_from_env,
     build_telegram_polling_interval_seconds_from_env,
@@ -113,12 +116,8 @@ from cyreneAI.server.config import (
     build_tool_sandbox_commands_from_env,
     build_tool_sandbox_mode_from_env,
     build_tool_sandbox_timeout_seconds_from_env,
-    build_shell_command_policy_from_env,
-    build_shell_cwd_root_path_from_env,
-    build_shell_timeout_seconds_from_env,
     build_vector_database_path_from_env,
 )
-from cyreneAI.infra.adapters.provider_config_stores import FileSystemProviderConfigStore
 
 
 @pytest.mark.asyncio
@@ -225,9 +224,7 @@ class FakeServerContextStore:
 
     async def list_snapshots(self, session_id: str) -> list[ContextSnapshot]:
         return [
-            snapshot
-            for snapshot in self.snapshots
-            if snapshot.session_id == session_id
+            snapshot for snapshot in self.snapshots if snapshot.session_id == session_id
         ]
 
     async def delete_snapshot(self, snapshot_id: str) -> None:
@@ -246,9 +243,7 @@ class FakeServerContextStore:
             ]
         )
         self.snapshots = [
-            snapshot
-            for snapshot in self.snapshots
-            if snapshot.session_id != session_id
+            snapshot for snapshot in self.snapshots if snapshot.session_id != session_id
         ]
         return deleted_count
 
@@ -1164,7 +1159,9 @@ def test_server_builds_telegram_webhook_config_from_provider_fallbacks(
 
 
 def test_server_builds_telegram_polling_config_from_env(monkeypatch) -> None:
-    monkeypatch.setenv("CYRENEAI_BOT_POLLING_STATE_DATABASE_PATH", "data/bot_polling.db")
+    monkeypatch.setenv(
+        "CYRENEAI_BOT_POLLING_STATE_DATABASE_PATH", "data/bot_polling.db"
+    )
     monkeypatch.setenv("TELEGRAM_BOT_MODE", "polling")
     monkeypatch.setenv("TELEGRAM_BOT_POLL_INTERVAL_SECONDS", "0.5")
     monkeypatch.setenv("TELEGRAM_BOT_POLL_TIMEOUT_SECONDS", "20")
@@ -1461,16 +1458,19 @@ def test_server_installs_and_reloads_filesystem_plugin(tmp_path) -> None:
             assert install_response.json()["sources"][0]["source_type"] == "filesystem"
             assert reload_response.status_code == 200
             assert reload_response.json()["metadata"]["version"] == "0.2.0"
-            assert reload_response.json()["metadata"]["reload_audit"][
-                "previous_version"
-            ] == "0.1.0"
-            assert reload_response.json()["metadata"]["reload_audit"][
-                "version_changed"
-            ] is True
+            assert (
+                reload_response.json()["metadata"]["reload_audit"]["previous_version"]
+                == "0.1.0"
+            )
+            assert (
+                reload_response.json()["metadata"]["reload_audit"]["version_changed"]
+                is True
+            )
             assert inspect_response.json()["source"]["version"] == "0.2.0"
-            assert inspect_response.json()["source"]["metadata"]["reload_audit"][
-                "version"
-            ] == "0.2.0"
+            assert (
+                inspect_response.json()["source"]["metadata"]["reload_audit"]["version"]
+                == "0.2.0"
+            )
         finally:
             await runtime.close()
 
@@ -1607,10 +1607,7 @@ def test_server_lists_plugin_runtime_capabilities() -> None:
     response = _plugin_client().get("/plugins/runtime-capabilities")
 
     assert response.status_code == 200
-    permissions = {
-        item["permission"]: item
-        for item in response.json()["permissions"]
-    }
+    permissions = {item["permission"]: item for item in response.json()["permissions"]}
     assert permissions["llm"]["status"] == "supported"
     assert permissions["llm"]["dependencies"] == ["llm", "agent"]
     assert permissions["chat"]["status"] == "reserved"
@@ -1618,10 +1615,7 @@ def test_server_lists_plugin_runtime_capabilities() -> None:
     assert permissions["tool"]["setup_apis"] == ["register_tool"]
     assert permissions["rag"]["status"] == "reserved"
     assert permissions["provider_write"]["status"] == "reserved"
-    dependencies = {
-        item["name"]: item
-        for item in response.json()["dependencies"]
-    }
+    dependencies = {item["name"]: item for item in response.json()["dependencies"]}
     assert dependencies["llm"]["permission"] == "llm"
     assert dependencies["agent"]["permission"] == "llm"
     assert dependencies["storage"]["permission"] == "storage"

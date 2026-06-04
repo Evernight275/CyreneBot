@@ -14,7 +14,7 @@ from cyreneAI.infra.adapters.tools.mcp_stdio import register_mcp_stdio_tools
 def test_mcp_stdio_tools_register_and_execute(tmp_path: Path) -> None:
     server_path = tmp_path / "fake_mcp_server.py"
     server_path.write_text(
-        r'''
+        r"""
 import json
 import sys
 
@@ -72,7 +72,7 @@ while True:
             "id": message["id"],
             "result": {"content": [{"type": "text", "text": "echo:" + text}]},
         })
-''',
+""",
         encoding="utf-8",
     )
 

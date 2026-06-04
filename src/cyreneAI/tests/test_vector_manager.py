@@ -48,7 +48,10 @@ async def _run_vector_manager_lifecycle() -> None:
     await manager.upsert([first, second])
 
     assert await manager.get("record-1") == first
-    assert [match.record for match in (await manager.search(VectorQuery(vector=[1.0, 0.0]))).matches] == [
+    assert [
+        match.record
+        for match in (await manager.search(VectorQuery(vector=[1.0, 0.0]))).matches
+    ] == [
         first,
         second,
     ]

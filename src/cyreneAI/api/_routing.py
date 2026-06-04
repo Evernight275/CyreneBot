@@ -615,7 +615,10 @@ class CyreneRouter:
         description: str | None = None,
         enabled: bool = True,
         metadata: dict[str, Any] | None = None,
-    ) -> PluginMiddlewareHandler | Callable[[PluginMiddlewareHandler], PluginMiddlewareHandler]:
+    ) -> (
+        PluginMiddlewareHandler
+        | Callable[[PluginMiddlewareHandler], PluginMiddlewareHandler]
+    ):
         """
         注册受控中间件 handler。
         """

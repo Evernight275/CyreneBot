@@ -3,7 +3,6 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-
 PROJECT_ROOT = Path(__file__).parents[1]
 CORE_DIR = PROJECT_ROOT / "core"
 INFRA_DIR = PROJECT_ROOT / "infra"
@@ -41,11 +40,7 @@ APPLICATION_ALLOWED_PUBLIC_DATACLASSES = {
 
 
 def _python_files(root: Path) -> list[Path]:
-    return [
-        path
-        for path in root.rglob("*.py")
-        if "__pycache__" not in path.parts
-    ]
+    return [path for path in root.rglob("*.py") if "__pycache__" not in path.parts]
 
 
 def _imported_modules(path: Path) -> list[str]:
@@ -141,7 +136,13 @@ def test_provider_adapter_directories_have_expected_files() -> None:
         if path.name in {"__init__.py", "model_mapper.py"}:
             continue
         if path.is_dir():
-            allowed_names = {"__init__.py", "builder.py", "errors.py", "instance.py", "mapper.py"}
+            allowed_names = {
+                "__init__.py",
+                "builder.py",
+                "errors.py",
+                "instance.py",
+                "mapper.py",
+            }
             for child in path.iterdir():
                 if child.name == "__pycache__":
                     continue

@@ -154,7 +154,9 @@ async def _run_sqlite_vector_store_rejects_invalid_vectors(database_path) -> Non
 
 
 def test_sqlite_vector_store_rejects_invalid_vectors(tmp_path) -> None:
-    asyncio.run(_run_sqlite_vector_store_rejects_invalid_vectors(tmp_path / "vectors.db"))
+    asyncio.run(
+        _run_sqlite_vector_store_rejects_invalid_vectors(tmp_path / "vectors.db")
+    )
 
 
 async def _run_sqlite_vector_store_rejects_invalid_payload(database_path) -> None:
@@ -180,4 +182,6 @@ async def _run_sqlite_vector_store_rejects_invalid_payload(database_path) -> Non
 
 
 def test_sqlite_vector_store_rejects_invalid_payload(tmp_path) -> None:
-    asyncio.run(_run_sqlite_vector_store_rejects_invalid_payload(tmp_path / "vectors.db"))
+    asyncio.run(
+        _run_sqlite_vector_store_rejects_invalid_payload(tmp_path / "vectors.db")
+    )

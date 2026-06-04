@@ -31,7 +31,6 @@ from cyreneAI.infra.bootstrap.registrations.openai_responses import (
 from cyreneAI.server import create_app
 from cyreneAI.server.config import ServerSettings
 
-
 _SESSION_ID = "real-agent-smoke"
 _SKILL_NAME = "agent_smoke_skill"
 _MEMORY_NAMESPACE = "real-agent-smoke"
@@ -43,9 +42,7 @@ def _load_real_agent_config() -> ProviderConfig:
     compatible_api_key = os.getenv("OPENAI_COMPATIBLE_API_KEY") or os.getenv(
         "OPENAI_API_KEY"
     )
-    compatible_model = os.getenv("OPENAI_COMPATIBLE_MODEL") or os.getenv(
-        "OPENAI_MODEL"
-    )
+    compatible_model = os.getenv("OPENAI_COMPATIBLE_MODEL") or os.getenv("OPENAI_MODEL")
     if compatible_api_key and compatible_model:
         return ProviderConfig(
             provider_id=os.getenv(
@@ -63,9 +60,7 @@ def _load_real_agent_config() -> ProviderConfig:
     responses_api_key = os.getenv("OPENAI_RESPONSES_API_KEY") or os.getenv(
         "OPENAI_API_KEY"
     )
-    responses_model = os.getenv("OPENAI_RESPONSES_MODEL") or os.getenv(
-        "OPENAI_MODEL"
-    )
+    responses_model = os.getenv("OPENAI_RESPONSES_MODEL") or os.getenv("OPENAI_MODEL")
     if responses_api_key and responses_model:
         return ProviderConfig(
             provider_id=os.getenv(
@@ -229,21 +224,18 @@ def test_openai_compatible_real_agent_http_smoke() -> None:
         payload: dict[str, Any] = response.json()
         first_step = payload["steps"][0]
         if not first_step["tool_calls"]:
-            pytest.skip(
-                f"{model} did not return tool_calls for the real Agent smoke"
-            )
+            pytest.skip(f"{model} did not return tool_calls for the real Agent smoke")
         if not any(
             result["name"] == "get_current_time"
             for result in first_step["tool_results"]
         ):
-            pytest.skip(
-                f"{model} did not execute get_current_time for the smoke"
-            )
+            pytest.skip(f"{model} did not execute get_current_time for the smoke")
 
         assert payload["stop_reason"] == "max_steps"
-        assert payload["steps"][1]["request"]["metadata"][
-            "agent_max_steps_finalization"
-        ] is True
+        assert (
+            payload["steps"][1]["request"]["metadata"]["agent_max_steps_finalization"]
+            is True
+        )
         assert payload["plan"]["metadata"]["planning_mode"] == "planner_step"
         assert payload["plan"]["steps"]
         assert payload["plan"]["metadata"]["memory_match_count"] >= 1

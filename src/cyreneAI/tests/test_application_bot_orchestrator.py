@@ -14,8 +14,21 @@ from cyreneAI.application.plugins.builtin_bot_commands import (
     register_builtin_bot_command_plugins,
 )
 from cyreneAI.application.runtime import CyreneAIRuntime
+from cyreneAI.core.context.builder import ContextWindowBuilder
+from cyreneAI.core.errors.base import NotFoundError
+from cyreneAI.core.errors.bot import BotInputError, BotUnsupportedEventError
+from cyreneAI.core.errors.plugin import PluginInputError
 from cyreneAI.core.plugin.manager import PluginManager
 from cyreneAI.core.plugin.registry import PluginRegistry
+from cyreneAI.core.provider.factory import ProviderFactory
+from cyreneAI.core.provider.manager import ProviderManager
+from cyreneAI.core.provider.registry import ProviderRegistry
+from cyreneAI.core.schema.agent import AgentPlanningConfig
+from cyreneAI.core.schema.application import (
+    BotAdminConfig,
+    BotMessageResponseMode,
+    BotMessageTriggerMode,
+)
 from cyreneAI.core.schema.bot import (
     BotAction,
     BotActionType,
@@ -23,27 +36,13 @@ from cyreneAI.core.schema.bot import (
     BotEventType,
     BotMessage,
 )
-from cyreneAI.core.context.builder import ContextWindowBuilder
-from cyreneAI.core.errors.bot import BotInputError, BotUnsupportedEventError
-from cyreneAI.core.errors.base import NotFoundError
-from cyreneAI.core.errors.plugin import PluginInputError
-from cyreneAI.core.provider.factory import ProviderFactory
-from cyreneAI.core.provider.manager import ProviderManager
-from cyreneAI.core.provider.registry import ProviderRegistry
 from cyreneAI.core.schema.chat import ChatFinishReason, ChatRequest, ChatResponse
-from cyreneAI.core.schema.application import (
-    BotAdminConfig,
-    BotMessageResponseMode,
-    BotMessageTriggerMode,
-)
-from cyreneAI.core.schema.agent import AgentPlanningConfig
 from cyreneAI.core.schema.message import (
     ContentPart,
     ContentPartType,
     Message,
     MessageRole,
 )
-from cyreneAI.core.schema.provider import ProviderConfig, ProviderInfo, ProviderType
 from cyreneAI.core.schema.plugin import (
     PluginCommandDefinition,
     PluginCommandRequest,
@@ -54,6 +53,7 @@ from cyreneAI.core.schema.plugin import (
     PluginEventResult,
     PluginEventType,
 )
+from cyreneAI.core.schema.provider import ProviderConfig, ProviderInfo, ProviderType
 
 
 def _content(text: str) -> list[ContentPart]:
@@ -952,7 +952,9 @@ def test_bot_orchestrator_returns_safe_reply_when_plugin_command_fails(caplog) -
             FailingPluginExecutor(),
         )
 
-        with caplog.at_level(logging.ERROR, logger="cyreneAI.application.bot.orchestrator"):
+        with caplog.at_level(
+            logging.ERROR, logger="cyreneAI.application.bot.orchestrator"
+        ):
             result = await BotOrchestrator(runtime).handle(
                 ApplicationBotRequest(
                     event=_bot_event("/broken"),

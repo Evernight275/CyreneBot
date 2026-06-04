@@ -62,9 +62,7 @@ def build_qq_bot_base_url_from_env() -> str:
 def build_qq_bot_token_url_from_env() -> str:
     load_dotenv()
 
-    return _env_str("QQ_BOT_TOKEN_URL") or (
-        "https://bots.qq.com/app/getAppAccessToken"
-    )
+    return _env_str("QQ_BOT_TOKEN_URL") or ("https://bots.qq.com/app/getAppAccessToken")
 
 
 def build_qq_webhook_provider_id_from_env() -> str | None:
@@ -109,9 +107,7 @@ def build_qq_websocket_enabled_from_env() -> bool:
 def build_telegram_webhook_secret_from_env() -> str | None:
     load_dotenv()
 
-    return _env_str("TELEGRAM_SECRET_TOKEN") or _env_str(
-        "TELEGRAM_BOT_SECRET_TOKEN"
-    )
+    return _env_str("TELEGRAM_SECRET_TOKEN") or _env_str("TELEGRAM_BOT_SECRET_TOKEN")
 
 
 def build_telegram_webhook_provider_id_from_env() -> str | None:
@@ -182,9 +178,7 @@ def build_bot_admin_config_from_env() -> BotAdminConfig | None:
         return None
     return BotAdminConfig(
         user_ids=[
-            part.strip()
-            for part in raw.replace(";", ",").split(",")
-            if part.strip()
+            part.strip() for part in raw.replace(";", ",").split(",") if part.strip()
         ]
     )
 
@@ -227,7 +221,9 @@ def build_tool_sandbox_commands_from_env() -> dict[str, list[str]] | None:
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError as exc:
-        raise ValueError("CYRENEAI_TOOL_SANDBOX_COMMANDS_JSON must be valid JSON") from exc
+        raise ValueError(
+            "CYRENEAI_TOOL_SANDBOX_COMMANDS_JSON must be valid JSON"
+        ) from exc
     if not isinstance(parsed, dict):
         raise ValueError("CYRENEAI_TOOL_SANDBOX_COMMANDS_JSON must be a JSON object")
 
@@ -270,7 +266,9 @@ def build_shell_command_policy_from_env() -> ShellCommandPolicy | None:
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError as exc:
-        raise ValueError("CYRENEAI_SHELL_COMMAND_POLICY_JSON must be valid JSON") from exc
+        raise ValueError(
+            "CYRENEAI_SHELL_COMMAND_POLICY_JSON must be valid JSON"
+        ) from exc
     if not isinstance(parsed, dict):
         raise ValueError("CYRENEAI_SHELL_COMMAND_POLICY_JSON must be a JSON object")
     return ShellCommandPolicy.model_validate(parsed)
@@ -344,11 +342,7 @@ def build_plugin_paths_from_env() -> list[str]:
     if raw is None:
         return []
     separator = ";" if ";" in raw else os.pathsep
-    return [
-        part.strip()
-        for part in raw.split(separator)
-        if part.strip()
-    ]
+    return [part.strip() for part in raw.split(separator) if part.strip()]
 
 
 def build_plugin_storage_path_from_env() -> str | None:
@@ -392,11 +386,7 @@ def build_disabled_plugin_ids_from_env() -> list[str]:
     raw = _env_str("CYRENEAI_DISABLED_PLUGINS")
     if raw is None:
         return []
-    return [
-        part.strip()
-        for part in raw.replace(";", ",").split(",")
-        if part.strip()
-    ]
+    return [part.strip() for part in raw.replace(";", ",").split(",") if part.strip()]
 
 
 def build_provider_configs_from_env() -> list[ProviderConfig]:

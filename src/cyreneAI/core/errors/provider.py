@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-
 from cyreneAI.core.errors.base import (
-    CyreneAIError,
     AuthorizationError,
     ConfigurationError,
+    CyreneAIError,
+    RateLimitError,
     RequestError,
+    RequestTimeoutError,
     ResponseError,
     UnavailableError,
-    RequestTimeoutError,
-    RateLimitError,
 )
 
 

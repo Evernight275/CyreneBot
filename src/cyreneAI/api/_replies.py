@@ -67,10 +67,7 @@ async def _coerce_command_handler_result(
         return _merge_command_results(partials)
     if isgenerator(result):
         return _merge_command_results(
-            [
-                _coerce_command_result_item(request, item)
-                for item in result
-            ]
+            [_coerce_command_result_item(request, item) for item in result]
         )
     raise PluginExecutionError(
         f"插件命令 {request.command.name} 必须返回 str、PluginCommandResult，或 yield 它们"

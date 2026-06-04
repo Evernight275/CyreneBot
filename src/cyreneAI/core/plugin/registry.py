@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from cyreneAI.core.errors.base import ConflictError
 from cyreneAI.core.errors.plugin import PluginNotFoundError, PluginStateError
-from cyreneAI.core.plugin.plugin_protocol import PluginExecutorProtocol
-from cyreneAI.core.plugin.plugin_protocol import PluginEventExecutorProtocol
-from cyreneAI.core.plugin.plugin_protocol import PluginMiddlewareExecutorProtocol
+from cyreneAI.core.plugin.plugin_protocol import (
+    PluginEventExecutorProtocol,
+    PluginExecutorProtocol,
+    PluginMiddlewareExecutorProtocol,
+)
 from cyreneAI.core.schema.plugin import (
     PluginCommandDefinition,
     PluginDefinition,
@@ -162,7 +164,9 @@ class PluginRegistry:
         for definition in self._definitions.values():
             if not definition.enabled:
                 continue
-            commands.extend(command for command in definition.commands if command.enabled)
+            commands.extend(
+                command for command in definition.commands if command.enabled
+            )
         return commands
 
     def list_events(self) -> list[PluginEventDefinition]:
@@ -196,7 +200,9 @@ class PluginRegistry:
             if not definition.enabled:
                 continue
             middlewares.extend(
-                middleware for middleware in definition.middlewares if middleware.enabled
+                middleware
+                for middleware in definition.middlewares
+                if middleware.enabled
             )
         return middlewares
 
@@ -254,9 +260,7 @@ class PluginRegistry:
             return list(self._permission_audit)
         self.get_definition(plugin_id)
         return [
-            record
-            for record in self._permission_audit
-            if record.plugin_id == plugin_id
+            record for record in self._permission_audit if record.plugin_id == plugin_id
         ]
 
     def resolve_command(
@@ -280,7 +284,9 @@ class PluginRegistry:
     def resolve_events(
         self,
         event: PluginEvent,
-    ) -> list[tuple[PluginDefinition, PluginEventDefinition, PluginEventExecutorProtocol]]:
+    ) -> list[
+        tuple[PluginDefinition, PluginEventDefinition, PluginEventExecutorProtocol]
+    ]:
         """
         根据事件类型解析所有匹配的插件事件订阅。
         """

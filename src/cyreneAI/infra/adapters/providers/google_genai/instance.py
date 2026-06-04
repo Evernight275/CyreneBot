@@ -14,10 +14,10 @@ from cyreneAI.infra.adapters.providers.google_genai.errors import (
 from cyreneAI.infra.adapters.providers.google_genai.mapper import (
     map_google_content_image_generation_request,
     map_google_content_image_generation_response,
-    map_google_image_generation_request,
-    map_google_image_generation_response,
     map_google_genai_request,
     map_google_genai_response,
+    map_google_image_generation_request,
+    map_google_image_generation_response,
     should_use_google_generate_images,
 )
 from cyreneAI.infra.adapters.providers.model_mapper import map_provider_model

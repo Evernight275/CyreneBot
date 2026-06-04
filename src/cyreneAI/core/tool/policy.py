@@ -7,7 +7,6 @@ from cyreneAI.core.schema.tool import (
     ToolRiskLevel,
 )
 
-
 _RISK_ORDER = {
     ToolRiskLevel.TRUSTED: 0,
     ToolRiskLevel.READ_ONLY: 1,
@@ -78,26 +77,19 @@ def build_tool_policy_audit_metadata(
         "policy_enforced": True,
         "tool_name": definition.name,
         "risk_level": safety_profile.risk_level.value,
-        "permissions": [
-            permission.value for permission in safety_profile.permissions
-        ],
+        "permissions": [permission.value for permission in safety_profile.permissions],
         "sandbox_required": safety_profile.sandbox_required,
         "timeout_seconds": safety_profile.timeout_seconds,
         "max_output_chars": safety_profile.max_output_chars,
         "allowed_tool_names": policy.allowed_tool_names,
         "denied_tool_names": policy.denied_tool_names,
         "allowed_permissions": (
-            [
-                permission.value
-                for permission in policy.allowed_permissions
-            ]
+            [permission.value for permission in policy.allowed_permissions]
             if policy.allowed_permissions is not None
             else None
         ),
         "max_risk_level": (
-            policy.max_risk_level.value
-            if policy.max_risk_level is not None
-            else None
+            policy.max_risk_level.value if policy.max_risk_level is not None else None
         ),
         "allow_sandbox_bypass": policy.allow_sandbox_bypass,
         "sandbox_used": sandbox_used,

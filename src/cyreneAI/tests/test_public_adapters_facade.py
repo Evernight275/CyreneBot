@@ -22,8 +22,8 @@ from cyreneAI.adapters.tools import (
     HttpToolExecutor,
     InProcessToolSandboxRunner,
     PythonCallableToolExecutor,
-    SubprocessToolSandboxRunner,
     SubprocessToolExecutor,
+    SubprocessToolSandboxRunner,
     define_python_tool,
 )
 from cyreneAI.adapters.vector_stores import (
@@ -54,10 +54,7 @@ def test_public_adapters_facade_exports_supported_adapters() -> None:
     assert TelegramBotChannel.__name__ == "TelegramBotChannel"
     assert create_telegram_bot_channel.__name__ == "create_telegram_bot_channel"
     assert InMemoryBotSessionStore.__name__ == "InMemoryBotSessionStore"
-    assert (
-        create_memory_bot_session_store.__name__
-        == "create_memory_bot_session_store"
-    )
+    assert create_memory_bot_session_store.__name__ == "create_memory_bot_session_store"
 
 
 def test_public_adapters_facade_does_not_contain_provider_implementations() -> None:
@@ -69,10 +66,7 @@ def test_public_adapters_facade_does_not_contain_provider_implementations() -> N
         "errors.py",
     }
 
-    assert not any(
-        path.name in forbidden_names
-        for path in adapters_path.rglob("*.py")
-    )
+    assert not any(path.name in forbidden_names for path in adapters_path.rglob("*.py"))
     assert not (adapters_path / "providers").exists()
 
 

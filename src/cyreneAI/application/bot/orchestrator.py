@@ -4,24 +4,32 @@ import logging
 
 from cyreneAI.application.agent.orchestrator import AgentOrchestrator
 from cyreneAI.application.agent.request_builder import build_agent_run_request
+from cyreneAI.application.bot.command_parser import (
+    parse_bot_command,
+    should_parse_bot_command,
+)
 from cyreneAI.application.chat.orchestrator import (
     ApplicationChatRequest,
     ApplicationChatResult,
     ChatOrchestrator,
 )
-from cyreneAI.application.bot.command_parser import (
-    parse_bot_command,
-    should_parse_bot_command,
-)
 from cyreneAI.application.runtime import CyreneAIRuntime
-from cyreneAI.core.plugin.manager import PluginManager
 from cyreneAI.core.errors.base import CyreneAIError
+from cyreneAI.core.errors.bot import BotInputError, BotUnsupportedEventError
 from cyreneAI.core.errors.plugin import (
     PluginAuthorizationError,
     PluginError,
     PluginExecutionError,
     PluginInputError,
     PluginNotFoundError,
+)
+from cyreneAI.core.plugin.manager import PluginManager
+from cyreneAI.core.schema.agent import AgentRunResult
+from cyreneAI.core.schema.application import (
+    ApplicationBotRequest,
+    ApplicationBotResult,
+    BotMessageResponseMode,
+    BotMessageTriggerMode,
 )
 from cyreneAI.core.schema.bot import (
     BotAction,
@@ -30,15 +38,18 @@ from cyreneAI.core.schema.bot import (
     BotEventType,
     BotMessage,
 )
-from cyreneAI.core.errors.bot import BotInputError, BotUnsupportedEventError
-from cyreneAI.core.schema.application import ApplicationBotRequest, ApplicationBotResult
-from cyreneAI.core.schema.application import BotMessageResponseMode, BotMessageTriggerMode
-from cyreneAI.core.schema.message import ContentPart, ContentPartType, Message, MessageRole
-from cyreneAI.core.schema.plugin import PluginCommandRequest
-from cyreneAI.core.schema.plugin import PluginEvent, PluginEventType
-from cyreneAI.core.schema.agent import AgentRunResult
+from cyreneAI.core.schema.message import (
+    ContentPart,
+    ContentPartType,
+    Message,
+    MessageRole,
+)
+from cyreneAI.core.schema.plugin import (
+    PluginCommandRequest,
+    PluginEvent,
+    PluginEventType,
+)
 from cyreneAI.core.schema.tool import ToolResult
-
 
 logger = logging.getLogger(__name__)
 
@@ -218,7 +229,9 @@ class BotOrchestrator:
         )
         if plugin_manager is None:
             actions = [_unknown_command_action(request, command.name)]
-            return _command_actions_to_result(request, command.name, command.args, actions)
+            return _command_actions_to_result(
+                request, command.name, command.args, actions
+            )
 
         is_admin = _metadata_is_admin(request.metadata.get("is_admin"))
         try:
@@ -236,7 +249,9 @@ class BotOrchestrator:
             )
         except PluginNotFoundError:
             actions = [_unknown_command_action(request, command.name)]
-            return _command_actions_to_result(request, command.name, command.args, actions)
+            return _command_actions_to_result(
+                request, command.name, command.args, actions
+            )
         except PluginAuthorizationError:
             actions = [
                 _command_text_action(
@@ -246,7 +261,9 @@ class BotOrchestrator:
                     text=f"Command /{command.name} requires admin permission.",
                 )
             ]
-            return _command_actions_to_result(request, command.name, command.args, actions)
+            return _command_actions_to_result(
+                request, command.name, command.args, actions
+            )
         except PluginInputError as exc:
             actions = [
                 _command_text_action(
@@ -256,7 +273,9 @@ class BotOrchestrator:
                     text=str(exc),
                 )
             ]
-            return _command_actions_to_result(request, command.name, command.args, actions)
+            return _command_actions_to_result(
+                request, command.name, command.args, actions
+            )
         except PluginExecutionError:
             logger.exception(
                 "Plugin command execution failed: command=%s",
@@ -270,7 +289,9 @@ class BotOrchestrator:
                     text=f"Command /{command.name} failed.",
                 )
             ]
-            return _command_actions_to_result(request, command.name, command.args, actions)
+            return _command_actions_to_result(
+                request, command.name, command.args, actions
+            )
         except PluginError:
             logger.exception(
                 "Plugin command failed: command=%s",
@@ -284,7 +305,9 @@ class BotOrchestrator:
                     text=f"Command /{command.name} failed.",
                 )
             ]
-            return _command_actions_to_result(request, command.name, command.args, actions)
+            return _command_actions_to_result(
+                request, command.name, command.args, actions
+            )
 
         return ApplicationBotResult(
             actions=plugin_result.actions,
@@ -417,7 +440,9 @@ def _is_bot_admin_request(
     )
 
 
-def _known_plugin_command_names(plugin_manager: PluginManager | None) -> set[str] | None:
+def _known_plugin_command_names(
+    plugin_manager: PluginManager | None,
+) -> set[str] | None:
     if plugin_manager is None:
         return None
     return {
@@ -471,10 +496,7 @@ def _is_mentioned(request: ApplicationBotRequest) -> bool:
         for mention in request.message_trigger_mentions
         if mention.strip()
     ]
-    return any(
-        f"@{mention}" in normalized_text
-        for mention in mentions
-    )
+    return any(f"@{mention}" in normalized_text for mention in mentions)
 
 
 def _has_trigger_keyword(request: ApplicationBotRequest) -> bool:
@@ -617,16 +639,11 @@ def _agent_result_to_send_message_action(
 
 def _agent_tool_results(agent_result: AgentRunResult) -> list[ToolResult]:
     return [
-        tool_result
-        for step in agent_result.steps
-        for tool_result in step.tool_results
+        tool_result for step in agent_result.steps for tool_result in step.tool_results
     ]
 
 
 def _has_sendable_content(content: list[ContentPart] | None) -> bool:
     if not content:
         return False
-    return any(
-        part.type != ContentPartType.TEXT or bool(part.text)
-        for part in content
-    )
+    return any(part.type != ContentPartType.TEXT or bool(part.text) for part in content)

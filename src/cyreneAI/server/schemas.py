@@ -8,7 +8,6 @@ from cyreneAI.core.schema.server import (
     ImageGenerationRequestBody,
 )
 
-
 __all__ = [
     "AgentRunRequestBody",
     "ChannelWebhookRequestBody",

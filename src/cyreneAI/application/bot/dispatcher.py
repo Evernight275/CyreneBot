@@ -12,7 +12,6 @@ from cyreneAI.core.errors.bot import BotStateError
 from cyreneAI.core.schema.application import ApplicationBotDispatchResult
 from cyreneAI.core.schema.bot import BotAction
 
-
 logger = logging.getLogger(__name__)
 
 

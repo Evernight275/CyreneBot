@@ -102,5 +102,8 @@ def _cosine_similarity(left: list[float], right: list[float]) -> float:
     right_norm = sqrt(sum(value * value for value in right))
     if left_norm == 0 or right_norm == 0:
         raise VectorInputError("Vector cannot be zero")
-    dot = sum(left_value * right_value for left_value, right_value in zip(left, right))
+    dot = sum(
+        left_value * right_value
+        for left_value, right_value in zip(left, right, strict=True)
+    )
     return dot / (left_norm * right_norm)

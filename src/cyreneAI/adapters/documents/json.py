@@ -67,9 +67,7 @@ class JsonDocumentLoader:
         if isinstance(payload, list):
             items = cast(list[Any], payload)
             return [
-                cast(dict[str, Any], item)
-                for item in items
-                if isinstance(item, dict)
+                cast(dict[str, Any], item) for item in items if isinstance(item, dict)
             ]
         raise ValueError("JSON document payload must be an object or list of objects")
 

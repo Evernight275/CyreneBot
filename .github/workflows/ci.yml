@@ -1,4 +1,4 @@
-name: CI
+name: PR Gate
 
 on:
   push:
@@ -6,15 +6,9 @@ on:
   pull_request:
 
 jobs:
-  test:
-    name: Python ${{ matrix.python-version }} / ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-        python-version: ["3.12"]
+  quality:
+    name: Quality / Python 3.12
+    runs-on: ubuntu-latest
 
     env:
       PYTHONUTF8: "1"
@@ -30,7 +24,39 @@ jobs:
           cache-dependency-glob: uv.lock
 
       - name: Install Python
-        run: uv python install ${{ matrix.python-version }}
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Ruff
+        run: uv run ruff check src
+
+      - name: Black
+        run: uv run black --check src
+
+      - name: Pyright
+        run: uv run pyright
+
+  architecture:
+    name: Architecture Boundaries / Python 3.12
+    runs-on: ubuntu-latest
+
+    env:
+      PYTHONUTF8: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install Python
+        run: uv python install 3.12
 
       - name: Install dependencies
         run: uv sync --frozen
@@ -38,5 +64,38 @@ jobs:
       - name: Compile
         run: uv run python -m compileall src
 
+      - name: Architecture tests
+        run: uv run pytest src/cyreneAI/tests/test_infra_provider_boundaries.py src/cyreneAI/tests/test_packaging_boundaries.py
+
+  test:
+    name: Tests / ${{ matrix.os }} / Python 3.12
+    runs-on: ${{ matrix.os }}
+
+    needs: [quality, architecture]
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    env:
+      PYTHONUTF8: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
       - name: Test
-        run: uv run pytest
+        run: uv run pytest src/cyreneAI/tests

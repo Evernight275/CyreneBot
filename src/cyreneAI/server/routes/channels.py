@@ -40,9 +40,7 @@ async def handle_channel_webhook(
                 tool_execution_policy=body.tool_execution_policy,
                 max_tool_rounds=body.max_tool_rounds,
                 max_agent_steps=body.max_agent_steps,
-                max_agent_tool_calls_per_step=(
-                    body.max_agent_tool_calls_per_step
-                ),
+                max_agent_tool_calls_per_step=(body.max_agent_tool_calls_per_step),
                 max_agent_total_tool_calls=body.max_agent_total_tool_calls,
                 max_agent_tool_result_chars=body.max_agent_tool_result_chars,
                 agent_planning=body.agent_planning,

@@ -3,8 +3,8 @@ from __future__ import annotations
 import httpx
 import pytest
 from openai import (
-    APITimeoutError,
     APIStatusError,
+    APITimeoutError,
     AuthenticationError,
     BadRequestError,
     RateLimitError,
@@ -18,7 +18,9 @@ from cyreneAI.core.errors.provider import (
     ProviderRequestTimeoutError,
     ProviderUnavailableError,
 )
-from cyreneAI.infra.adapters.providers.openai_compatible.errors import translate_openai_error
+from cyreneAI.infra.adapters.providers.openai_compatible.errors import (
+    translate_openai_error,
+)
 
 
 def _response(status_code: int) -> httpx.Response:

@@ -27,7 +27,9 @@ class ToolRegistryProtocol(Protocol):
     工具注册器协议
     """
 
-    def register(self, definition: ToolDefinition, executor: ToolExecutorProtocol) -> None:
+    def register(
+        self, definition: ToolDefinition, executor: ToolExecutorProtocol
+    ) -> None:
         """
         注册工具
         """

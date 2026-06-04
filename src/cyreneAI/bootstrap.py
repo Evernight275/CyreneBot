@@ -23,12 +23,12 @@ from cyreneAI.core.plugin.plugin_protocol import (
     PluginTaskSchedulerProtocol,
     PluginTaskStoreProtocol,
 )
-from cyreneAI.core.schema.plugin import PluginDefinition
-from cyreneAI.core.schema.application import BotAdminConfig
 from cyreneAI.core.provider.factory import ProviderFactory
 from cyreneAI.core.provider.manager import ProviderManager
 from cyreneAI.core.provider.provider_protocol import ProviderConfigStoreProtocol
 from cyreneAI.core.provider.registry import ProviderRegistry
+from cyreneAI.core.schema.application import BotAdminConfig
+from cyreneAI.core.schema.plugin import PluginDefinition
 from cyreneAI.core.schema.provider import ProviderConfig
 from cyreneAI.core.schema.tool import MCPStdioServerConfig, ShellCommandPolicy
 from cyreneAI.core.skill.manager import SkillManager
@@ -38,10 +38,10 @@ from cyreneAI.core.tool.tool_protocol import (
     ToolSandboxRunnerProtocol,
 )
 from cyreneAI.core.vector.vector_protocol import VectorStoreProtocol
-from cyreneAI.infra.adapters.skills.filesystem.loader import FileSystemSkillLoader
 from cyreneAI.infra.adapters.bot_polling_states.sqlite.builder import (
     create_sqlite_bot_polling_state_store,
 )
+from cyreneAI.infra.adapters.bot_sessions.memory import InMemoryBotSessionStore
 from cyreneAI.infra.adapters.plugins.filesystem import (
     FileSystemPluginAssets,
     FileSystemPluginLoader,
@@ -50,14 +50,14 @@ from cyreneAI.infra.adapters.plugins.filesystem import (
 from cyreneAI.infra.adapters.plugins.python_env import PluginPythonEnvironmentManager
 from cyreneAI.infra.adapters.plugins.sqlite import create_sqlite_plugin_task_store
 from cyreneAI.infra.adapters.provider_config_stores import FileSystemProviderConfigStore
-from cyreneAI.infra.adapters.bot_sessions.memory import InMemoryBotSessionStore
-from cyreneAI.infra.adapters.tools.sandbox import (
-    InProcessToolSandboxRunner,
-    SubprocessToolSandboxRunner,
-)
+from cyreneAI.infra.adapters.skills.filesystem.loader import FileSystemSkillLoader
 from cyreneAI.infra.adapters.tools.mcp_stdio import register_mcp_stdio_tools
 from cyreneAI.infra.adapters.tools.python_code import (
     register_python_code_interpreter_tool,
+)
+from cyreneAI.infra.adapters.tools.sandbox import (
+    InProcessToolSandboxRunner,
+    SubprocessToolSandboxRunner,
 )
 from cyreneAI.infra.adapters.tools.shell import register_controlled_shell_tool
 from cyreneAI.infra.adapters.tools.web_search import register_web_search_tool
@@ -106,7 +106,9 @@ async def build_cyrene_ai_runtime(
     plugin_storage: PluginStorageProtocol | None = None,
     plugin_storage_path: str | Path | None = None,
     plugin_assets: PluginAssetsProtocol | None = None,
-    plugin_python_environment_manager: PluginPythonEnvironmentManagerProtocol | None = None,
+    plugin_python_environment_manager: (
+        PluginPythonEnvironmentManagerProtocol | None
+    ) = None,
     plugin_python_environment_root_path: str | Path | None = "data/plugin_venvs",
     plugin_python_dependency_auto_install: bool = True,
     plugin_python_dependency_install_timeout_seconds: float = 300.0,
@@ -121,7 +123,9 @@ async def build_cyrene_ai_runtime(
     tool_sandbox_mode: Literal["in_process", "subprocess"] | None = None,
     tool_sandbox_commands: Mapping[str, Sequence[str]] | None = None,
     tool_sandbox_timeout_seconds: float | None = None,
-    mcp_stdio_servers: Sequence[MCPStdioServerConfig | Mapping[str, object]] | None = None,
+    mcp_stdio_servers: (
+        Sequence[MCPStdioServerConfig | Mapping[str, object]] | None
+    ) = None,
     web_search_url_template: str | None = None,
     web_search_api_key: str | None = None,
     web_search_api_key_header: str = "Authorization",
@@ -140,8 +144,13 @@ async def build_cyrene_ai_runtime(
     provider_manager = ProviderManager(provider_factory)
 
     runtime_provider_config_store = provider_config_store
-    if runtime_provider_config_store is not None and provider_config_store_path is not None:
-        raise ValueError("provider_config_store and provider_config_store_path cannot both be set")
+    if (
+        runtime_provider_config_store is not None
+        and provider_config_store_path is not None
+    ):
+        raise ValueError(
+            "provider_config_store and provider_config_store_path cannot both be set"
+        )
     if runtime_provider_config_store is None and provider_config_store_path is not None:
         runtime_provider_config_store = FileSystemProviderConfigStore(
             _resolve_project_relative_path(provider_config_store_path)
@@ -348,9 +357,11 @@ async def build_cyrene_ai_runtime(
             register_controlled_shell_tool(
                 runtime.tool_registry,
                 policy=shell_command_policy,
-                cwd_root=_resolve_project_relative_path(shell_cwd_root_path)
-                if shell_cwd_root_path is not None
-                else None,
+                cwd_root=(
+                    _resolve_project_relative_path(shell_cwd_root_path)
+                    if shell_cwd_root_path is not None
+                    else None
+                ),
                 timeout_seconds=shell_timeout_seconds,
             )
 

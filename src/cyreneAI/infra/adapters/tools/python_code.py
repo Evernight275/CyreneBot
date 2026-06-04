@@ -13,7 +13,7 @@ from cyreneAI.core.schema.tool import (
     ToolRiskLevel,
     ToolSafetyProfile,
 )
-from cyreneAI.core.tool.tool_protocol import ToolExecutorProtocol, ToolRegistryProtocol
+from cyreneAI.core.tool.tool_protocol import ToolRegistryProtocol
 from cyreneAI.infra.adapters.tools.common import parse_tool_arguments
 
 
@@ -98,7 +98,9 @@ class _PythonCodeInterpreterExecutor:
                 await process.wait()
             raise ToolExecutionError("code_interpreter timed out", cause=exc) from exc
         except OSError as exc:
-            raise ToolExecutionError("code_interpreter failed to start", cause=exc) from exc
+            raise ToolExecutionError(
+                "code_interpreter failed to start", cause=exc
+            ) from exc
 
         if len(stdout) > self._max_stdout_bytes:
             raise ToolExecutionError("code_interpreter stdout exceeded maximum size")

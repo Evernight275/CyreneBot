@@ -295,7 +295,9 @@ def _coerce_tool_argument(value: Any, annotation: Any) -> Any:
     if annotation in {str, int, float, bool}:
         if annotation is bool and not isinstance(value, bool):
             raise ToolInputError("value must be a boolean")
-        if annotation is int and (not isinstance(value, int) or isinstance(value, bool)):
+        if annotation is int and (
+            not isinstance(value, int) or isinstance(value, bool)
+        ):
             raise ToolInputError("value must be an integer")
         if annotation is float and (
             not isinstance(value, (int, float)) or isinstance(value, bool)
