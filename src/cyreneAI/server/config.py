@@ -35,6 +35,77 @@ def build_telegram_bot_token_from_env() -> str | None:
     return _env_str("TELEGRAM_BOT_TOKEN") or _env_str("BOT_TOKEN")
 
 
+def build_qq_bot_token_from_env() -> str | None:
+    load_dotenv()
+
+    return _env_str("QQ_BOT_ACCESS_TOKEN") or _env_str("QQ_BOT_TOKEN")
+
+
+def build_qq_bot_app_id_from_env() -> str | None:
+    load_dotenv()
+
+    return _env_str("QQ_BOT_APP_ID") or _env_str("QQ_BOT_APPID")
+
+
+def build_qq_bot_app_secret_from_env() -> str | None:
+    load_dotenv()
+
+    return _env_str("QQ_BOT_APP_SECRET") or _env_str("QQ_BOT_SECRET")
+
+
+def build_qq_bot_base_url_from_env() -> str:
+    load_dotenv()
+
+    return _env_str("QQ_BOT_BASE_URL") or "https://api.sgroup.qq.com"
+
+
+def build_qq_bot_token_url_from_env() -> str:
+    load_dotenv()
+
+    return _env_str("QQ_BOT_TOKEN_URL") or (
+        "https://bots.qq.com/app/getAppAccessToken"
+    )
+
+
+def build_qq_webhook_provider_id_from_env() -> str | None:
+    load_dotenv()
+
+    qq_provider_id = _env_str("QQ_BOT_PROVIDER_ID")
+    if qq_provider_id:
+        return qq_provider_id
+
+    if _env_str("OPENAI_COMPATIBLE_API_KEY") or _env_str("OPENAI_API_KEY"):
+        return _env_str("OPENAI_COMPATIBLE_PROVIDER_ID") or "openai-compatible"
+
+    if _env_str("OPENAI_RESPONSES_API_KEY"):
+        return _env_str("OPENAI_RESPONSES_PROVIDER_ID") or "openai"
+
+    return _env_str("OPENAI_PROVIDER_ID")
+
+
+def build_qq_webhook_model_from_env() -> str | None:
+    load_dotenv()
+
+    return (
+        _env_str("QQ_BOT_MODEL")
+        or _env_str("OPENAI_COMPATIBLE_MODEL")
+        or _env_str("OPENAI_RESPONSES_MODEL")
+        or _env_str("OPENAI_MODEL")
+    )
+
+
+def build_qq_webhook_secret_from_env() -> str | None:
+    load_dotenv()
+
+    return _env_str("QQ_BOT_WEBHOOK_SECRET") or build_qq_bot_app_secret_from_env()
+
+
+def build_qq_websocket_enabled_from_env() -> bool:
+    load_dotenv()
+
+    return (_env_str("QQ_BOT_MODE") or "").lower() in {"websocket", "ws"}
+
+
 def build_telegram_webhook_secret_from_env() -> str | None:
     load_dotenv()
 

@@ -68,6 +68,9 @@ from cyreneAI.infra.bootstrap.registrations.bot_channels import (
     register_default_bot_channels,
 )
 from cyreneAI.infra.bootstrap.registrations.providers import register_default_providers
+from cyreneAI.infra.bootstrap.registrations.qq_bot_channel import (
+    register_qq_bot_channel,
+)
 from cyreneAI.infra.bootstrap.registrations.telegram_bot_channel import (
     register_telegram_bot_channel,
 )
@@ -88,6 +91,11 @@ async def build_cyrene_ai_runtime(
     bot_channel_registry: BotChannelRegistryProtocol | None = None,
     enable_memory_bot_channel: bool = False,
     telegram_bot_token: str | None = None,
+    qq_bot_token: str | None = None,
+    qq_bot_app_id: str | None = None,
+    qq_bot_app_secret: str | None = None,
+    qq_bot_base_url: str = "https://api.sgroup.qq.com",
+    qq_bot_token_url: str = "https://bots.qq.com/app/getAppAccessToken",
     bot_session_store: BotSessionStoreProtocol | None = None,
     bot_session_manager: BotSessionManager | None = None,
     bot_polling_state_store: BotPollingStateStoreProtocol | None = None,
@@ -261,7 +269,8 @@ async def build_cyrene_ai_runtime(
 
     runtime_bot_channel_registry = bot_channel_registry
     concrete_bot_channel_registry: BotChannelRegistry | None = None
-    if enable_memory_bot_channel or telegram_bot_token:
+    qq_bot_enabled = bool(qq_bot_token or (qq_bot_app_id and qq_bot_app_secret))
+    if enable_memory_bot_channel or telegram_bot_token or qq_bot_enabled:
         if runtime_bot_channel_registry is None:
             concrete_bot_channel_registry = BotChannelRegistry()
             runtime_bot_channel_registry = concrete_bot_channel_registry
@@ -269,7 +278,7 @@ async def build_cyrene_ai_runtime(
             concrete_bot_channel_registry = runtime_bot_channel_registry
         else:
             raise ValueError(
-                "memory and telegram bot channels require BotChannelRegistry"
+                "memory, telegram, and qq bot channels require BotChannelRegistry"
             )
     if enable_memory_bot_channel:
         assert concrete_bot_channel_registry is not None
@@ -279,6 +288,16 @@ async def build_cyrene_ai_runtime(
         register_telegram_bot_channel(
             concrete_bot_channel_registry,
             token=telegram_bot_token,
+        )
+    if qq_bot_enabled:
+        assert concrete_bot_channel_registry is not None
+        register_qq_bot_channel(
+            concrete_bot_channel_registry,
+            token=qq_bot_token,
+            app_id=qq_bot_app_id,
+            app_secret=qq_bot_app_secret,
+            base_url=qq_bot_base_url,
+            token_url=qq_bot_token_url,
         )
 
     if runtime_bot_session_manager is None and runtime_bot_channel_registry is not None:

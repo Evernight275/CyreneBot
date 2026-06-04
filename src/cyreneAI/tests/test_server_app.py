@@ -93,6 +93,15 @@ from cyreneAI.server.config import (
     build_plugin_task_database_path_from_env,
     build_provider_config_store_path_from_env,
     build_provider_configs_from_env,
+    build_qq_bot_app_id_from_env,
+    build_qq_bot_app_secret_from_env,
+    build_qq_bot_base_url_from_env,
+    build_qq_bot_token_from_env,
+    build_qq_bot_token_url_from_env,
+    build_qq_webhook_model_from_env,
+    build_qq_webhook_provider_id_from_env,
+    build_qq_webhook_secret_from_env,
+    build_qq_websocket_enabled_from_env,
     build_telegram_bot_token_from_env,
     build_telegram_polling_enabled_from_env,
     build_telegram_polling_interval_seconds_from_env,
@@ -277,6 +286,10 @@ def _client(
     telegram_webhook_secret: str | None = None,
     telegram_provider_id: str | None = None,
     telegram_model: str | None = None,
+    qq_webhook_secret: str | None = None,
+    qq_provider_id: str | None = None,
+    qq_model: str | None = None,
+    qq_websocket_enabled: bool = False,
     telegram_polling_enabled: bool = False,
 ) -> TestClient:
     return TestClient(
@@ -286,6 +299,10 @@ def _client(
             telegram_webhook_secret=telegram_webhook_secret,
             telegram_provider_id=telegram_provider_id,
             telegram_model=telegram_model,
+            qq_webhook_secret=qq_webhook_secret,
+            qq_provider_id=qq_provider_id,
+            qq_model=qq_model,
+            qq_websocket_enabled=qq_websocket_enabled,
             telegram_polling_enabled=telegram_polling_enabled,
         )
     )
@@ -956,6 +973,93 @@ def test_server_telegram_webhook_requires_provider_and_model() -> None:
     assert response.status_code == 400
 
 
+def test_server_qq_webhook_sends_bot_reply_without_admin_auth() -> None:
+    response = _client(
+        channel_id="qq",
+        settings=ServerSettings(
+            auth_enabled=True,
+            admin_username="admin",
+            admin_password="password",
+            session_secret="secret",
+        ),
+        qq_provider_id="provider-1",
+        qq_model="chat-model",
+    ).post(
+        "/qq/webhook",
+        json={
+            "event_id": "event-1",
+            "id": "event-1",
+            "t": "MESSAGE_CREATE",
+            "text": "ping",
+            "user_id": "user-1",
+        },
+    )
+
+    assert response.status_code == 200
+    sent_actions = response.json()["sent_actions"]
+    assert len(sent_actions) == 1
+    assert sent_actions[0]["channel_id"] == "qq"
+    assert sent_actions[0]["message"]["content"][0]["text"] == "pong"
+
+
+def test_server_qq_webhook_requires_provider_and_model() -> None:
+    response = _client(
+        channel_id="qq",
+    ).post(
+        "/qq/webhook",
+        json={
+            "event_id": "event-1",
+            "id": "event-1",
+            "t": "MESSAGE_CREATE",
+            "text": "ping",
+            "user_id": "user-1",
+        },
+    )
+
+    assert response.status_code == 400
+
+
+def test_server_qq_webhook_returns_validation_signature() -> None:
+    response = _client(
+        channel_id="qq",
+        qq_webhook_secret="secret",
+    ).post(
+        "/qq/webhook",
+        json={
+            "op": 13,
+            "d": {
+                "plain_token": "plain-token",
+                "event_ts": "1700000000",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "plain_token": "plain-token",
+        "signature": (
+            "129717031297e863d8fbac39eb31ba3add136d93e59bef9a46b72a3d39979649"
+            "c45f9016b289584091786933e0eb18e3fc681dd39eeb55046f455c081de04107"
+        ),
+    }
+
+
+def test_server_qq_webhook_validation_requires_secret() -> None:
+    response = _client(channel_id="qq").post(
+        "/qq/webhook",
+        json={
+            "op": 13,
+            "d": {
+                "plain_token": "plain-token",
+                "event_ts": "1700000000",
+            },
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "QQ webhook secret is required for validation"
+
+
 def test_server_builds_provider_configs_from_env(monkeypatch) -> None:
     monkeypatch.setenv("OPENAI_COMPATIBLE_API_KEY", "compatible-key")
     monkeypatch.setenv("OPENAI_COMPATIBLE_BASE_URL", "https://compatible.example/v1")
@@ -986,6 +1090,63 @@ def test_server_builds_telegram_webhook_config_from_env(monkeypatch) -> None:
     assert build_telegram_webhook_secret_from_env() == "webhook-secret"
     assert build_telegram_webhook_provider_id_from_env() == "provider-1"
     assert build_telegram_webhook_model_from_env() == "bot-model"
+
+
+def test_server_builds_qq_bot_config_from_env(monkeypatch) -> None:
+    monkeypatch.setenv("QQ_BOT_ACCESS_TOKEN", "access-token")
+    monkeypatch.setenv("QQ_BOT_APP_ID", "app-id")
+    monkeypatch.setenv("QQ_BOT_APP_SECRET", "app-secret")
+    monkeypatch.setenv("QQ_BOT_BASE_URL", "https://qq.example")
+    monkeypatch.setenv("QQ_BOT_TOKEN_URL", "https://bots.example/token")
+
+    assert build_qq_bot_token_from_env() == "access-token"
+    assert build_qq_bot_app_id_from_env() == "app-id"
+    assert build_qq_bot_app_secret_from_env() == "app-secret"
+    assert build_qq_bot_base_url_from_env() == "https://qq.example"
+    assert build_qq_bot_token_url_from_env() == "https://bots.example/token"
+
+
+def test_server_builds_qq_webhook_config_from_env(monkeypatch) -> None:
+    monkeypatch.setenv("QQ_BOT_PROVIDER_ID", "provider-1")
+    monkeypatch.setenv("QQ_BOT_MODEL", "bot-model")
+    monkeypatch.setenv("QQ_BOT_WEBHOOK_SECRET", "webhook-secret")
+
+    assert build_qq_webhook_provider_id_from_env() == "provider-1"
+    assert build_qq_webhook_model_from_env() == "bot-model"
+    assert build_qq_webhook_secret_from_env() == "webhook-secret"
+
+
+def test_server_builds_qq_webhook_secret_from_app_secret_fallback(monkeypatch) -> None:
+    monkeypatch.setenv("QQ_BOT_WEBHOOK_SECRET", "")
+    monkeypatch.setenv("QQ_BOT_APP_SECRET", "app-secret")
+
+    assert build_qq_webhook_secret_from_env() == "app-secret"
+
+
+def test_server_enables_qq_websocket_mode_from_env(monkeypatch) -> None:
+    monkeypatch.setenv("QQ_BOT_MODE", "websocket")
+
+    assert build_qq_websocket_enabled_from_env() is True
+
+
+def test_server_disables_qq_websocket_mode_by_default(monkeypatch) -> None:
+    monkeypatch.setenv("QQ_BOT_MODE", "")
+
+    assert build_qq_websocket_enabled_from_env() is False
+
+
+def test_server_builds_qq_webhook_config_from_provider_fallbacks(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("QQ_BOT_PROVIDER_ID", "")
+    monkeypatch.setenv("OPENAI_COMPATIBLE_PROVIDER_ID", "")
+    monkeypatch.setenv("OPENAI_RESPONSES_PROVIDER_ID", "")
+    monkeypatch.setenv("OPENAI_PROVIDER_ID", "")
+    monkeypatch.setenv("OPENAI_COMPATIBLE_API_KEY", "compatible-key")
+    monkeypatch.setenv("OPENAI_COMPATIBLE_MODEL", "chat-model")
+
+    assert build_qq_webhook_provider_id_from_env() == "openai-compatible"
+    assert build_qq_webhook_model_from_env() == "chat-model"
 
 
 def test_server_builds_telegram_webhook_config_from_provider_fallbacks(
@@ -1532,5 +1693,53 @@ def test_server_telegram_polling_requires_registered_channel() -> None:
             pass
     except RuntimeError as exc:
         assert str(exc) == "Telegram polling requires a registered telegram channel"
+    else:
+        raise AssertionError("Expected RuntimeError")
+
+
+def test_server_qq_websocket_requires_provider_and_model() -> None:
+    client = _client(
+        channel_id="qq",
+        qq_websocket_enabled=True,
+    )
+
+    try:
+        with client:
+            pass
+    except RuntimeError as exc:
+        assert str(exc) == "QQ websocket provider_id and model are required"
+    else:
+        raise AssertionError("Expected RuntimeError")
+
+
+def test_server_qq_websocket_requires_registered_channel() -> None:
+    client = _client(
+        qq_provider_id="provider-1",
+        qq_model="chat-model",
+        qq_websocket_enabled=True,
+    )
+
+    try:
+        with client:
+            pass
+    except RuntimeError as exc:
+        assert str(exc) == "QQ websocket requires a registered qq channel"
+    else:
+        raise AssertionError("Expected RuntimeError")
+
+
+def test_server_qq_websocket_requires_websocket_capable_channel() -> None:
+    client = _client(
+        channel_id="qq",
+        qq_provider_id="provider-1",
+        qq_model="chat-model",
+        qq_websocket_enabled=True,
+    )
+
+    try:
+        with client:
+            pass
+    except RuntimeError as exc:
+        assert str(exc) == "QQ channel does not support websocket updates"
     else:
         raise AssertionError("Expected RuntimeError")

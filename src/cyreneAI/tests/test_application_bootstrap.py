@@ -22,6 +22,7 @@ from cyreneAI.core.schema.tool import (
 )
 from cyreneAI.core.schema.vector import VectorQuery, VectorRecord
 from cyreneAI.infra.adapters.channels.memory import InMemoryBotChannel
+from cyreneAI.infra.adapters.channels.qq import QQBotChannel
 from cyreneAI.infra.adapters.channels.telegram import TelegramBotChannel
 from cyreneAI.infra.adapters.bot_polling_states.memory import (
     InMemoryBotPollingStateStore,
@@ -402,6 +403,27 @@ async def _run_build_runtime_can_enable_telegram_bot_channel() -> None:
 
 def test_build_cyrene_ai_runtime_can_enable_telegram_bot_channel() -> None:
     asyncio.run(_run_build_runtime_can_enable_telegram_bot_channel())
+
+
+async def _run_build_runtime_can_enable_qq_bot_channel() -> None:
+    runtime = await build_cyrene_ai_runtime(
+        qq_bot_app_id="app-id",
+        qq_bot_app_secret="app-secret",
+    )
+
+    assert runtime.bot_channel_registry is not None
+    assert runtime.bot_channel_registry.exists("qq")
+    assert runtime.bot_session_manager is not None
+    assert isinstance(
+        runtime.bot_channel_registry.get_channel("qq"),
+        QQBotChannel,
+    )
+
+    await runtime.close()
+
+
+def test_build_cyrene_ai_runtime_can_enable_qq_bot_channel() -> None:
+    asyncio.run(_run_build_runtime_can_enable_qq_bot_channel())
 
 
 async def _run_build_runtime_wires_bot_session_store() -> None:

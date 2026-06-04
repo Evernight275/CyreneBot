@@ -4,8 +4,10 @@ import asyncio
 
 from cyreneAI.adapters.channels import (
     InMemoryBotChannel,
+    QQBotChannel,
     TelegramBotChannel,
     create_memory_bot_channel,
+    create_qq_bot_channel,
     create_telegram_bot_channel,
 )
 from cyreneAI.core.schema.bot import BotAction, BotActionType, BotMessage
@@ -52,3 +54,13 @@ def test_create_telegram_bot_channel_returns_telegram_channel() -> None:
     )
 
     assert isinstance(channel, TelegramBotChannel)
+
+
+def test_create_qq_bot_channel_returns_qq_channel() -> None:
+    channel = create_qq_bot_channel(
+        app_id="app-id",
+        app_secret="app-secret",
+        base_url="https://qq.example",
+    )
+
+    assert isinstance(channel, QQBotChannel)

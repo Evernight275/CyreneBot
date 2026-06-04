@@ -407,6 +407,89 @@ async def handle(ctx) -> str:
 
 `ctx.agent.chat(...)` 返回 `Message`，`ctx.agent.result(...)` 返回文本结果；参数与 `/agents/run` 保持同语义。
 
+## QQ 官方机器人接入准备
+
+QQ channel 当前按“官方机器人 + Webhook/通用 channel webhook”路线准备，先支持文本消息映射和文本回复。申请与接入时按下面顺序推进：
+
+1. 登录 QQ 开放平台，创建机器人应用。
+2. 填写机器人名称、简介、头像等基础资料。
+3. 在开发配置里记录 `AppID`、`AppSecret`，必要时记录平台提供的 `Token`。
+4. 配置沙箱环境，先加入测试 QQ 群、测试用户或频道。
+5. 配置消息事件权限，至少打开消息创建相关事件。
+6. 准备公网 HTTPS 回调地址，例如 `https://bot.example.com/qq/webhook`。
+7. 按平台要求配置服务器 IP 白名单。
+8. 在沙箱里测试消息接收和文本回复。
+9. 通过沙箱后再提交发布审核。
+
+项目侧 QQ adapter 支持两种凭证形态：
+
+```python
+from cyreneAI.adapters.channels import create_qq_bot_channel
+
+channel = create_qq_bot_channel(
+    app_id="QQ_BOT_APP_ID",
+    app_secret="QQ_BOT_APP_SECRET",
+)
+```
+
+也可以直接传入已有 access token：
+
+```python
+channel = create_qq_bot_channel(token="QQ_BOT_ACCESS_TOKEN")
+```
+
+QQ channel 不会默认注册到 runtime，建议作为可选 channel 显式装配：
+
+```python
+from cyreneAI.core.bot.registry import BotChannelRegistry
+from cyreneAI.infra.bootstrap.registrations.qq_bot_channel import (
+    register_qq_bot_channel,
+)
+
+registry = BotChannelRegistry()
+register_qq_bot_channel(
+    registry,
+    app_id="QQ_BOT_APP_ID",
+    app_secret="QQ_BOT_APP_SECRET",
+)
+```
+
+建议环境变量命名：
+
+```text
+QQ_BOT_APP_ID=...
+QQ_BOT_APP_SECRET=...
+QQ_BOT_ACCESS_TOKEN=...
+QQ_BOT_BASE_URL=https://api.sgroup.qq.com
+QQ_BOT_TOKEN_URL=https://bots.qq.com/app/getAppAccessToken
+QQ_BOT_WEBHOOK_SECRET=...
+QQ_BOT_MODE=websocket
+QQ_BOT_PROVIDER_ID=openai-compatible
+QQ_BOT_MODEL=...
+QQ_BOT_WEBHOOK_URL=https://bot.example.com/qq/webhook
+```
+
+`QQ_BOT_WEBHOOK_SECRET` 用于 QQ 官方平台配置回调 URL 时的 `op=13`
+签名校验；不配置时会回退使用 `QQ_BOT_APP_SECRET`。
+
+`QQ_BOT_MODE=websocket` 会在服务启动时使用 QQ 官方 `botpy` 长连接接收事件，不需要公网域名，适合沙箱调试和域名备案/解析等待期。域名与 HTTPS 准备好后，可以切回 `QQ_BOT_MODE=webhook`，使用平台回调地址。
+
+QQ 官方平台不接受裸公网 IP 作为回调地址，生产接入需要域名和 HTTPS。可以先把服务与反向代理准备好，等 DNS 生效后再把平台回调填为：
+
+```text
+https://bot.example.com/qq/webhook
+```
+
+例如 Caddy：
+
+```caddy
+bot.example.com {
+    reverse_proxy 127.0.0.1:8000
+}
+```
+
+当前阶段只承诺最小文本链路：QQ update 映射为 `BotEvent`，`BotAction(SEND_MESSAGE)` 映射为 QQ 文本发送 payload。图片、引用回复、按钮、富媒体和更细的群/频道权限会在真实沙箱测试后再扩展。
+
 ## 定义 Python 工具
 
 `cyreneAI.adapters.tools` 提供轻量工具 helper，只负责创建 `ToolDefinition` 和 executor；注册仍由 runtime 的 tool registry 完成：

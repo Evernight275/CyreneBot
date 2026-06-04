@@ -8,6 +8,7 @@ from fastapi import FastAPI
 
 from cyreneAI.application.runtime import CyreneAIRuntime
 from cyreneAI.server.channel_polling import ChannelPollingRunner
+from cyreneAI.server.channel_websocket import ChannelWebSocketRunner
 from cyreneAI.server.config import ServerSettings, build_server_settings_from_env
 from cyreneAI.server.routes import (
     agents,
@@ -18,6 +19,7 @@ from cyreneAI.server.routes import (
     images,
     plugins,
     providers,
+    qq,
 )
 from cyreneAI.server.routes import telegram
 
@@ -31,6 +33,10 @@ def create_app(
     telegram_webhook_secret: str | None = None,
     telegram_provider_id: str | None = None,
     telegram_model: str | None = None,
+    qq_webhook_secret: str | None = None,
+    qq_provider_id: str | None = None,
+    qq_model: str | None = None,
+    qq_websocket_enabled: bool = False,
     telegram_polling_enabled: bool = False,
     telegram_polling_interval_seconds: float = 1.0,
     telegram_polling_timeout_seconds: int = 30,
@@ -40,14 +46,20 @@ def create_app(
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         _log_plugin_startup_state(runtime)
         polling_runner = _build_telegram_polling_runner(app)
+        qq_websocket_runner = _build_qq_websocket_runner(app)
         app.state.telegram_polling_runner = polling_runner
+        app.state.qq_websocket_runner = qq_websocket_runner
         if polling_runner is not None:
             polling_runner.start()
+        if qq_websocket_runner is not None:
+            qq_websocket_runner.start()
         app.state.runtime_ready = True
         try:
             yield
         finally:
             app.state.runtime_ready = False
+            if qq_websocket_runner is not None:
+                await qq_websocket_runner.stop()
             if polling_runner is not None:
                 await polling_runner.stop()
             await runtime.close()
@@ -59,6 +71,11 @@ def create_app(
     app.state.telegram_webhook_secret = telegram_webhook_secret
     app.state.telegram_provider_id = telegram_provider_id
     app.state.telegram_model = telegram_model
+    app.state.qq_webhook_secret = qq_webhook_secret
+    app.state.qq_provider_id = qq_provider_id
+    app.state.qq_model = qq_model
+    app.state.qq_websocket_enabled = qq_websocket_enabled
+    app.state.qq_websocket_runner = None
     app.state.telegram_polling_enabled = telegram_polling_enabled
     app.state.telegram_polling_interval_seconds = telegram_polling_interval_seconds
     app.state.telegram_polling_timeout_seconds = telegram_polling_timeout_seconds
@@ -73,6 +90,7 @@ def create_app(
     app.include_router(plugins.router)
     app.include_router(channels.router)
     app.include_router(telegram.router)
+    app.include_router(qq.router)
     return app
 
 
@@ -82,6 +100,10 @@ def create_app_with_runtime_builder(
     telegram_webhook_secret: str | None = None,
     telegram_provider_id: str | None = None,
     telegram_model: str | None = None,
+    qq_webhook_secret: str | None = None,
+    qq_provider_id: str | None = None,
+    qq_model: str | None = None,
+    qq_websocket_enabled: bool = False,
     telegram_polling_enabled: bool = False,
     telegram_polling_interval_seconds: float = 1.0,
     telegram_polling_timeout_seconds: int = 30,
@@ -93,14 +115,20 @@ def create_app_with_runtime_builder(
         app.state.runtime = runtime
         _log_plugin_startup_state(runtime)
         polling_runner = _build_telegram_polling_runner(app)
+        qq_websocket_runner = _build_qq_websocket_runner(app)
         app.state.telegram_polling_runner = polling_runner
+        app.state.qq_websocket_runner = qq_websocket_runner
         if polling_runner is not None:
             polling_runner.start()
+        if qq_websocket_runner is not None:
+            qq_websocket_runner.start()
         app.state.runtime_ready = True
         try:
             yield
         finally:
             app.state.runtime_ready = False
+            if qq_websocket_runner is not None:
+                await qq_websocket_runner.stop()
             if polling_runner is not None:
                 await polling_runner.stop()
             await runtime.close()
@@ -112,6 +140,11 @@ def create_app_with_runtime_builder(
     app.state.telegram_webhook_secret = telegram_webhook_secret
     app.state.telegram_provider_id = telegram_provider_id
     app.state.telegram_model = telegram_model
+    app.state.qq_webhook_secret = qq_webhook_secret
+    app.state.qq_provider_id = qq_provider_id
+    app.state.qq_model = qq_model
+    app.state.qq_websocket_enabled = qq_websocket_enabled
+    app.state.qq_websocket_runner = None
     app.state.telegram_polling_enabled = telegram_polling_enabled
     app.state.telegram_polling_interval_seconds = telegram_polling_interval_seconds
     app.state.telegram_polling_timeout_seconds = telegram_polling_timeout_seconds
@@ -126,6 +159,7 @@ def create_app_with_runtime_builder(
     app.include_router(plugins.router)
     app.include_router(channels.router)
     app.include_router(telegram.router)
+    app.include_router(qq.router)
     return app
 
 
@@ -204,5 +238,27 @@ def _build_telegram_polling_runner(app: FastAPI) -> ChannelPollingRunner | None:
         allowed_updates=["message"],
         metadata={
             "source": "telegram_polling",
+        },
+    )
+
+
+def _build_qq_websocket_runner(app: FastAPI) -> ChannelWebSocketRunner | None:
+    if not app.state.qq_websocket_enabled:
+        return None
+    if not app.state.qq_provider_id or not app.state.qq_model:
+        raise RuntimeError("QQ websocket provider_id and model are required")
+    registry = app.state.runtime.bot_channel_registry
+    if registry is None or not registry.exists("qq"):
+        raise RuntimeError("QQ websocket requires a registered qq channel")
+    channel = registry.get_channel("qq")
+    if not hasattr(channel, "run_websocket"):
+        raise RuntimeError("QQ channel does not support websocket updates")
+    return ChannelWebSocketRunner(
+        runtime=app.state.runtime,
+        channel_id="qq",
+        provider_id=app.state.qq_provider_id,
+        model=app.state.qq_model,
+        metadata={
+            "source": "qq_websocket",
         },
     )

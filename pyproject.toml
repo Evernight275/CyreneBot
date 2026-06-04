@@ -24,11 +24,13 @@ dev = [
     "pytest-asyncio",
     "google-genai",
     "anthropic",
+    "cryptography",
     "sqlalchemy",
     "aiosqlite",
     "fastapi>=0.136.3",
     "uvicorn[standard]>=0.48.0",
     "python-multipart>=0.0.20",
+    "qq-botpy>=1.2.1",
     "pyright",
     "twine",
 ]
