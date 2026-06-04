@@ -6,6 +6,18 @@ on:
   pull_request:
 
 jobs:
+  pr-evidence:
+    name: PR Evidence
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate PR body
+        run: python .github/scripts/validate_pr_body.py "$GITHUB_EVENT_PATH"
+
   quality:
     name: Quality / Python 3.12
     runs-on: ubuntu-latest
@@ -30,10 +42,10 @@ jobs:
         run: uv sync --frozen
 
       - name: Ruff
-        run: uv run ruff check src
+        run: uv run ruff check src .github/scripts
 
       - name: Black
-        run: uv run black --check src
+        run: uv run black --check src .github/scripts
 
       - name: Pyright
         run: uv run pyright
