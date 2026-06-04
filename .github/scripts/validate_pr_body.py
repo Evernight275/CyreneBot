@@ -14,6 +14,9 @@ REQUIRED_SECTIONS = (
     "风险与回滚",
 )
 
+MIN_BODY_LENGTH = 900
+MIN_SECTION_LENGTH = 80
+
 PLACEHOLDER_MARKERS = (
     "[必须填写",
     "TODO",
@@ -22,6 +25,9 @@ PLACEHOLDER_MARKERS = (
     "后补",
 )
 
+LOW_EFFORT_LINE_RE = re.compile(
+    r"(?im)^\s*(-\s*)?(已测试|见代码|看代码|如题|同上|无|暂无|没有|N/A|n/a|none|null)\s*[。.]?\s*$"
+)
 ACTION_RUN_RE = re.compile(r"https://github\.com/[^/\s]+/[^/\s]+/actions/runs/\d+")
 GITHUB_ATTACHMENT_RE = re.compile(
     r"https://github\.com/user-attachments/assets/[0-9a-fA-F-]+"
@@ -48,7 +54,7 @@ def main() -> int:
 
 def validate_body(body: str) -> list[str]:
     errors: list[str] = []
-    if len(body.strip()) < 600:
+    if len(body.strip()) < MIN_BODY_LENGTH:
         errors.append("PR 描述太短；需要设计说明、分层说明、证据和风险说明。")
 
     sections = _sections(body)
@@ -57,15 +63,19 @@ def validate_body(body: str) -> list[str]:
         if content is None:
             errors.append(f"缺少章节：## {section}")
             continue
-        if len(_plain_content(content)) < 40:
+        if len(_plain_content(content)) < MIN_SECTION_LENGTH:
             errors.append(f"章节内容过短：## {section}")
 
     for marker in PLACEHOLDER_MARKERS:
         if marker in body:
             errors.append(f"PR 描述仍包含占位内容：{marker}")
 
-    has_action_run = ACTION_RUN_RE.search(body) is not None
-    has_attachment = GITHUB_ATTACHMENT_RE.search(body) is not None
+    if LOW_EFFORT_LINE_RE.search(body):
+        errors.append("PR 描述包含低质量占位回答，例如“已测试/见代码/暂无”。")
+
+    evidence = sections.get("验收证据", "")
+    has_action_run = ACTION_RUN_RE.search(evidence) is not None
+    has_attachment = GITHUB_ATTACHMENT_RE.search(evidence) is not None
     if not has_action_run and not has_attachment:
         errors.append("验收证据必须包含 GitHub Actions run 链接或 GitHub 上传附件。")
 
