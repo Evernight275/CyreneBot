@@ -169,3 +169,36 @@ def test_qq_bot_client_translates_api_error() -> None:
             )
 
     asyncio.run(run())
+
+
+def test_qq_bot_client_includes_http_error_body_in_error_message() -> None:
+    async def run() -> None:
+        client = QQBotClient(
+            token="token",
+            client=FakeHTTPClient(
+                [
+                    _response(
+                        400,
+                        {
+                            "code": 304023,
+                            "message": "invalid msg_id",
+                        },
+                    )
+                ]
+            ),
+        )
+
+        with pytest.raises(BotActionError) as exc_info:
+            await client.send_message(
+                {
+                    "_route": "channel",
+                    "_route_id": "channel-1",
+                    "content": "pong",
+                }
+            )
+
+        assert "status 400" in str(exc_info.value)
+        assert "code=304023" in str(exc_info.value)
+        assert "invalid msg_id" in str(exc_info.value)
+
+    asyncio.run(run())

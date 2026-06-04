@@ -354,6 +354,7 @@ def _command_text_action(
             },
         ),
         metadata={
+            **request.event.metadata,
             "bot_event_id": request.event.event_id,
             "command": command_name,
             "command_args": list(command_args),
@@ -572,6 +573,7 @@ def _chat_result_to_send_message_action(
             },
         ),
         metadata={
+            **event.metadata,
             "bot_event_id": event.event_id,
             "finish_reason": chat_result.response.finish_reason,
         },
@@ -609,6 +611,7 @@ def _agent_result_to_send_message_action(
             },
         ),
         metadata={
+            **event.metadata,
             "bot_event_id": event.event_id,
             "agent_completed": agent_result.completed,
             "agent_stop_reason": agent_result.stop_reason,

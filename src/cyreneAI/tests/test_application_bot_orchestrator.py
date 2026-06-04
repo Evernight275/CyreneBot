@@ -85,6 +85,10 @@ def _bot_event(text: str = "hello") -> BotEvent:
             sender_id="user-1",
             content=_content(text),
         ),
+        metadata={
+            "qq_message_id": "message-1",
+            "qq_channel_id": "thread-1",
+        },
     )
 
 
@@ -275,6 +279,8 @@ def test_bot_orchestrator_turns_message_event_into_send_action() -> None:
         assert action.thread_id == "thread-1"
         assert action.message is not None
         assert action.message.content == _content("pong")
+        assert action.metadata["qq_message_id"] == "message-1"
+        assert action.metadata["qq_channel_id"] == "thread-1"
         assert result.chat_result is not None
         assert result.chat_result.response.finish_reason == ChatFinishReason.STOP
 

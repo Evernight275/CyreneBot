@@ -29,6 +29,8 @@ def translate_qq_error(exc: Exception) -> BotError:
     Translate QQ/httpx errors to common bot errors.
     """
     if isinstance(exc, QQBotAPIError):
+        if exc.error_code in {401, 403, "401", "403"}:
+            return BotConfigurationError(str(exc), cause=exc)
         return BotActionError(str(exc), cause=exc)
     if isinstance(exc, httpx.TimeoutException):
         return BotActionError("QQ request timed out", cause=exc)

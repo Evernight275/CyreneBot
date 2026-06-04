@@ -67,8 +67,14 @@ class QQBotClient:
         """
         try:
             response = await self._request(path, payload or {})
-            response.raise_for_status()
             body = _parse_response_body(response)
+            if response.status_code >= 400:
+                response_body = body if isinstance(body, dict) else {"result": body}
+                raise QQBotAPIError(
+                    _qq_status_error_message(response.status_code, response_body),
+                    error_code=response.status_code,
+                    payload=cast(dict[str, Any], response_body),
+                )
             if not isinstance(body, dict):
                 return {"result": body}
             response_body = cast(dict[str, Any], body)
@@ -176,3 +182,20 @@ def _parse_response_body(response: httpx.Response) -> Any:
         return response.json()
     except ValueError:
         raise QQBotAPIError("QQ response body must be JSON")
+
+
+def _qq_status_error_message(
+    status_code: int,
+    response_body: dict[str, Any],
+) -> str:
+    detail = (
+        response_body.get("message")
+        or response_body.get("msg")
+        or response_body.get("error")
+        or response_body.get("errmsg")
+        or "QQ request failed"
+    )
+    code = response_body.get("code")
+    if code is None:
+        return f"QQ request failed with status {status_code}: {detail}"
+    return f"QQ request failed with status {status_code}: code={code} message={detail}"
