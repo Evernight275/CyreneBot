@@ -257,6 +257,32 @@ def test_map_send_message_action_uses_session_route_before_raw_thread_id() -> No
     }
 
 
+def test_map_send_message_action_uses_session_route_before_typed_thread_id() -> None:
+    payload = map_bot_action_to_qq_send_message_payload(
+        BotAction(
+            action_type=BotActionType.SEND_MESSAGE,
+            channel_id="qq",
+            session_id="qq:user:user-1",
+            thread_id="qq:channel:not-a-real-channel",
+            message=BotMessage(
+                content=[
+                    ContentPart(
+                        type=ContentPartType.TEXT,
+                        text="pong",
+                    )
+                ]
+            ),
+        )
+    )
+
+    assert payload == {
+        "content": "pong",
+        "_route": "user",
+        "_route_id": "user-1",
+        "msg_type": 0,
+    }
+
+
 def test_map_send_message_action_prefers_dm_metadata_for_direct_message_event() -> None:
     payload = map_bot_action_to_qq_send_message_payload(
         BotAction(

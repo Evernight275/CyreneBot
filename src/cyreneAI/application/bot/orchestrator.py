@@ -125,8 +125,11 @@ class BotOrchestrator:
                 event=request.event,
                 agent_result=agent_result,
             )
+            actions = [*plugin_event_actions]
+            if action is not None:
+                actions.append(action)
             return ApplicationBotResult(
-                actions=[*plugin_event_actions, action],
+                actions=actions,
                 agent_result=agent_result,
                 tool_results=_agent_tool_results(agent_result),
                 metadata={
@@ -165,8 +168,11 @@ class BotOrchestrator:
             event=request.event,
             chat_result=chat_result,
         )
+        actions = [*plugin_event_actions]
+        if action is not None:
+            actions.append(action)
         return ApplicationBotResult(
-            actions=[*plugin_event_actions, action],
+            actions=actions,
             chat_result=chat_result,
             tool_results=chat_result.tool_results,
             metadata={
@@ -547,16 +553,11 @@ def _chat_result_to_send_message_action(
     *,
     event: BotEvent,
     chat_result: ApplicationChatResult,
-) -> BotAction:
+) -> BotAction | None:
     response_message = chat_result.response.message
     content = response_message.content if response_message is not None else None
-    if not content:
-        content = [
-            ContentPart(
-                type=ContentPartType.TEXT,
-                text="",
-            )
-        ]
+    if not _has_sendable_content(content):
+        return None
 
     return BotAction(
         action_type=BotActionType.SEND_MESSAGE,
@@ -584,16 +585,11 @@ def _agent_result_to_send_message_action(
     *,
     event: BotEvent,
     agent_result: AgentRunResult,
-) -> BotAction:
+) -> BotAction | None:
     response_message = agent_result.response.message
     content = response_message.content if response_message is not None else None
-    if not content:
-        content = [
-            ContentPart(
-                type=ContentPartType.TEXT,
-                text="",
-            )
-        ]
+    if not _has_sendable_content(content):
+        return None
 
     return BotAction(
         action_type=BotActionType.SEND_MESSAGE,
@@ -625,3 +621,12 @@ def _agent_tool_results(agent_result: AgentRunResult) -> list[ToolResult]:
         for step in agent_result.steps
         for tool_result in step.tool_results
     ]
+
+
+def _has_sendable_content(content: list[ContentPart] | None) -> bool:
+    if not content:
+        return False
+    return any(
+        part.type != ContentPartType.TEXT or bool(part.text)
+        for part in content
+    )

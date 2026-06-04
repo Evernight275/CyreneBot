@@ -327,14 +327,13 @@ def _resolve_action_route(action: BotAction) -> tuple[str, str]:
         if value is not None:
             return route, value
 
+    parsed = _parse_session_route(action.session_id)
+    if parsed is not None:
+        return parsed
     if action.thread_id:
         parsed = _parse_session_route(action.thread_id)
         if parsed is not None:
             return parsed
-
-    parsed = _parse_session_route(action.session_id)
-    if parsed is not None:
-        return parsed
     if action.thread_id:
         return "channel", action.thread_id
     if action.recipient_id:

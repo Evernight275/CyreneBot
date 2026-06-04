@@ -372,6 +372,68 @@ def test_bot_orchestrator_can_run_agent_for_direct_non_command_message() -> None
     asyncio.run(run())
 
 
+def test_bot_orchestrator_skips_send_action_for_empty_chat_response() -> None:
+    async def run() -> None:
+        provider = FakeChatProvider(
+            ChatResponse(
+                provider_id="provider-1",
+                model="fake-model",
+                message=Message(
+                    role=MessageRole.ASSISTANT,
+                    content=[],
+                ),
+                finish_reason=ChatFinishReason.STOP,
+            )
+        )
+        runtime = await _build_runtime(provider)
+
+        result = await BotOrchestrator(runtime).handle(
+            ApplicationBotRequest(
+                event=_bot_event(),
+                provider_id="provider-1",
+                model="fake-model",
+            )
+        )
+
+        assert len(provider.requests) == 1
+        assert result.actions == []
+        assert result.chat_result is not None
+
+    asyncio.run(run())
+
+
+def test_bot_orchestrator_skips_send_action_for_empty_agent_response() -> None:
+    async def run() -> None:
+        provider = FakeChatProvider(
+            ChatResponse(
+                provider_id="provider-1",
+                model="fake-model",
+                message=Message(
+                    role=MessageRole.ASSISTANT,
+                    content=[],
+                ),
+                finish_reason=ChatFinishReason.STOP,
+            )
+        )
+        runtime = await _build_runtime(provider)
+
+        result = await BotOrchestrator(runtime).handle(
+            ApplicationBotRequest(
+                event=_telegram_event("hello agent"),
+                provider_id="provider-1",
+                model="fake-model",
+                message_response_mode=BotMessageResponseMode.AGENT,
+                message_trigger_mode=BotMessageTriggerMode.DIRECT,
+            )
+        )
+
+        assert len(provider.requests) == 1
+        assert result.actions == []
+        assert result.agent_result is not None
+
+    asyncio.run(run())
+
+
 def test_bot_orchestrator_skips_group_message_when_direct_trigger_required() -> None:
     async def run() -> None:
         provider = FakeChatProvider(
