@@ -354,6 +354,8 @@ def test_bot_orchestrator_can_run_agent_for_direct_non_command_message() -> None
         assert provider.requests[0].metadata["max_tool_calls_per_step"] == 2
         assert provider.requests[0].metadata["max_total_tool_calls"] == 3
         assert provider.requests[0].metadata["max_tool_result_chars"] == 256
+        assert provider.requests[0].metadata["agent_plan_mode"] == "planner_step"
+        assert provider.requests[0].metadata["agent_plan_step_count"] >= 1
         assert provider.requests[0].messages[-1].content == _content("hello agent")
         assert result.chat_result is None
         assert result.agent_result is not None

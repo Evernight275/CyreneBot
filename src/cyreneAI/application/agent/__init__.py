@@ -7,11 +7,13 @@ from cyreneAI.application.agent.orchestrator import (
     AgentRunResult,
     AgentStopReason,
 )
+from cyreneAI.application.agent.planner import AgentPlanner
 from cyreneAI.application.agent.request_builder import build_agent_run_request
 
 __all__ = [
     "AgentOrchestrator",
     "AgentRunHistoryReader",
+    "AgentPlanner",
     "AgentRunRequest",
     "AgentRunResult",
     "AgentStopReason",

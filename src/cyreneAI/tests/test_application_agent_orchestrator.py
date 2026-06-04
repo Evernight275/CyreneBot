@@ -460,6 +460,74 @@ def test_agent_orchestrator_stops_after_max_steps() -> None:
     asyncio.run(_run_agent_stops_after_max_steps())
 
 
+async def _run_agent_completes_multi_step_tool_loop() -> None:
+    first_call = ToolCall(id="call-1", name="lookup", arguments="{\"step\":1}")
+    second_call = ToolCall(id="call-2", name="lookup", arguments="{\"step\":2}")
+    provider = FakeChatProvider(
+        [
+            ChatResponse(
+                provider_id="provider-1",
+                model="fake-model",
+                message=Message(
+                    role=MessageRole.ASSISTANT,
+                    tool_calls=[first_call],
+                ),
+                tool_calls=[first_call],
+                finish_reason=ChatFinishReason.TOOL_CALLS,
+            ),
+            ChatResponse(
+                provider_id="provider-1",
+                model="fake-model",
+                message=Message(
+                    role=MessageRole.ASSISTANT,
+                    tool_calls=[second_call],
+                ),
+                tool_calls=[second_call],
+                finish_reason=ChatFinishReason.TOOL_CALLS,
+            ),
+            ChatResponse(
+                provider_id="provider-1",
+                model="fake-model",
+                message=_message(MessageRole.ASSISTANT, "multi-step final"),
+                finish_reason=ChatFinishReason.STOP,
+            ),
+        ]
+    )
+    executor = RecordingToolExecutor()
+    tool_registry = ToolRegistry()
+    tool_registry.register(
+        ToolDefinition(name="lookup", description="Lookup a value."),
+        executor,
+    )
+    runtime = await _build_runtime(provider, tool_registry)
+
+    result = await AgentOrchestrator(runtime).run(
+        AgentRunRequest(
+            session_id="session-1",
+            provider_id="provider-1",
+            model="fake-model",
+            goal="Use two tool steps, then answer.",
+            max_steps=3,
+        )
+    )
+
+    assert result.completed is True
+    assert result.stop_reason == AgentStopReason.FINAL_RESPONSE
+    assert result.response.message == _message(MessageRole.ASSISTANT, "multi-step final")
+    assert len(result.steps) == 3
+    assert executor.calls == [first_call, second_call]
+    assert result.metadata["tool_call_count"] == 2
+    assert result.metadata["tool_result_count"] == 2
+    assert len(provider.requests) == 3
+    assert provider.requests[1].messages[-1].tool_call_id == "call-1"
+    assert provider.requests[2].messages[-1].tool_call_id == "call-2"
+    assert "agent_max_steps_finalization" not in provider.requests[-1].metadata
+
+
+def test_agent_orchestrator_completes_multi_step_tool_loop() -> None:
+    asyncio.run(_run_agent_completes_multi_step_tool_loop())
+
+
 async def _run_agent_rejects_disallowed_tool_call() -> None:
     provider = FakeChatProvider(
         [
@@ -606,8 +674,11 @@ async def _run_agent_builds_plan_and_selects_tools() -> None:
     assert result.plan.goal == "Find the project status."
     assert result.plan.selected_tool_names == ["lookup"]
     assert len(result.plan.objectives) == 2
+    assert len(result.plan.steps) == 2
     assert result.plan.instructions == "Prefer low-risk tools first."
-    assert result.plan.metadata["planning_mode"] == "runtime_hint"
+    assert result.plan.constraints.selected_tool_names == ["lookup"]
+    assert result.plan.constraints.denied_tool_names == ["delete"]
+    assert result.plan.metadata["planning_mode"] == "planner_step"
 
     first_request = provider.requests[0]
     assert first_request.tools is not None
@@ -616,8 +687,11 @@ async def _run_agent_builds_plan_and_selects_tools() -> None:
     assert first_request.messages[0].role == MessageRole.SYSTEM
     assert first_request.messages[0].name == "agent_plan"
     assert first_request.messages[0].content is not None
-    assert first_request.metadata["agent_plan_mode"] == "runtime_hint"
+    assert first_request.metadata["agent_plan_mode"] == "planner_step"
+    assert first_request.metadata["agent_plan_step_count"] == 2
     assert "Prefer low-risk tools first." in first_request.messages[0].content[0].text
+    assert "Steps:" in first_request.messages[0].content[0].text
+    assert "Denied tools: delete" in first_request.messages[0].content[0].text
 
 
 def test_agent_orchestrator_builds_plan_and_selects_tools() -> None:
@@ -732,6 +806,8 @@ async def _run_agent_retrieves_memory_before_first_step() -> None:
     assert result.plan is not None
     assert result.plan.memory_query == "answer style"
     assert result.plan.metadata["memory_match_count"] == 1
+    assert result.plan.metadata["planning_mode"] == "planner_step"
+    assert any(step.tool_names == ["search_memory"] for step in result.plan.steps)
 
     first_request = provider.requests[0]
     assert first_request.messages[0].name == "agent_plan"

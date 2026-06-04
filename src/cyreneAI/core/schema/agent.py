@@ -42,6 +42,10 @@ def _empty_agent_steps() -> list["AgentStep"]:
     return []
 
 
+def _empty_agent_plan_steps() -> list["AgentPlanStep"]:
+    return []
+
+
 def _empty_agent_run_history_items() -> list["AgentRunHistoryItem"]:
     return []
 
@@ -96,14 +100,43 @@ class AgentMemoryRetrievalConfig(CyreneAISchema):
     min_score: float | None = None
 
 
+class AgentPlanStep(CyreneAISchema):
+    """
+    Agent planner 产出的单个计划步骤。
+    """
+
+    index: int = Field(ge=0)
+    objective: str
+    action: str
+    tool_names: list[str] = Field(default_factory=_empty_strings)
+    skill_names: list[str] = Field(default_factory=_empty_strings)
+    status: str = "pending"
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class AgentPlanConstraints(CyreneAISchema):
+    """
+    Agent plan 记录的工具与 skill 约束。
+    """
+
+    selected_tool_names: list[str] = Field(default_factory=_empty_strings)
+    denied_tool_names: list[str] = Field(default_factory=_empty_strings)
+    required_skill_names: list[str] = Field(default_factory=_empty_strings)
+    selected_skill_names: list[str] = Field(default_factory=_empty_strings)
+    max_skills: int | None = Field(default=None, ge=1)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class AgentPlan(CyreneAISchema):
     """
-    Agent 运行前生成的轻量运行提示。
+    Agent 运行前生成的可审计计划。
     """
 
     goal: str | None = None
     objectives: list[str] = Field(default_factory=list)
+    steps: list[AgentPlanStep] = Field(default_factory=_empty_agent_plan_steps)
     selected_tool_names: list[str] = Field(default_factory=list)
+    constraints: AgentPlanConstraints = Field(default_factory=AgentPlanConstraints)
     memory_query: str | None = None
     instructions: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -236,6 +269,8 @@ class AgentRunTraceResult(CyreneAISchema):
 __all__ = [
     "AgentMemoryRetrievalConfig",
     "AgentPlan",
+    "AgentPlanConstraints",
+    "AgentPlanStep",
     "AgentPlanningConfig",
     "AgentRunHistoryItem",
     "AgentRunHistoryListResult",

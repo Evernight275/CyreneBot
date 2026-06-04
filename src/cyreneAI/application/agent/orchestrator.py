@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from typing import Any, cast
 from uuid import uuid4
 
+from cyreneAI.application.agent.planner import AgentPlanner
 from cyreneAI.application.runtime import CyreneAIRuntime
 from cyreneAI.application.tools.execution_policy import (
     build_effective_tool_execution_policy,
@@ -18,7 +19,6 @@ from cyreneAI.core.provider.provider_protocol import ChatProviderProtocol
 from cyreneAI.core.schema.agent import (
     AgentMemoryRetrievalConfig,
     AgentPlan,
-    AgentPlanningConfig,
     AgentRunRequest,
     AgentRunResult,
     AgentStep,
@@ -88,9 +88,10 @@ class AgentOrchestrator:
         tools = self._list_tool_definitions(
             tool_execution_policy=tool_execution_policy
         )
-        plan = _build_agent_plan(
+        plan = AgentPlanner().build_plan(
             request=request,
             tools=tools,
+            skill_bundle=skill_bundle,
         )
         context_result = await self._build_context(
             request=request,
@@ -117,6 +118,7 @@ class AgentOrchestrator:
             ),
             tools=tools,
             skill_bundle=skill_bundle,
+            plan=plan,
         )
         steps: list[AgentStep] = []
         response: ChatResponse | None = None
@@ -166,6 +168,7 @@ class AgentOrchestrator:
                     stop_reason=AgentStopReason.FINAL_RESPONSE,
                     completed=True,
                     memory_metadata=memory_metadata,
+                    plan=plan,
                 )
                 context_snapshot = _build_context_snapshot(
                     request=request,
@@ -223,6 +226,7 @@ class AgentOrchestrator:
                     stop_reason=AgentStopReason.TOOL_LIMIT,
                     completed=False,
                     memory_metadata=memory_metadata,
+                    plan=plan,
                 )
                 context_snapshot = _build_context_snapshot(
                     request=request,
@@ -272,6 +276,7 @@ class AgentOrchestrator:
             stop_reason=AgentStopReason.MAX_STEPS,
             completed=False,
             memory_metadata=memory_metadata,
+            plan=plan,
         )
         context_snapshot = _build_context_snapshot(
             request=request,
@@ -344,6 +349,7 @@ class AgentOrchestrator:
         messages: list[Message],
         tools: list[ToolDefinition],
         skill_bundle: SkillInstructionBundle | None,
+        plan: AgentPlan | None,
     ) -> ChatRequest:
         tool_choice = _filter_tool_choice(
             tool_choice=request.tool_choice,
@@ -362,10 +368,9 @@ class AgentOrchestrator:
                 **request.metadata,
                 "session_id": request.session_id,
                 "agent_loop": "minimal",
-                "agent_plan_enabled": plan_enabled(request.planning),
-                "agent_plan_mode": (
-                    "runtime_hint" if plan_enabled(request.planning) else None
-                ),
+                "agent_plan_enabled": plan is not None,
+                "agent_plan_mode": _plan_metadata_str(plan, "planning_mode"),
+                "agent_plan_step_count": len(plan.steps) if plan is not None else 0,
                 "max_tool_calls_per_step": request.max_tool_calls_per_step,
                 "max_total_tool_calls": request.max_total_tool_calls,
                 "max_tool_result_chars": request.max_tool_result_chars,
@@ -608,60 +613,6 @@ def _build_initial_messages(request: AgentRunRequest) -> list[Message]:
     return messages
 
 
-def _build_agent_plan(
-    *,
-    request: AgentRunRequest,
-    tools: list[ToolDefinition],
-) -> AgentPlan | None:
-    planning = request.planning
-    if not plan_enabled(planning):
-        return None
-
-    goal = request.goal or _messages_to_text(request.messages)
-    objectives = _build_plan_objectives(
-        goal=goal,
-        planning=planning,
-    )
-    memory_query = (
-        _memory_query(
-            request=request,
-            config=request.memory_retrieval,
-        )
-        if request.memory_retrieval is not None
-        and request.memory_retrieval.enabled
-        else None
-    )
-    return AgentPlan(
-        goal=goal or None,
-        objectives=objectives,
-        selected_tool_names=[tool.name for tool in tools],
-        memory_query=memory_query,
-        instructions=planning.instructions if planning is not None else None,
-        metadata={
-            "planning_enabled": True,
-            "planning_mode": "runtime_hint",
-            "selected_tool_count": len(tools),
-        },
-    )
-
-
-def _build_plan_objectives(
-    *,
-    goal: str,
-    planning: AgentPlanningConfig | None,
-) -> list[str]:
-    max_objectives = planning.max_objectives if planning is not None else 4
-    objectives = [
-        "Understand the goal and relevant constraints.",
-        "Use only selected tools when they reduce uncertainty or perform required work.",
-        "Incorporate retrieved memory before deciding on a final answer.",
-        "Return a concise final response when the goal is satisfied.",
-    ]
-    if goal:
-        objectives.insert(0, f"Complete the user goal: {goal}")
-    return objectives[:max_objectives]
-
-
 def _build_provider_messages(
     *,
     context_window: ContextWindow,
@@ -705,16 +656,32 @@ def _build_planning_message(plan: AgentPlan | None) -> Message | None:
     if plan is None:
         return None
 
-    lines = ["Agent runtime hints:"]
+    lines = ["Agent plan:"]
     if plan.goal:
         lines.append(f"Goal: {plan.goal}")
     if plan.instructions:
         lines.append(f"Instructions: {plan.instructions}")
     if plan.objectives:
-        lines.append("Hints:")
+        lines.append("Objectives:")
         lines.extend(f"- {objective}" for objective in plan.objectives)
+    if plan.steps:
+        lines.append("Steps:")
+        lines.extend(
+            (
+                f"- {step.index}. {step.objective} "
+                f"action={step.action} tools={_render_plan_names(step.tool_names)} "
+                f"skills={_render_plan_names(step.skill_names)}"
+            )
+            for step in plan.steps
+        )
     if plan.selected_tool_names:
         lines.append("Selected tools: " + ", ".join(plan.selected_tool_names))
+    if plan.constraints.selected_skill_names:
+        lines.append(
+            "Selected skills: " + ", ".join(plan.constraints.selected_skill_names)
+        )
+    if plan.constraints.denied_tool_names:
+        lines.append("Denied tools: " + ", ".join(plan.constraints.denied_tool_names))
     if plan.memory_query:
         lines.append(f"Memory query: {plan.memory_query}")
 
@@ -730,8 +697,10 @@ def _build_planning_message(plan: AgentPlan | None) -> Message | None:
     )
 
 
-def plan_enabled(planning: AgentPlanningConfig | None) -> bool:
-    return planning is not None and planning.enabled
+def _render_plan_names(names: list[str]) -> str:
+    if not names:
+        return "-"
+    return ",".join(names)
 
 
 def _tool_constraint_names(
@@ -784,6 +753,7 @@ def _build_run_metadata(
     stop_reason: AgentStopReason,
     completed: bool,
     memory_metadata: dict[str, object],
+    plan: AgentPlan | None,
 ) -> dict[str, object]:
     tool_results = [
         tool_result
@@ -795,6 +765,9 @@ def _build_run_metadata(
         **memory_metadata,
         "session_id": request.session_id,
         "finished_at": datetime.now(UTC).isoformat(),
+        "planning_mode": _plan_metadata_str(plan, "planning_mode"),
+        "plan_objective_count": len(plan.objectives) if plan is not None else 0,
+        "plan_step_count": len(plan.steps) if plan is not None else 0,
         "completed": completed,
         "stop_reason": stop_reason,
         "step_count": len(steps),
@@ -1383,6 +1356,15 @@ def _filter_tool_choice(
 
 
 def _optional_string(value: object) -> str | None:
+    if isinstance(value, str) and value:
+        return value
+    return None
+
+
+def _plan_metadata_str(plan: AgentPlan | None, key: str) -> str | None:
+    if plan is None:
+        return None
+    value = plan.metadata.get(key)
     if isinstance(value, str) and value:
         return value
     return None

@@ -194,7 +194,7 @@ def test_openai_compatible_real_agent_http_smoke() -> None:
                     "planning": {
                         "enabled": True,
                         "instructions": (
-                            "runtime_hint: use selected skill, tool, and memory."
+                            "planner_step: use selected skill, tool, and memory."
                         ),
                     },
                     "tool_selection": {
@@ -244,7 +244,8 @@ def test_openai_compatible_real_agent_http_smoke() -> None:
         assert payload["steps"][1]["request"]["metadata"][
             "agent_max_steps_finalization"
         ] is True
-        assert payload["plan"]["metadata"]["planning_mode"] == "runtime_hint"
+        assert payload["plan"]["metadata"]["planning_mode"] == "planner_step"
+        assert payload["plan"]["steps"]
         assert payload["plan"]["metadata"]["memory_match_count"] >= 1
         assert payload["skill_bundle"]["metadata"]["skills"] == [_SKILL_NAME]
 
