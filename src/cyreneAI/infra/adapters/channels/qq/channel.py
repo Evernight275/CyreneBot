@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -7,6 +8,7 @@ import httpx
 
 from cyreneAI.core.errors.bot import BotConfigurationError
 from cyreneAI.core.schema.bot import BotAction, BotEvent
+from cyreneAI.core.schema.message import ContentPartType
 from cyreneAI.infra.adapters.channels.qq.client import QQBotClient
 from cyreneAI.infra.adapters.channels.qq.mapper import (
     map_bot_action_to_qq_send_message_payload,
@@ -32,6 +34,7 @@ class QQBotChannel:
         base_url: str = "https://api.sgroup.qq.com",
         token_url: str = "https://bots.qq.com/app/getAppAccessToken",
         timeout: float = 30.0,
+        max_attachment_bytes: int = 8 * 1024 * 1024,
         client: httpx.AsyncClient | None = None,
         bot_client: QQBotClient | None = None,
         websocket_source: QQBotWebSocketUpdateSource | None = None,
@@ -48,6 +51,7 @@ class QQBotChannel:
             timeout=timeout,
             client=client,
         )
+        self._max_attachment_bytes = max_attachment_bytes
         self._websocket_source = websocket_source
         if self._websocket_source is None and app_id and app_secret:
             self._websocket_source = QQBotWebSocketUpdateSource(
@@ -63,6 +67,14 @@ class QQBotChannel:
             update,
             channel_id=self.channel_id,
         )
+
+    async def map_update_async(self, update: dict[str, Any]) -> BotEvent:
+        """
+        Map and enrich a QQ update to a standard BotEvent.
+        """
+        event = self.map_update(update)
+        await self._download_image_parts(event)
+        return event
 
     async def send(self, action: BotAction) -> None:
         """
@@ -98,3 +110,29 @@ class QQBotChannel:
             result = close()
             if hasattr(result, "__await__"):
                 await result
+
+    async def _download_image_parts(self, event: BotEvent) -> None:
+        if event.message is None:
+            return
+
+        for part in event.message.content:
+            if part.type != ContentPartType.IMAGE or part.data or part.url:
+                continue
+
+            attachment_url = part.metadata.get("qq_attachment_url")
+            if not isinstance(attachment_url, str) or not attachment_url:
+                continue
+
+            try:
+                data, mime_type = await self._client.download_attachment(
+                    attachment_url,
+                    max_bytes=self._max_attachment_bytes,
+                )
+            except Exception as exc:
+                part.metadata["qq_attachment_download_error"] = str(exc)
+                continue
+
+            part.data = base64.b64encode(data).decode("ascii")
+            if mime_type:
+                part.mime_type = mime_type.split(";", maxsplit=1)[0].strip()
+            part.metadata["qq_attachment_downloaded"] = True

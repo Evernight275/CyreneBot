@@ -8,7 +8,10 @@ from cyreneAI.application.bot.dispatcher import (
 )
 from cyreneAI.application.bot.orchestrator import ApplicationBotRequest
 from cyreneAI.application.runtime import CyreneAIRuntime
-from cyreneAI.core.bot.bot_protocol import BotUpdateMapperProtocol
+from cyreneAI.core.bot.bot_protocol import (
+    BotAsyncUpdateMapperProtocol,
+    BotUpdateMapperProtocol,
+)
 from cyreneAI.core.errors.base import UnsupportedError
 from cyreneAI.core.errors.bot import BotStateError
 from cyreneAI.core.schema.application import ApplicationChannelWebhookRequest
@@ -34,12 +37,16 @@ class ChannelWebhookHandler:
             raise BotStateError("Bot channel registry is not set")
 
         channel = self._runtime.bot_channel_registry.get_channel(request.channel_id)
-        if not hasattr(channel, "map_update"):
+        if hasattr(channel, "map_update_async"):
+            async_mapper = cast(BotAsyncUpdateMapperProtocol, channel)
+            event = await async_mapper.map_update_async(request.payload)
+        elif hasattr(channel, "map_update"):
+            mapper = cast(BotUpdateMapperProtocol, channel)
+            event = mapper.map_update(request.payload)
+        else:
             raise UnsupportedError(
                 f"Bot channel {request.channel_id} does not support webhook updates"
             )
-        mapper = cast(BotUpdateMapperProtocol, channel)
-        event = mapper.map_update(request.payload)
 
         return await self._dispatcher.dispatch(
             ApplicationBotRequest(

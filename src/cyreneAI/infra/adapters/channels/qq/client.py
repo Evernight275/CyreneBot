@@ -53,6 +53,37 @@ class QQBotClient:
             request_payload,
         )
 
+    async def download_attachment(
+        self,
+        url: str,
+        *,
+        max_bytes: int = 8 * 1024 * 1024,
+    ) -> tuple[bytes, str | None]:
+        """
+        Download a QQ attachment URL with bot credentials.
+        """
+        try:
+            response = await self._download(url)
+            response.raise_for_status()
+            content_length = response.headers.get("content-length")
+            if content_length is not None:
+                try:
+                    parsed_content_length = int(content_length)
+                except ValueError:
+                    parsed_content_length = None
+                if (
+                    parsed_content_length is not None
+                    and parsed_content_length > max_bytes
+                ):
+                    raise QQBotAPIError("QQ attachment exceeds maximum download size")
+
+            data = response.content
+            if len(data) > max_bytes:
+                raise QQBotAPIError("QQ attachment exceeds maximum download size")
+            return data, response.headers.get("content-type")
+        except Exception as exc:
+            raise_qq_error(exc)
+
     async def request(
         self,
         path: str,
@@ -119,6 +150,28 @@ class QQBotClient:
                 "POST",
                 url,
                 json=payload,
+                headers=headers,
+            )
+
+    async def _download(self, url: str) -> httpx.Response:
+        access_token = await self._get_access_token()
+        headers = {
+            "Authorization": f"QQBot {access_token}",
+        }
+        if self._client is not None:
+            return await self._client.request(
+                "GET",
+                url,
+                headers=headers,
+            )
+
+        async with httpx.AsyncClient(
+            timeout=self._timeout,
+            follow_redirects=True,
+        ) as client:
+            return await client.request(
+                "GET",
+                url,
                 headers=headers,
             )
 

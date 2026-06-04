@@ -41,6 +41,18 @@ class BotUpdateMapperProtocol(Protocol):
         ...
 
 
+class BotAsyncUpdateMapperProtocol(Protocol):
+    """
+    异步 channel update 映射协议。
+    """
+
+    async def map_update_async(self, update: dict[str, Any]) -> BotEvent:
+        """
+        将外部 channel update 异步映射为标准 BotEvent。
+        """
+        ...
+
+
 class BotEventPollerProtocol(Protocol):
     """
     channel 事件拉取协议。

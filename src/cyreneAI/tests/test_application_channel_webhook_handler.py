@@ -99,6 +99,14 @@ class FakeWebhookChannel:
         self.actions.append(action)
 
 
+class FakeAsyncWebhookChannel(FakeWebhookChannel):
+    async def map_update_async(self, update: dict[str, Any]) -> BotEvent:
+        event = self.map_update(update)
+        if event.message is not None:
+            event.message.content[0].text = f"{event.message.content[0].text} async"
+        return event
+
+
 class FakeTelegramClient:
     def __init__(self) -> None:
         self.payloads: list[dict] = []
@@ -170,6 +178,37 @@ def test_channel_webhook_handler_dispatches_mapped_event() -> None:
         assert provider.requests[0].metadata["max_tool_calls_per_step"] == 2
         assert provider.requests[0].metadata["max_total_tool_calls"] == 3
         assert provider.requests[0].metadata["max_tool_result_chars"] == 256
+
+    asyncio.run(run())
+
+
+def test_channel_webhook_handler_prefers_async_mapper() -> None:
+    async def run() -> None:
+        provider = FakeChatProvider()
+        channel = FakeAsyncWebhookChannel()
+        registry = BotChannelRegistry()
+        registry.register(
+            BotChannelDefinition(
+                channel_id="fake",
+                name="Fake",
+            ),
+            channel,
+        )
+        runtime = await _build_runtime(provider=provider, registry=registry)
+
+        await ChannelWebhookHandler(runtime).handle(
+            ApplicationChannelWebhookRequest(
+                channel_id="fake",
+                payload={
+                    "event_id": "event-1",
+                    "text": "hello",
+                },
+                provider_id="provider-1",
+                model="fake-model",
+            )
+        )
+
+        assert provider.requests[0].messages[-1].content == _content("hello async")
 
     asyncio.run(run())
 

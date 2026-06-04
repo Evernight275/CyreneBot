@@ -19,7 +19,7 @@ class FakeHTTPClient:
         self,
         method: str,
         url: str,
-        json: dict,
+        json: dict | None = None,
         headers: dict | None = None,
     ) -> httpx.Response:
         self.requests.append(
@@ -41,6 +41,20 @@ def _response(status_code: int, payload: dict) -> httpx.Response:
         status_code=status_code,
         json=payload,
         request=httpx.Request("POST", "https://qq.example/test"),
+    )
+
+
+def _bytes_response(
+    status_code: int,
+    content: bytes,
+    *,
+    headers: dict[str, str] | None = None,
+) -> httpx.Response:
+    return httpx.Response(
+        status_code=status_code,
+        content=content,
+        headers=headers,
+        request=httpx.Request("GET", "https://qq.example/attachment.png"),
     )
 
 
@@ -77,6 +91,44 @@ def test_qq_bot_client_sends_request_with_direct_token() -> None:
         ]
         await client.close()
         assert http_client.closed is True
+
+    asyncio.run(run())
+
+
+def test_qq_bot_client_downloads_attachment_with_token() -> None:
+    async def run() -> None:
+        http_client = FakeHTTPClient(
+            [
+                _bytes_response(
+                    200,
+                    b"image-bytes",
+                    headers={
+                        "content-type": "image/png",
+                        "content-length": "11",
+                    },
+                )
+            ]
+        )
+        client = QQBotClient(
+            token="token",
+            base_url="https://qq.example",
+            client=http_client,
+        )
+
+        data, mime_type = await client.download_attachment(
+            "https://qq.example/attachment.png"
+        )
+
+        assert data == b"image-bytes"
+        assert mime_type == "image/png"
+        assert http_client.requests == [
+            {
+                "method": "GET",
+                "url": "https://qq.example/attachment.png",
+                "json": None,
+                "headers": {"Authorization": "QQBot token"},
+            }
+        ]
 
     asyncio.run(run())
 

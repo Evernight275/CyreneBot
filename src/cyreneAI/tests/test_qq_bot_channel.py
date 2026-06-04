@@ -13,11 +13,26 @@ from cyreneAI.infra.adapters.channels.qq import QQBotChannel
 class FakeQQClient:
     def __init__(self) -> None:
         self.payloads: list[dict] = []
+        self.downloads: list[dict] = []
         self.closed = False
 
     async def send_message(self, payload: dict) -> dict:
         self.payloads.append(payload)
         return {"id": "message-2"}
+
+    async def download_attachment(
+        self,
+        url: str,
+        *,
+        max_bytes: int,
+    ) -> tuple[bytes, str]:
+        self.downloads.append(
+            {
+                "url": url,
+                "max_bytes": max_bytes,
+            }
+        )
+        return b"image-bytes", "image/png"
 
     async def close(self) -> None:
         self.closed = True
@@ -112,6 +127,50 @@ def test_qq_bot_channel_maps_update() -> None:
     assert event.session_id == "qq:channel:channel-1"
     assert event.message is not None
     assert event.message.content[0].text == "hello"
+
+
+def test_qq_bot_channel_async_map_downloads_image_attachment() -> None:
+    async def run() -> None:
+        client = FakeQQClient()
+        channel = QQBotChannel(
+            bot_client=client,
+            max_attachment_bytes=1024,
+        )
+
+        event = await channel.map_update_async(
+            {
+                "t": "GROUP_AT_MESSAGE_CREATE",
+                "d": {
+                    "id": "message-1",
+                    "group_openid": "group-1",
+                    "user_openid": "user-1",
+                    "content": "look",
+                    "attachments": [
+                        {
+                            "id": "attachment-1",
+                            "filename": "cat.png",
+                            "content_type": "image/png",
+                            "url": "https://qq.example/cat.png",
+                        }
+                    ],
+                },
+            }
+        )
+
+        assert client.downloads == [
+            {
+                "url": "https://qq.example/cat.png",
+                "max_bytes": 1024,
+            }
+        ]
+        assert event.message is not None
+        image_part = event.message.content[1]
+        assert image_part.type == ContentPartType.IMAGE
+        assert image_part.data == "aW1hZ2UtYnl0ZXM="
+        assert image_part.mime_type == "image/png"
+        assert image_part.metadata["qq_attachment_downloaded"] is True
+
+    asyncio.run(run())
 
 
 def test_qq_bot_channel_runs_websocket_source() -> None:
