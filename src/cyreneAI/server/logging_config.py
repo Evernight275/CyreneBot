@@ -30,7 +30,6 @@ _LOG_LEVELS = {
 _DEFAULT_FILE_MAX_BYTES = 10 * 1024 * 1024
 _DEFAULT_FILE_BACKUP_COUNT = 5
 _DEFAULT_REQUEST_ID_HEADER = "X-Request-ID"
-_EMPTY_CONTEXT_VALUE = "-"
 _SENSITIVE_KEY_PARTS = {
     "api_key",
     "apikey",
@@ -61,8 +60,32 @@ class CyreneAILogContextFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         context = get_log_context()
         record.cyreneai_log_context = context
-        record.request_id = str(context.get("request_id") or _EMPTY_CONTEXT_VALUE)
+        record.request_id = str(context.get("request_id") or "")
         return True
+
+
+class CyreneAITextFormatter(logging.Formatter):
+    """
+    Human-readable formatter that shows context only when it exists.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            "%(asctime)s %(levelname)s%(cyreneai_text_context)s "
+            "[%(name)s] %(message)s"
+        )
+
+    def format(self, record: logging.LogRecord) -> str:
+        had_text_context = hasattr(record, "cyreneai_text_context")
+        old_text_context = getattr(record, "cyreneai_text_context", "")
+        record.cyreneai_text_context = _format_text_context(_record_context(record))
+        try:
+            return super().format(record)
+        finally:
+            if had_text_context:
+                record.cyreneai_text_context = old_text_context
+            else:
+                delattr(record, "cyreneai_text_context")
 
 
 class CyreneAIJsonFormatter(logging.Formatter):
@@ -211,10 +234,7 @@ def build_logging_config(
         },
         "formatters": {
             "text": {
-                "format": (
-                    "%(asctime)s %(levelname)s request_id=%(request_id)s "
-                    "[%(name)s] %(message)s"
-                ),
+                "()": "cyreneAI.server.logging_config.CyreneAITextFormatter",
             },
             "json": {
                 "()": "cyreneAI.server.logging_config.CyreneAIJsonFormatter",
@@ -282,6 +302,24 @@ def _record_context(record: logging.LogRecord) -> dict[str, Any]:
         for key, value in cast(dict[str, object], context).items()
         if value is not None and value != ""
     }
+
+
+def _format_text_context(context: dict[str, Any]) -> str:
+    if not context:
+        return ""
+    ordered_keys = [
+        "request_id",
+        "http_method",
+        "http_path",
+        "client_ip",
+        "status_code",
+        "duration_ms",
+    ]
+    keys = [
+        *[key for key in ordered_keys if key in context],
+        *sorted(key for key in context if key not in ordered_keys),
+    ]
+    return "".join(f" {key}={context[key]}" for key in keys)
 
 
 def _redact_value(key: str, value: Any) -> Any:
@@ -363,6 +401,7 @@ def _env_str(name: str) -> str | None:
 __all__ = [
     "CyreneAILogContextFilter",
     "CyreneAIJsonFormatter",
+    "CyreneAITextFormatter",
     "bind_log_context",
     "build_logging_config",
     "build_logging_config_from_env",

@@ -8,6 +8,7 @@ import pytest
 from cyreneAI.server.logging_config import (
     CyreneAILogContextFilter,
     CyreneAIJsonFormatter,
+    CyreneAITextFormatter,
     bind_log_context,
     build_logging_config,
     build_logging_config_from_env,
@@ -38,6 +39,10 @@ def test_server_builds_default_logging_config_from_env(monkeypatch) -> None:
     assert config["root"]["handlers"] == ["console"]
     assert "file" not in config["handlers"]
     assert config["handlers"]["console"]["formatter"] == "text"
+    assert (
+        config["formatters"]["text"]["()"]
+        == "cyreneAI.server.logging_config.CyreneAITextFormatter"
+    )
     assert config["handlers"]["console"]["filters"] == ["context"]
     assert config["loggers"]["cyreneAI"]["propagate"] is True
     assert config["loggers"]["uvicorn.error"]["level"] == "INFO"
@@ -158,3 +163,47 @@ def test_server_log_context_filter_injects_context_fields() -> None:
     assert payload["http_method"] == "GET"
     assert payload["api_token"] == "[REDACTED]"
     assert "extra" not in payload
+
+
+def test_server_text_formatter_omits_empty_request_context() -> None:
+    record = logging.LogRecord(
+        name="uvicorn.error",
+        level=logging.INFO,
+        pathname="server.py",
+        lineno=1,
+        msg="Application startup complete.",
+        args=(),
+        exc_info=None,
+    )
+    assert CyreneAILogContextFilter().filter(record) is True
+
+    text = CyreneAITextFormatter().format(record)
+
+    assert "Application startup complete." in text
+    assert "request_id=-" not in text
+    assert "request_id=" not in text
+
+
+def test_server_text_formatter_includes_request_context_when_present() -> None:
+    record = logging.LogRecord(
+        name="cyreneAI.server.requests",
+        level=logging.INFO,
+        pathname="server.py",
+        lineno=1,
+        msg="HTTP request completed",
+        args=(),
+        exc_info=None,
+    )
+
+    with bind_log_context(
+        request_id="req-3",
+        http_method="GET",
+        http_path="/health",
+    ):
+        assert CyreneAILogContextFilter().filter(record) is True
+
+    text = CyreneAITextFormatter().format(record)
+
+    assert "request_id=req-3" in text
+    assert "http_method=GET" in text
+    assert "http_path=/health" in text
