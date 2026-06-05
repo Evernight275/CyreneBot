@@ -182,8 +182,27 @@ def test_server_text_formatter_omits_empty_request_context() -> None:
     text = CyreneAITextFormatter().format(record)
 
     assert "Application startup complete." in text
+    assert "[uvicorn.server]" in text
+    assert "[uvicorn.error]" not in text
     assert "request_id=-" not in text
     assert "request_id=" not in text
+
+
+def test_server_json_formatter_aliases_uvicorn_error_logger() -> None:
+    record = logging.LogRecord(
+        name="uvicorn.error",
+        level=logging.INFO,
+        pathname="server.py",
+        lineno=1,
+        msg="Application startup complete.",
+        args=(),
+        exc_info=None,
+    )
+
+    payload = json.loads(CyreneAIJsonFormatter().format(record))
+
+    assert payload["logger"] == "uvicorn.server"
+    assert payload["logger_name"] == "uvicorn.error"
 
 
 def test_server_text_formatter_includes_request_context_when_present() -> None:

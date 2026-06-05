@@ -39,6 +39,9 @@ _SENSITIVE_KEY_PARTS = {
     "secret",
     "token",
 }
+_LOGGER_DISPLAY_NAMES = {
+    "uvicorn.error": "uvicorn.server",
+}
 _LOG_RECORD_FIELDS = set(
     logging.LogRecord(
         name="",
@@ -72,13 +75,16 @@ class CyreneAITextFormatter(logging.Formatter):
     def __init__(self) -> None:
         super().__init__(
             "%(asctime)s %(levelname)s%(cyreneai_text_context)s "
-            "[%(name)s] %(message)s"
+            "[%(cyreneai_logger)s] %(message)s"
         )
 
     def format(self, record: logging.LogRecord) -> str:
         had_text_context = hasattr(record, "cyreneai_text_context")
+        had_logger = hasattr(record, "cyreneai_logger")
         old_text_context = getattr(record, "cyreneai_text_context", "")
+        old_logger = getattr(record, "cyreneai_logger", "")
         record.cyreneai_text_context = _format_text_context(_record_context(record))
+        record.cyreneai_logger = _display_logger_name(record.name)
         try:
             return super().format(record)
         finally:
@@ -86,6 +92,10 @@ class CyreneAITextFormatter(logging.Formatter):
                 record.cyreneai_text_context = old_text_context
             else:
                 delattr(record, "cyreneai_text_context")
+            if had_logger:
+                record.cyreneai_logger = old_logger
+            else:
+                delattr(record, "cyreneai_logger")
 
 
 class CyreneAIJsonFormatter(logging.Formatter):
@@ -97,12 +107,14 @@ class CyreneAIJsonFormatter(logging.Formatter):
         payload: dict[str, Any] = {
             "timestamp": _record_timestamp(record),
             "level": record.levelname,
-            "logger": record.name,
+            "logger": _display_logger_name(record.name),
             "message": record.getMessage(),
             "module": record.module,
             "function": record.funcName,
             "line": record.lineno,
         }
+        if payload["logger"] != record.name:
+            payload["logger_name"] = record.name
         payload.update(_record_context(record))
         extras = _record_extras(record)
         if extras:
@@ -312,6 +324,10 @@ def _record_context(record: logging.LogRecord) -> dict[str, Any]:
         for key, value in cast(dict[str, object], context).items()
         if value is not None and value != ""
     }
+
+
+def _display_logger_name(name: str) -> str:
+    return _LOGGER_DISPLAY_NAMES.get(name, name)
 
 
 def _format_text_context(context: dict[str, Any]) -> str:
