@@ -6,8 +6,8 @@ import logging
 import pytest
 
 from cyreneAI.server.logging_config import (
-    CyreneAILogContextFilter,
     CyreneAIJsonFormatter,
+    CyreneAILogContextFilter,
     CyreneAITextFormatter,
     bind_log_context,
     build_logging_config,
@@ -107,7 +107,9 @@ def test_server_logging_config_rejects_invalid_values() -> None:
         build_logging_config(log_format="xml")  # type: ignore[arg-type]
 
 
-def test_server_json_formatter_includes_extra_fields_and_redacts_sensitive_values() -> None:
+def test_server_json_formatter_includes_extra_fields_and_redacts_sensitive_values() -> (
+    None
+):
     record = logging.LogRecord(
         name="cyreneAI.demo",
         level=logging.INFO,

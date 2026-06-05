@@ -53,7 +53,6 @@ from cyreneAI.server.logging_config import (
     configure_logging_from_env,
 )
 
-
 configure_logging_from_env()
 
 

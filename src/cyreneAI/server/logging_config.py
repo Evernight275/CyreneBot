@@ -15,9 +15,9 @@ from dotenv import load_dotenv
 
 LogFormat = Literal["text", "json"]
 
-_LOG_CONTEXT: ContextVar[dict[str, object]] = ContextVar(
+_LOG_CONTEXT: ContextVar[dict[str, object] | None] = ContextVar(
     "cyreneai_log_context",
-    default={},
+    default=None,
 )
 _LOG_LEVELS = {
     "CRITICAL",
@@ -147,7 +147,7 @@ def bind_log_context(**fields: object) -> Iterator[None]:
             if value is not None and value != ""
         },
     }
-    token: Token[dict[str, object]] = _LOG_CONTEXT.set(next_context)
+    token: Token[dict[str, object] | None] = _LOG_CONTEXT.set(next_context)
     try:
         yield
     finally:
@@ -155,7 +155,7 @@ def bind_log_context(**fields: object) -> Iterator[None]:
 
 
 def get_log_context() -> dict[str, object]:
-    return dict(_LOG_CONTEXT.get())
+    return dict(_LOG_CONTEXT.get() or {})
 
 
 def build_logging_config_from_env() -> dict[str, Any]:

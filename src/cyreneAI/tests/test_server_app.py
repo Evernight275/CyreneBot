@@ -608,9 +608,7 @@ def test_server_request_logging_propagates_request_id(caplog) -> None:
     assert response.status_code == 200
     assert response.headers["X-Request-ID"] == "req-123"
     records = [
-        record
-        for record in caplog.records
-        if record.name == "cyreneAI.server.requests"
+        record for record in caplog.records if record.name == "cyreneAI.server.requests"
     ]
     assert len(records) == 1
     assert records[0].message == "HTTP request completed"
@@ -638,9 +636,7 @@ def test_server_request_logging_can_be_disabled(caplog) -> None:
     assert response.status_code == 200
     assert "X-Request-ID" not in response.headers
     assert not [
-        record
-        for record in caplog.records
-        if record.name == "cyreneAI.server.requests"
+        record for record in caplog.records if record.name == "cyreneAI.server.requests"
     ]
 
 
@@ -1702,15 +1698,11 @@ def test_server_logs_loaded_plugins_and_commands(caplog) -> None:
         "CyreneBot commands loaded: count=1 commands=(see DEBUG for command list)"
         in caplog.text
     )
-    assert (
-        "CyreneBot command list: commands=/hello <name> aliases=hi"
-        in caplog.text
-    )
+    assert "CyreneBot command list: commands=/hello <name> aliases=hi" in caplog.text
     assert not [
         record
         for record in caplog.records
-        if record.name == "uvicorn.error"
-        and record.message.startswith("CyreneBot")
+        if record.name == "uvicorn.error" and record.message.startswith("CyreneBot")
     ]
 
 
