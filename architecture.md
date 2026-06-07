@@ -131,7 +131,7 @@ SDK CLI 只服务插件开发者的本地项目初始化和静态辅助，不启
 flowchart TB
   subgraph USERS["使用方"]
     app_user["业务代码"]
-    http_user["HTTP / Telegram 客户端"]
+    http_user["HTTP / Telegram / QQ 客户端"]
     plugin_user["插件项目"]
   end
 
@@ -146,6 +146,7 @@ flowchart TB
     app_boot["application.bootstrap\n创建 CyreneAIRuntime"]
     runtime["CyreneAIRuntime\n持有 managers / registries / stores"]
     app_chat["chat"]
+    app_agent["agent\nplanning / tool use / history"]
     app_generation["generation\nembedding / image"]
     app_knowledge["knowledge\nindexing / retrieval / vector"]
     app_bot["bot / channels"]
@@ -168,11 +169,15 @@ flowchart TB
     catalog["provider_catalog\n*_info.py"]
     provider_regs["infra.bootstrap.registrations\n注册 provider builder"]
     provider_adapters["provider adapters\nopenai_compatible / openai_responses / anthropic / google_genai"]
-    channel_adapters["channel adapters\ntelegram / memory"]
+    provider_config_adapters["provider config stores\nfilesystem"]
+    channel_adapters["channel adapters\nmemory / telegram / qq"]
+    bot_session_adapters["bot session stores\nmemory"]
+    bot_polling_adapters["bot polling state stores\nmemory / sqlite"]
     vector_adapters["vector stores\nmemory / sqlite"]
     skill_adapters["skill loaders\nfilesystem"]
     plugin_adapters["plugin adapters\nfilesystem / sqlite / python env"]
-    tool_adapters["tool executors\npython / http / subprocess / shell / mcp"]
+    tool_adapters["tool executors\npython callable / http / subprocess / shell / mcp"]
+    tool_sandbox_adapters["tool sandbox runners\nin-process / subprocess"]
     database["database\nsqlite / sqlalchemy"]
   end
 
@@ -192,11 +197,15 @@ flowchart TB
 
   root --> app_boot
   root --> provider_regs
+  root --> provider_config_adapters
   root --> channel_adapters
+  root --> bot_session_adapters
+  root --> bot_polling_adapters
   root --> vector_adapters
   root --> skill_adapters
   root --> plugin_adapters
   root --> tool_adapters
+  root --> tool_sandbox_adapters
   root --> database
 
   app_boot --> runtime
@@ -208,6 +217,7 @@ flowchart TB
   app_boot --> bot_core
 
   runtime --> app_chat
+  runtime --> app_agent
   runtime --> app_generation
   runtime --> app_knowledge
   runtime --> app_bot
@@ -217,6 +227,10 @@ flowchart TB
   app_chat --> context_core
   app_chat --> tool_core
   app_chat --> skill_core
+  app_agent --> provider_core
+  app_agent --> context_core
+  app_agent --> tool_core
+  app_agent --> skill_core
   app_generation --> provider_core
   app_knowledge --> provider_core
   app_knowledge --> vector_core
@@ -232,11 +246,15 @@ flowchart TB
   provider_adapters --> provider_core
   provider_adapters --> schemas
   provider_adapters --> errors
+  provider_config_adapters --> provider_core
   channel_adapters --> bot_core
+  bot_session_adapters --> bot_core
+  bot_polling_adapters --> bot_core
   vector_adapters --> vector_core
   skill_adapters --> skill_core
   plugin_adapters --> plugin_core
   tool_adapters --> tool_core
+  tool_sandbox_adapters --> tool_core
   database --> context_core
 
   classDef public fill:#f5ecff,stroke:#7b45c6,color:#111;
@@ -247,9 +265,9 @@ flowchart TB
 
   class app_user,http_user,plugin_user user;
   class public_adapters,public_api,server_api,root public;
-  class app_boot,runtime,app_chat,app_generation,app_knowledge,app_bot,app_plugins app;
+  class app_boot,runtime,app_chat,app_agent,app_generation,app_knowledge,app_bot,app_plugins app;
   class schemas,provider_core,context_core,tool_core,skill_core,vector_core,bot_core,plugin_core,errors core;
-  class catalog,provider_regs,provider_adapters,channel_adapters,vector_adapters,skill_adapters,plugin_adapters,tool_adapters,database infra;
+  class catalog,provider_regs,provider_adapters,provider_config_adapters,channel_adapters,bot_session_adapters,bot_polling_adapters,vector_adapters,skill_adapters,plugin_adapters,tool_adapters,tool_sandbox_adapters,database infra;
 ```
 
 ### 启动装配
@@ -266,16 +284,18 @@ sequenceDiagram
   participant AppBoot as "application.bootstrap"
   participant Runtime as "CyreneAIRuntime"
 
-  Main->>Env: "读取 provider / context / plugin / plugin Python / shell / telegram / admin 配置"
+  Main->>Env: "读取 provider / context / plugin / plugin Python / shell / telegram / qq / admin 配置"
   Main->>Infra: "按插件路径创建 FileSystemPluginAssets / FileSystemPluginLoader"
   Main->>Root: "build_cyrene_ai_runtime(...)"
 
   Root->>Reg: "register_default_providers(...)"
   Reg->>Infra: "绑定 provider info 和 adapter builder"
+  Root->>Infra: "按参数加载 filesystem provider config store"
   Root->>Infra: "按参数创建 SQLite context/vector/plugin/task/polling store"
   Root->>Infra: "按参数创建 PluginPythonEnvironmentManager"
   Root->>Infra: "按参数加载 filesystem skills"
-  Root->>Infra: "按参数注册 memory / telegram channel"
+  Root->>Infra: "按参数注册 memory / telegram / qq channel"
+  Root->>Infra: "按参数创建 in-process / subprocess tool sandbox runner"
   Root->>Infra: "按参数注册 web_search / code_interpreter / mcp / shell tools"
   Root->>AppBoot: "传入 core managers、registries、stores、loaders"
 
@@ -285,7 +305,7 @@ sequenceDiagram
   AppBoot->>Runtime: "加载外部 plugins"
   Runtime-->>Root: "返回 runtime"
   Root-->>Main: "返回 runtime"
-  Main->>Main: "create_app(runtime, settings, telegram config)"
+  Main->>Main: "create_app(runtime, settings, telegram / qq config)"
 ```
 
 ### 请求运行时
@@ -298,12 +318,15 @@ flowchart LR
     chat_route["/chat"]
     image_route["/images/generate"]
     provider_route["/providers"]
+    agent_route["/agents"]
     channel_route["/channels/{id}/webhook"]
     telegram_route["/telegram/webhook 或 polling"]
+    qq_route["/qq/webhook"]
   end
 
   subgraph RUNTIME["CyreneAIRuntime"]
     provider_manager["provider_manager"]
+    provider_config_store["provider_config_store"]
     context_builder["context_builder"]
     context_manager["context_manager"]
     vector_manager["vector_manager"]
@@ -315,6 +338,7 @@ flowchart LR
     plugin_tasks["plugin_task_scheduler"]
     plugin_storage_runtime["plugin_storage / plugin_assets"]
     plugin_python_env["plugin_python_environment_manager"]
+    tool_sandbox_runner["tool_sandbox_runner"]
     channel_registry["bot_channel_registry"]
     session_manager["bot_session_manager"]
     polling_store["bot_polling_state_store"]
@@ -328,6 +352,8 @@ flowchart LR
     index_orch["IndexingOrchestrator"]
     retrieve_orch["RetrievalOrchestrator"]
     rag_orch["RAGChatOrchestrator"]
+    agent_orch["AgentOrchestrator"]
+    agent_history["AgentRunHistoryReader"]
     webhook_handler["ChannelWebhookHandler"]
     event_processor["ChannelEventProcessor"]
     bot_orch["BotOrchestrator"]
@@ -336,23 +362,37 @@ flowchart LR
 
   subgraph INFRA_RUNTIME["infra instances"]
     provider_instance["provider instance\nSDK client / mapper / errors"]
+    provider_config_persistence["provider config store\nfilesystem"]
     vector_store["vector store\nmemory / sqlite"]
     context_store["context store\nsqlite / sqlalchemy"]
-    channel_instance["bot channel\ntelegram / memory"]
+    channel_instance["bot channel\nmemory / telegram / qq"]
     plugin_persistence["plugin storage / assets / task store"]
     plugin_environment["plugin venv\nsite-packages"]
     tool_executor["tool executor"]
+    sandbox_process["tool sandbox\nin-process / subprocess"]
   end
 
   chat_route --> chat_orch
   image_route --> image_orch
   provider_route --> provider_manager
+  provider_route --> provider_config_store
+  agent_route --> agent_orch
+  agent_route --> agent_history
   channel_route --> webhook_handler
   telegram_route --> webhook_handler
   telegram_route --> event_processor
+  qq_route --> webhook_handler
+  qq_route --> event_processor
 
   rag_orch --> retrieve_orch
   rag_orch --> chat_orch
+  agent_orch --> chat_orch
+  agent_orch --> context_builder
+  agent_orch --> context_manager
+  agent_orch --> provider_manager
+  agent_orch --> skill_manager
+  agent_orch --> tool_manager
+  agent_history --> context_manager
   index_orch --> embed_orch
   index_orch --> vector_manager
   retrieve_orch --> provider_manager
@@ -387,6 +427,7 @@ flowchart LR
   plugin_outbox --> session_manager
 
   provider_manager --> provider_instance
+  provider_config_store --> provider_config_persistence
   vector_manager --> vector_store
   context_manager --> context_store
   channel_registry --> channel_instance
@@ -394,16 +435,18 @@ flowchart LR
   plugin_tasks --> plugin_persistence
   plugin_python_env --> plugin_environment
   tool_manager --> tool_executor
+  tool_manager --> tool_sandbox_runner
+  tool_sandbox_runner --> sandbox_process
 
   classDef api fill:#f5ecff,stroke:#7b45c6,color:#111;
   classDef runtime fill:#e8f1ff,stroke:#3267c8,color:#111;
   classDef orch fill:#eef9f0,stroke:#2f8f46,color:#111;
   classDef infra fill:#fff4e6,stroke:#d18419,color:#111;
 
-  class chat_route,image_route,provider_route,channel_route,telegram_route api;
-  class provider_manager,context_builder,context_manager,vector_manager,skill_manager,tool_manager,plugin_manager,plugin_host,plugin_outbox,plugin_tasks,plugin_storage_runtime,plugin_python_env,channel_registry,session_manager,polling_store,bot_admin_config runtime;
-  class chat_orch,image_orch,embed_orch,index_orch,retrieve_orch,rag_orch,webhook_handler,event_processor,bot_orch,bot_dispatcher orch;
-  class provider_instance,vector_store,context_store,channel_instance,plugin_persistence,plugin_environment,tool_executor infra;
+  class chat_route,image_route,provider_route,agent_route,channel_route,telegram_route,qq_route api;
+  class provider_manager,provider_config_store,context_builder,context_manager,vector_manager,skill_manager,tool_manager,plugin_manager,plugin_host,plugin_outbox,plugin_tasks,plugin_storage_runtime,plugin_python_env,tool_sandbox_runner,channel_registry,session_manager,polling_store,bot_admin_config runtime;
+  class chat_orch,image_orch,embed_orch,index_orch,retrieve_orch,rag_orch,agent_orch,agent_history,webhook_handler,event_processor,bot_orch,bot_dispatcher orch;
+  class provider_instance,provider_config_persistence,vector_store,context_store,channel_instance,plugin_persistence,plugin_environment,tool_executor,sandbox_process infra;
 ```
 
 ## Bot 管理员边界
