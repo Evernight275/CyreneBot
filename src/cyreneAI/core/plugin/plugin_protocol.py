@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -572,6 +573,43 @@ class PluginTaskStoreProtocol(Protocol):
     ) -> None:
         """
         更新任务实例状态。
+        """
+        ...
+
+    async def claim_task(
+        self,
+        task_id: str,
+        *,
+        lease_owner: str,
+        lease_expires_at: datetime,
+    ) -> bool:
+        """
+        获取任务执行 lease。返回 False 表示该任务已被其他 worker 持有或已结束。
+        """
+        ...
+
+    async def heartbeat_task_lease(
+        self,
+        task_id: str,
+        *,
+        lease_owner: str,
+        lease_expires_at: datetime,
+    ) -> None:
+        """
+        续约当前 worker 持有的任务 lease。
+        """
+        ...
+
+    async def reschedule_task(
+        self,
+        task_id: str,
+        *,
+        run_at: datetime,
+        attempt: int,
+        last_error: str | None = None,
+    ) -> None:
+        """
+        将失败任务重置为待执行，用于自动重试。
         """
         ...
 

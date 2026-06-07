@@ -79,3 +79,56 @@ def test_sqlite_plugin_task_store_cancels_by_key(tmp_path) -> None:
             await store.close()
 
     asyncio.run(run())
+
+
+def test_sqlite_plugin_task_store_claims_and_reschedules_with_lease(tmp_path) -> None:
+    async def run() -> None:
+        store = await create_sqlite_plugin_task_store(tmp_path / "plugin_tasks.db")
+        try:
+            now = datetime.now(UTC)
+            await store.add_task(
+                _task(
+                    "task-1",
+                    status=PluginTaskStatus.PENDING,
+                ).model_copy(update={"max_attempts": 2})
+            )
+
+            claimed = await store.claim_task(
+                "task-1",
+                lease_owner="worker-1",
+                lease_expires_at=now + timedelta(seconds=30),
+            )
+            assert claimed is True
+            assert (await store.get_task("task-1")).lease_owner == "worker-1"
+
+            second_claim = await store.claim_task(
+                "task-1",
+                lease_owner="worker-2",
+                lease_expires_at=now + timedelta(seconds=30),
+            )
+            assert second_claim is False
+
+            await store.heartbeat_task_lease(
+                "task-1",
+                lease_owner="worker-1",
+                lease_expires_at=now + timedelta(seconds=60),
+            )
+            assert (await store.get_task("task-1")).lease_owner == "worker-1"
+
+            await store.reschedule_task(
+                "task-1",
+                run_at=now + timedelta(seconds=5),
+                attempt=1,
+                last_error="boom",
+            )
+            task = await store.get_task("task-1")
+            assert task.status == PluginTaskStatus.PENDING
+            assert task.attempt == 1
+            assert task.max_attempts == 2
+            assert task.last_error == "boom"
+            assert task.lease_owner is None
+            assert task.lease_expires_at is None
+        finally:
+            await store.close()
+
+    asyncio.run(run())

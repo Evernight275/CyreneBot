@@ -31,12 +31,27 @@ class ApplicationPluginTaskScheduler:
     application 层的插件后台任务调度器。
     """
 
-    def __init__(self, store: PluginTaskStoreProtocol | None = None) -> None:
+    def __init__(
+        self,
+        store: PluginTaskStoreProtocol | None = None,
+        *,
+        max_concurrent_tasks: int = 10,
+        lease_owner: str | None = None,
+        lease_seconds: float = 60.0,
+    ) -> None:
+        if max_concurrent_tasks <= 0:
+            raise PluginConfigurationError("max_concurrent_tasks 必须大于 0")
+        if lease_seconds <= 0:
+            raise PluginConfigurationError("lease_seconds 必须大于 0")
         self._definitions: dict[tuple[str, str], PluginTaskDefinition] = {}
         self._executors: dict[tuple[str, str], PluginTaskExecutorProtocol] = {}
         self._managed_tasks: dict[str, asyncio.Task[None]] = {}
         self._task_keys: dict[tuple[str, str], str] = {}
+        self._task_semaphores: dict[tuple[str, str], asyncio.Semaphore] = {}
         self._store = store
+        self._global_semaphore = asyncio.Semaphore(max_concurrent_tasks)
+        self._lease_owner = lease_owner or f"plugin-task-worker:{uuid.uuid4().hex}"
+        self._lease_seconds = lease_seconds
         self._started = False
 
     def namespace(self, plugin_id: str) -> PluginTaskNamespaceProtocol:
@@ -62,6 +77,10 @@ class ApplicationPluginTaskScheduler:
         stored_definition = definition.model_copy(update={"name": normalized_name})
         self._definitions[key] = stored_definition
         self._executors[key] = executor
+        if stored_definition.max_concurrent_runs is not None:
+            self._task_semaphores[key] = asyncio.Semaphore(
+                stored_definition.max_concurrent_runs
+            )
 
         if self._started and stored_definition.enabled:
             self._schedule_declared_task(plugin_id, stored_definition)
@@ -75,6 +94,7 @@ class ApplicationPluginTaskScheduler:
             if key[0] == plugin_id:
                 self._definitions.pop(key, None)
                 self._executors.pop(key, None)
+                self._task_semaphores.pop(key, None)
 
         for task_id, task in list(self._managed_tasks.items()):
             if task_id.startswith(f"{plugin_id}:"):
@@ -166,6 +186,7 @@ class ApplicationPluginTaskScheduler:
             run_at=now + timedelta(seconds=delay_seconds),
             payload=payload or {},
             key=normalized_key,
+            max_attempts=definition.max_retries + 1,
             created_at=now,
             updated_at=now,
         )
@@ -280,15 +301,13 @@ class ApplicationPluginTaskScheduler:
                 (task_record.run_at - datetime.now(UTC)).total_seconds(),
             )
             await asyncio.sleep(delay_seconds)
-            if self._store is not None:
-                await self._store.update_task_status(
-                    task_record.task_id,
-                    PluginTaskStatus.RUNNING,
-                )
+            if not await self._claim_task(task_record):
+                return
             await self._execute(
                 task_record.plugin_id,
                 task_record.task_name,
                 payload=task_record.payload,
+                task_id=task_record.task_id,
             )
             if self._store is not None:
                 await self._store.update_task_status(
@@ -298,18 +317,20 @@ class ApplicationPluginTaskScheduler:
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            if self._store is not None:
-                await self._store.update_task_status(
-                    task_record.task_id,
-                    PluginTaskStatus.FAILED,
-                    last_error=str(exc),
-                )
+            if await self._reschedule_retry(task_record, exc):
+                return
             logger.exception(
                 "Plugin one-shot task failed: task_id=%s plugin_id=%s task=%s status=failed",
                 task_record.task_id,
                 task_record.plugin_id,
                 task_record.task_name,
             )
+            if self._store is not None:
+                await self._store.update_task_status(
+                    task_record.task_id,
+                    PluginTaskStatus.FAILED,
+                    last_error=str(exc),
+                )
 
     def _schedule_restore(self, plugin_id: str, task_name: str) -> None:
         if self._store is None:
@@ -351,15 +372,140 @@ class ApplicationPluginTaskScheduler:
         task_name: str,
         *,
         payload: dict[str, Any],
+        task_id: str | None = None,
     ) -> None:
         definition = self._get_definition(plugin_id, task_name)
         executor = self._executors[(plugin_id, definition.name)]
-        await executor.execute(
-            PluginTaskRequest(
-                task=definition,
-                payload=payload,
+        task_semaphore = self._task_semaphores.get((plugin_id, definition.name))
+
+        async with self._global_semaphore:
+            if task_semaphore is None:
+                await self._execute_with_timeout(
+                    executor,
+                    definition,
+                    payload=payload,
+                    task_id=task_id,
+                )
+                return
+            async with task_semaphore:
+                await self._execute_with_timeout(
+                    executor,
+                    definition,
+                    payload=payload,
+                    task_id=task_id,
+                )
+
+    async def _execute_with_timeout(
+        self,
+        executor: PluginTaskExecutorProtocol,
+        definition: PluginTaskDefinition,
+        *,
+        payload: dict[str, Any],
+        task_id: str | None,
+    ) -> None:
+        execution = self._execute_once(executor, definition, payload=payload)
+        heartbeat_task: asyncio.Task[None] | None = None
+        if task_id is not None and self._store is not None:
+            heartbeat_task = asyncio.create_task(
+                self._heartbeat_loop(task_id),
+                name=f"plugin-task:{task_id}:heartbeat",
             )
+        try:
+            if definition.timeout_seconds is None:
+                await execution
+            else:
+                await asyncio.wait_for(execution, timeout=definition.timeout_seconds)
+        finally:
+            if heartbeat_task is not None:
+                heartbeat_task.cancel()
+                await asyncio.gather(heartbeat_task, return_exceptions=True)
+
+    async def _execute_once(
+        self,
+        executor: PluginTaskExecutorProtocol,
+        definition: PluginTaskDefinition,
+        *,
+        payload: dict[str, Any],
+    ) -> None:
+        await executor.execute(PluginTaskRequest(task=definition, payload=payload))
+
+    async def _claim_task(self, task_record: PluginScheduledTask) -> bool:
+        if self._store is None:
+            return True
+        return await self._store.claim_task(
+            task_record.task_id,
+            lease_owner=self._lease_owner,
+            lease_expires_at=self._lease_expires_at(),
         )
+
+    async def _heartbeat_loop(self, task_id: str) -> None:
+        assert self._store is not None
+        interval = max(1.0, self._lease_seconds / 2)
+        while self._started:
+            await asyncio.sleep(interval)
+            await self._store.heartbeat_task_lease(
+                task_id,
+                lease_owner=self._lease_owner,
+                lease_expires_at=self._lease_expires_at(),
+            )
+
+    def _lease_expires_at(self) -> datetime:
+        return datetime.now(UTC) + timedelta(seconds=self._lease_seconds)
+
+    async def _reschedule_retry(
+        self,
+        task_record: PluginScheduledTask,
+        exc: Exception,
+    ) -> bool:
+        next_attempt = task_record.attempt + 1
+        if next_attempt >= task_record.max_attempts:
+            return False
+
+        definition = self._get_definition(task_record.plugin_id, task_record.task_name)
+        delay_seconds = definition.retry_backoff_seconds * (
+            definition.retry_backoff_multiplier ** task_record.attempt
+        )
+        run_at = datetime.now(UTC) + timedelta(seconds=delay_seconds)
+        retry_record = task_record.model_copy(
+            update={
+                "attempt": next_attempt,
+                "run_at": run_at,
+                "status": PluginTaskStatus.PENDING,
+                "last_error": str(exc),
+                "lease_owner": None,
+                "lease_expires_at": None,
+                "updated_at": datetime.now(UTC),
+            }
+        )
+        if self._store is not None:
+            await self._store.reschedule_task(
+                task_record.task_id,
+                run_at=run_at,
+                attempt=next_attempt,
+                last_error=str(exc),
+            )
+        logger.info(
+            "Plugin task retry scheduled: task_id=%s plugin_id=%s task=%s attempt=%s/%s delay_seconds=%s",
+            retry_record.task_id,
+            retry_record.plugin_id,
+            retry_record.task_name,
+            retry_record.attempt + 1,
+            retry_record.max_attempts,
+            delay_seconds,
+        )
+        asyncio.create_task(
+            self._schedule_retry_after_current_task(retry_record),
+            name=f"plugin-task:{retry_record.task_id}:retry",
+        )
+        return True
+
+    async def _schedule_retry_after_current_task(
+        self,
+        task_record: PluginScheduledTask,
+    ) -> None:
+        await asyncio.sleep(0)
+        if self._started:
+            self._schedule_task_record(task_record)
 
     def _get_definition(
         self,

@@ -204,6 +204,11 @@ class PluginTaskDefinition(PluginBase):
     interval_seconds: float | None = None
     daily_at: str | None = None
     run_on_start: bool = False
+    timeout_seconds: float | None = Field(default=None, gt=0)
+    max_retries: int = Field(default=0, ge=0)
+    retry_backoff_seconds: float = Field(default=1.0, gt=0)
+    retry_backoff_multiplier: float = Field(default=2.0, ge=1)
+    max_concurrent_runs: int | None = Field(default=None, ge=1)
     enabled: bool = True
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -415,8 +420,12 @@ class PluginScheduledTask(PluginBase):
     run_at: datetime
     payload: dict[str, Any] = Field(default_factory=dict)
     key: str | None = None
+    attempt: int = Field(default=0, ge=0)
+    max_attempts: int = Field(default=1, ge=1)
     status: PluginTaskStatus = PluginTaskStatus.PENDING
     last_error: str | None = None
+    lease_owner: str | None = None
+    lease_expires_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 

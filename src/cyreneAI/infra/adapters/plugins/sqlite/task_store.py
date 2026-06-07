@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import insert, select, update
+from sqlalchemy import insert, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from cyreneAI.core.errors.plugin import PluginNotFoundError
@@ -29,8 +29,12 @@ class SQLitePluginTaskStore:
                     task_key=task.key,
                     payload=task.payload,
                     run_at=task.run_at,
+                    attempt=task.attempt,
+                    max_attempts=task.max_attempts,
                     status=task.status.value,
                     last_error=task.last_error,
+                    lease_owner=task.lease_owner,
+                    lease_expires_at=task.lease_expires_at,
                     created_at=task.created_at,
                     updated_at=task.updated_at,
                 )
@@ -101,6 +105,96 @@ class SQLitePluginTaskStore:
                 .values(
                     status=status.value,
                     last_error=last_error,
+                    lease_owner=None,
+                    lease_expires_at=None,
+                    updated_at=datetime.now(UTC),
+                )
+            )
+
+    async def claim_task(
+        self,
+        task_id: str,
+        *,
+        lease_owner: str,
+        lease_expires_at: datetime,
+    ) -> bool:
+        now = datetime.now(UTC)
+        async with self._engine.begin() as connection:
+            result = await connection.execute(
+                update(plugin_task_instances)
+                .where(
+                    plugin_task_instances.c.task_id == task_id,
+                    plugin_task_instances.c.status.in_(
+                        [
+                            PluginTaskStatus.PENDING.value,
+                            PluginTaskStatus.RUNNING.value,
+                        ]
+                    ),
+                    or_(
+                        plugin_task_instances.c.lease_owner.is_(None),
+                        plugin_task_instances.c.lease_owner == lease_owner,
+                        plugin_task_instances.c.lease_expires_at.is_(None),
+                        plugin_task_instances.c.lease_expires_at <= now,
+                    ),
+                )
+                .values(
+                    status=PluginTaskStatus.RUNNING.value,
+                    lease_owner=lease_owner,
+                    lease_expires_at=lease_expires_at,
+                    updated_at=now,
+                )
+            )
+            return bool(result.rowcount)
+
+    async def heartbeat_task_lease(
+        self,
+        task_id: str,
+        *,
+        lease_owner: str,
+        lease_expires_at: datetime,
+    ) -> None:
+        async with self._engine.begin() as connection:
+            await connection.execute(
+                update(plugin_task_instances)
+                .where(
+                    plugin_task_instances.c.task_id == task_id,
+                    plugin_task_instances.c.status == PluginTaskStatus.RUNNING.value,
+                    plugin_task_instances.c.lease_owner == lease_owner,
+                )
+                .values(
+                    lease_expires_at=lease_expires_at,
+                    updated_at=datetime.now(UTC),
+                )
+            )
+
+    async def reschedule_task(
+        self,
+        task_id: str,
+        *,
+        run_at: datetime,
+        attempt: int,
+        last_error: str | None = None,
+    ) -> None:
+        async with self._engine.begin() as connection:
+            await connection.execute(
+                update(plugin_task_instances)
+                .where(
+                    plugin_task_instances.c.task_id == task_id,
+                    plugin_task_instances.c.status.in_(
+                        [
+                            PluginTaskStatus.PENDING.value,
+                            PluginTaskStatus.RUNNING.value,
+                            PluginTaskStatus.FAILED.value,
+                        ]
+                    ),
+                )
+                .values(
+                    run_at=run_at,
+                    attempt=attempt,
+                    status=PluginTaskStatus.PENDING.value,
+                    last_error=last_error,
+                    lease_owner=None,
+                    lease_expires_at=None,
                     updated_at=datetime.now(UTC),
                 )
             )
@@ -121,6 +215,8 @@ class SQLitePluginTaskStore:
                 .values(
                     status=PluginTaskStatus.CANCELED.value,
                     last_error=None,
+                    lease_owner=None,
+                    lease_expires_at=None,
                     updated_at=datetime.now(UTC),
                 )
             )
@@ -142,6 +238,8 @@ class SQLitePluginTaskStore:
                 .values(
                     status=PluginTaskStatus.CANCELED.value,
                     last_error=None,
+                    lease_owner=None,
+                    lease_expires_at=None,
                     updated_at=datetime.now(UTC),
                 )
             )
@@ -159,8 +257,18 @@ def _task_from_row(row: dict[str, Any]) -> PluginScheduledTask:
         key=str(row["task_key"]) if row["task_key"] is not None else None,
         payload=dict(row["payload"] or {}),
         run_at=_ensure_utc(row["run_at"]),
+        attempt=int(row.get("attempt") or 0),
+        max_attempts=int(row.get("max_attempts") or 1),
         status=PluginTaskStatus(str(row["status"])),
         last_error=(str(row["last_error"]) if row["last_error"] is not None else None),
+        lease_owner=(
+            str(row["lease_owner"]) if row.get("lease_owner") is not None else None
+        ),
+        lease_expires_at=(
+            _ensure_utc(row["lease_expires_at"])
+            if row.get("lease_expires_at") is not None
+            else None
+        ),
         created_at=_ensure_utc(row["created_at"]),
         updated_at=_ensure_utc(row["updated_at"]),
     )

@@ -106,6 +106,134 @@ def test_plugin_task_scheduler_retries_failed_sqlite_task(tmp_path) -> None:
     asyncio.run(run())
 
 
+def test_plugin_task_scheduler_auto_retries_failed_task(tmp_path) -> None:
+    database_path = tmp_path / "plugin_tasks.db"
+
+    async def run() -> None:
+        called = asyncio.Event()
+        plugin = _build_retry_plugin()
+
+        nonlocal_attempts = {"count": 0}
+
+        @plugin.task(
+            "flaky",
+            max_retries=1,
+            retry_backoff_seconds=0.01,
+        )
+        async def flaky(request):
+            nonlocal_attempts["count"] += 1
+            if nonlocal_attempts["count"] == 1:
+                raise RuntimeError("boom")
+            called.set()
+
+        runtime = await build_cyrene_ai_runtime(
+            plugin_loaders=[_FakePluginLoader(plugin)],
+            plugin_task_database_path=database_path,
+            register_builtin_plugins=False,
+        )
+        try:
+            assert runtime.plugin_task_scheduler is not None
+            await runtime.plugin_task_scheduler.schedule_once(
+                "thirdparty.retry",
+                "flaky",
+                delay_seconds=0,
+            )
+            await asyncio.wait_for(called.wait(), timeout=1)
+            assert nonlocal_attempts["count"] == 2
+            tasks = await _wait_for_task_status(
+                runtime.plugin_task_scheduler,
+                plugin_id="thirdparty.retry",
+                task_name="flaky",
+                status=PluginTaskStatus.COMPLETED,
+            )
+            assert tasks[0].status == PluginTaskStatus.COMPLETED
+            assert tasks[0].attempt == 1
+        finally:
+            await runtime.close()
+
+    asyncio.run(run())
+
+
+def test_plugin_task_scheduler_times_out_task(tmp_path) -> None:
+    database_path = tmp_path / "plugin_tasks.db"
+
+    async def run() -> None:
+        plugin = _build_retry_plugin()
+
+        @plugin.task("slow", timeout_seconds=0.01)
+        async def slow(request):
+            await asyncio.sleep(1)
+
+        runtime = await build_cyrene_ai_runtime(
+            plugin_loaders=[_FakePluginLoader(plugin)],
+            plugin_task_database_path=database_path,
+            register_builtin_plugins=False,
+        )
+        try:
+            assert runtime.plugin_task_scheduler is not None
+            await runtime.plugin_task_scheduler.schedule_once(
+                "thirdparty.retry",
+                "slow",
+                delay_seconds=0,
+            )
+            await asyncio.sleep(0.1)
+            tasks = await runtime.plugin_task_scheduler.list_tasks(
+                plugin_id="thirdparty.retry",
+                task_name="slow",
+            )
+            assert tasks[0].status == PluginTaskStatus.FAILED
+            assert tasks[0].last_error is not None
+        finally:
+            await runtime.close()
+
+    asyncio.run(run())
+
+
+def test_plugin_task_scheduler_limits_task_concurrency(tmp_path) -> None:
+    database_path = tmp_path / "plugin_tasks.db"
+
+    async def run() -> None:
+        active = 0
+        max_active = 0
+        completed = asyncio.Event()
+        plugin = _build_retry_plugin()
+
+        @plugin.task("serial", max_concurrent_runs=1)
+        async def serial(request):
+            nonlocal active, max_active
+            active += 1
+            max_active = max(max_active, active)
+            await asyncio.sleep(0.03)
+            active -= 1
+            if request.payload.get("last"):
+                completed.set()
+
+        runtime = await build_cyrene_ai_runtime(
+            plugin_loaders=[_FakePluginLoader(plugin)],
+            plugin_task_database_path=database_path,
+            register_builtin_plugins=False,
+        )
+        try:
+            assert runtime.plugin_task_scheduler is not None
+            await runtime.plugin_task_scheduler.schedule_once(
+                "thirdparty.retry",
+                "serial",
+                delay_seconds=0,
+            )
+            await runtime.plugin_task_scheduler.schedule_once(
+                "thirdparty.retry",
+                "serial",
+                delay_seconds=0,
+                payload={"last": True},
+            )
+            await asyncio.wait_for(completed.wait(), timeout=1)
+            assert max_active == 1
+        finally:
+            await runtime.close()
+
+    asyncio.run(run())
+
+
 def _build_scheduler_plugin(called: asyncio.Event) -> CyreneBot:
     manifest = PluginManifest(
         plugin_id="thirdparty.tasks",
@@ -133,3 +261,33 @@ def _build_scheduler_plugin(called: asyncio.Event) -> CyreneBot:
         return PluginCommandResult()
 
     return plugin
+
+
+def _build_retry_plugin() -> CyreneBot:
+    return CyreneBot(
+        PluginManifest(
+            plugin_id="thirdparty.retry",
+            name="Retry",
+            description="Retry plugin.",
+            entrypoint="plugin.py",
+            capabilities=[PluginCapability.TASK],
+            permissions=[PluginPermission.TASK],
+        )
+    )
+
+
+async def _wait_for_task_status(
+    scheduler,
+    *,
+    plugin_id: str,
+    task_name: str,
+    status: PluginTaskStatus,
+) -> list[PluginScheduledTask]:
+    deadline = asyncio.get_running_loop().time() + 1
+    while True:
+        tasks = await scheduler.list_tasks(plugin_id=plugin_id, task_name=task_name)
+        if tasks and tasks[0].status == status:
+            return tasks
+        if asyncio.get_running_loop().time() >= deadline:
+            return tasks
+        await asyncio.sleep(0.01)
