@@ -38,11 +38,14 @@ class ApplicationPluginTaskScheduler:
         max_concurrent_tasks: int = 10,
         lease_owner: str | None = None,
         lease_seconds: float = 60.0,
+        scan_interval_seconds: float = 1.0,
     ) -> None:
         if max_concurrent_tasks <= 0:
             raise PluginConfigurationError("max_concurrent_tasks 必须大于 0")
         if lease_seconds <= 0:
             raise PluginConfigurationError("lease_seconds 必须大于 0")
+        if scan_interval_seconds <= 0:
+            raise PluginConfigurationError("scan_interval_seconds 必须大于 0")
         self._definitions: dict[tuple[str, str], PluginTaskDefinition] = {}
         self._executors: dict[tuple[str, str], PluginTaskExecutorProtocol] = {}
         self._managed_tasks: dict[str, asyncio.Task[None]] = {}
@@ -52,6 +55,7 @@ class ApplicationPluginTaskScheduler:
         self._global_semaphore = asyncio.Semaphore(max_concurrent_tasks)
         self._lease_owner = lease_owner or f"plugin-task-worker:{uuid.uuid4().hex}"
         self._lease_seconds = lease_seconds
+        self._scan_interval_seconds = scan_interval_seconds
         self._started = False
 
     def namespace(self, plugin_id: str) -> PluginTaskNamespaceProtocol:
@@ -113,6 +117,7 @@ class ApplicationPluginTaskScheduler:
             if definition.enabled:
                 self._schedule_declared_task(plugin_id, definition)
                 self._schedule_restore(plugin_id, definition.name)
+        self._schedule_scan_loop()
 
     async def shutdown(self) -> None:
         if not self._started and not self._managed_tasks:
@@ -226,12 +231,11 @@ class ApplicationPluginTaskScheduler:
             self._run_scheduled_task_record(task_record),
             name=f"plugin-task:{task_record.plugin_id}:{task_record.task_name}",
         )
-        self._managed_tasks[task_record.task_id] = task
+        self._track_managed_task(task_record.task_id, task)
         if task_record.key is not None:
             self._task_keys[(task_record.plugin_id, task_record.key)] = (
                 task_record.task_id
             )
-        task.add_done_callback(lambda _: self._forget_task(task_record.task_id))
 
     def _schedule_declared_task(
         self,
@@ -253,8 +257,46 @@ class ApplicationPluginTaskScheduler:
             self._run_declared_loop(plugin_id, definition),
             name=f"plugin-task:{plugin_id}:{definition.name}:managed",
         )
-        self._managed_tasks[task_id] = task
-        task.add_done_callback(lambda _: self._forget_task(task_id))
+        self._track_managed_task(task_id, task)
+
+    def _schedule_scan_loop(self) -> None:
+        if self._store is None:
+            return
+        task_id = "plugin-task-worker:scan"
+        if task_id in self._managed_tasks:
+            return
+        task = asyncio.create_task(
+            self._run_scan_loop(),
+            name="plugin-task-worker:scan",
+        )
+        self._track_managed_task(task_id, task)
+
+    async def _run_scan_loop(self) -> None:
+        while self._started:
+            await self._scan_runnable_tasks()
+            await asyncio.sleep(self._scan_interval_seconds)
+
+    async def _scan_runnable_tasks(self) -> None:
+        if self._store is None:
+            return
+        try:
+            task_records = await self._store.list_runnable_tasks(
+                now=datetime.now(UTC),
+                limit=max(1, len(self._definitions) + len(self._managed_tasks) + 1),
+            )
+            for task_record in task_records:
+                if task_record.task_id in self._managed_tasks:
+                    continue
+                if (
+                    task_record.plugin_id,
+                    task_record.task_name,
+                ) not in self._definitions:
+                    continue
+                self._schedule_task_record(task_record)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Failed to scan runnable plugin tasks: status=failed")
 
     async def _run_declared_loop(
         self,
@@ -342,8 +384,7 @@ class ApplicationPluginTaskScheduler:
             self._restore_pending_tasks(plugin_id, task_name),
             name=f"plugin-task:{plugin_id}:{task_name}:restore",
         )
-        self._managed_tasks[restore_task_id] = task
-        task.add_done_callback(lambda _: self._forget_task(restore_task_id))
+        self._track_managed_task(restore_task_id, task)
 
     async def _restore_pending_tasks(self, plugin_id: str, task_name: str) -> None:
         if self._store is None:
@@ -463,7 +504,7 @@ class ApplicationPluginTaskScheduler:
 
         definition = self._get_definition(task_record.plugin_id, task_record.task_name)
         delay_seconds = definition.retry_backoff_seconds * (
-            definition.retry_backoff_multiplier ** task_record.attempt
+            definition.retry_backoff_multiplier**task_record.attempt
         )
         run_at = datetime.now(UTC) + timedelta(seconds=delay_seconds)
         retry_record = task_record.model_copy(
@@ -493,10 +534,12 @@ class ApplicationPluginTaskScheduler:
             retry_record.max_attempts,
             delay_seconds,
         )
-        asyncio.create_task(
+        retry_task_id = f"{retry_record.task_id}:retry:{retry_record.attempt}"
+        task = asyncio.create_task(
             self._schedule_retry_after_current_task(retry_record),
             name=f"plugin-task:{retry_record.task_id}:retry",
         )
+        self._track_managed_task(retry_task_id, task)
         return True
 
     async def _schedule_retry_after_current_task(
@@ -505,6 +548,7 @@ class ApplicationPluginTaskScheduler:
     ) -> None:
         await asyncio.sleep(0)
         if self._started:
+            self._managed_tasks.pop(task_record.task_id, None)
             self._schedule_task_record(task_record)
 
     def _get_definition(
@@ -524,6 +568,10 @@ class ApplicationPluginTaskScheduler:
         for task_key, keyed_task_id in list(self._task_keys.items()):
             if keyed_task_id == task_id:
                 self._task_keys.pop(task_key, None)
+
+    def _track_managed_task(self, task_id: str, task: asyncio.Task[None]) -> None:
+        self._managed_tasks[task_id] = task
+        task.add_done_callback(lambda _: self._forget_task(task_id))
 
 
 class _ApplicationPluginTaskNamespace:

@@ -12,16 +12,19 @@ def _task(
     *,
     key: str | None = "user-1",
     status: PluginTaskStatus = PluginTaskStatus.PENDING,
+    run_at: datetime | None = None,
+    lease_expires_at: datetime | None = None,
 ) -> PluginScheduledTask:
     now = datetime.now(UTC)
     return PluginScheduledTask(
         task_id=task_id,
         plugin_id="thirdparty.tasks",
         task_name="conversation_end",
-        run_at=now + timedelta(seconds=60),
+        run_at=run_at or now + timedelta(seconds=60),
         payload={"user_id": "user-1"},
         key=key,
         status=status,
+        lease_expires_at=lease_expires_at,
         created_at=now,
         updated_at=now,
     )
@@ -128,6 +131,56 @@ def test_sqlite_plugin_task_store_claims_and_reschedules_with_lease(tmp_path) ->
             assert task.last_error == "boom"
             assert task.lease_owner is None
             assert task.lease_expires_at is None
+        finally:
+            await store.close()
+
+    asyncio.run(run())
+
+
+def test_sqlite_plugin_task_store_lists_runnable_tasks(tmp_path) -> None:
+    async def run() -> None:
+        store = await create_sqlite_plugin_task_store(tmp_path / "plugin_tasks.db")
+        try:
+            now = datetime.now(UTC)
+            await store.add_task(
+                _task(
+                    "due-pending",
+                    key=None,
+                    run_at=now - timedelta(seconds=1),
+                )
+            )
+            await store.add_task(
+                _task(
+                    "future-pending",
+                    key=None,
+                    run_at=now + timedelta(seconds=60),
+                )
+            )
+            await store.add_task(
+                _task(
+                    "expired-running",
+                    key=None,
+                    status=PluginTaskStatus.RUNNING,
+                    run_at=now - timedelta(seconds=10),
+                    lease_expires_at=now - timedelta(seconds=1),
+                )
+            )
+            await store.add_task(
+                _task(
+                    "leased-running",
+                    key=None,
+                    status=PluginTaskStatus.RUNNING,
+                    run_at=now - timedelta(seconds=10),
+                    lease_expires_at=now + timedelta(seconds=60),
+                )
+            )
+
+            runnable = await store.list_runnable_tasks(now=now)
+
+            assert [task.task_id for task in runnable] == [
+                "expired-running",
+                "due-pending",
+            ]
         finally:
             await store.close()
 

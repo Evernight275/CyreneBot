@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import insert, or_, select, update
+from sqlalchemy import and_, insert, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from cyreneAI.core.errors.plugin import PluginNotFoundError
@@ -54,6 +54,45 @@ class SQLitePluginTaskStore:
                 PluginTaskStatus.RUNNING,
             ],
         )
+
+    async def list_runnable_tasks(
+        self,
+        *,
+        now: datetime,
+        plugin_id: str | None = None,
+        task_name: str | None = None,
+        limit: int | None = None,
+    ) -> list[PluginScheduledTask]:
+        statement = (
+            select(plugin_task_instances)
+            .where(
+                or_(
+                    and_(
+                        plugin_task_instances.c.status
+                        == PluginTaskStatus.PENDING.value,
+                        plugin_task_instances.c.run_at <= now,
+                    ),
+                    and_(
+                        plugin_task_instances.c.status
+                        == PluginTaskStatus.RUNNING.value,
+                        plugin_task_instances.c.lease_expires_at.is_not(None),
+                        plugin_task_instances.c.lease_expires_at <= now,
+                    ),
+                )
+            )
+            .order_by(plugin_task_instances.c.run_at)
+        )
+        if plugin_id is not None:
+            statement = statement.where(plugin_task_instances.c.plugin_id == plugin_id)
+        if task_name is not None:
+            statement = statement.where(plugin_task_instances.c.task_name == task_name)
+        if limit is not None:
+            statement = statement.limit(limit)
+
+        async with self._engine.connect() as connection:
+            result = await connection.execute(statement)
+            rows = result.mappings().all()
+        return [_task_from_row(dict(row)) for row in rows]
 
     async def list_tasks(
         self,

@@ -22,6 +22,7 @@ dev = [
     "httpx",
     "pytest",
     "pytest-asyncio",
+    "pytest-cov",
     "google-genai",
     "anthropic",
     "cryptography",

@@ -546,6 +546,19 @@ class PluginTaskStoreProtocol(Protocol):
         """
         ...
 
+    async def list_runnable_tasks(
+        self,
+        *,
+        now: datetime,
+        plugin_id: str | None = None,
+        task_name: str | None = None,
+        limit: int | None = None,
+    ) -> list[PluginScheduledTask]:
+        """
+        列出已到执行时间或 lease 已过期、可被 worker 尝试 claim 的任务实例。
+        """
+        ...
+
     async def list_tasks(
         self,
         *,

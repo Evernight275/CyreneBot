@@ -4,6 +4,7 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 
 from cyreneAI.api import CyreneBot, Depends
+from cyreneAI.application.plugins.tasks import ApplicationPluginTaskScheduler
 from cyreneAI.bootstrap import build_cyrene_ai_runtime
 from cyreneAI.core.schema.bot import BotCommand
 from cyreneAI.core.schema.plugin import (
@@ -13,6 +14,8 @@ from cyreneAI.core.schema.plugin import (
     PluginManifest,
     PluginPermission,
     PluginScheduledTask,
+    PluginTaskDefinition,
+    PluginTaskResult,
     PluginTaskStatus,
 )
 from cyreneAI.infra.adapters.plugins.sqlite import create_sqlite_plugin_task_store
@@ -24,6 +27,17 @@ class _FakePluginLoader:
 
     def load(self) -> list[object]:
         return self._modules
+
+
+class _RecordingTaskExecutor:
+    def __init__(self, called: asyncio.Event) -> None:
+        self.called = called
+        self.payloads: list[dict[str, object]] = []
+
+    async def execute(self, request) -> PluginTaskResult:
+        self.payloads.append(dict(request.payload))
+        self.called.set()
+        return PluginTaskResult()
 
 
 def test_plugin_task_scheduler_restores_pending_sqlite_task(tmp_path) -> None:
@@ -59,6 +73,54 @@ def test_plugin_task_scheduler_restores_pending_sqlite_task(tmp_path) -> None:
             await asyncio.wait_for(called.wait(), timeout=1)
         finally:
             await second_runtime.close()
+
+    asyncio.run(run())
+
+
+def test_plugin_task_scheduler_worker_scan_claims_due_sqlite_task(tmp_path) -> None:
+    async def run() -> None:
+        store = await create_sqlite_plugin_task_store(tmp_path / "plugin_tasks.db")
+        called = asyncio.Event()
+        executor = _RecordingTaskExecutor(called)
+        scheduler = ApplicationPluginTaskScheduler(
+            store=store,
+            lease_owner="worker-scan",
+            lease_seconds=0.1,
+            scan_interval_seconds=0.01,
+        )
+        scheduler.register_task(
+            "thirdparty.tasks",
+            PluginTaskDefinition(name="conversation_end"),
+            executor,
+        )
+        await scheduler.start()
+        try:
+            now = datetime.now(UTC)
+            await store.add_task(
+                PluginScheduledTask(
+                    task_id="due-task",
+                    plugin_id="thirdparty.tasks",
+                    task_name="conversation_end",
+                    run_at=now - timedelta(seconds=1),
+                    payload={"user_id": "user-1"},
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+
+            await asyncio.wait_for(called.wait(), timeout=1)
+            tasks = await _wait_for_task_status(
+                scheduler,
+                plugin_id="thirdparty.tasks",
+                task_name="conversation_end",
+                status=PluginTaskStatus.COMPLETED,
+            )
+
+            assert executor.payloads == [{"user_id": "user-1"}]
+            assert tasks[0].task_id == "due-task"
+            assert tasks[0].lease_owner is None
+        finally:
+            await scheduler.shutdown()
 
     asyncio.run(run())
 
