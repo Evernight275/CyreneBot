@@ -15,6 +15,9 @@ from cyreneAI.server.config import (
     build_plugin_python_environment_root_path_from_env,
     build_plugin_storage_path_from_env,
     build_plugin_task_database_path_from_env,
+    build_plugin_task_lease_owner_from_env,
+    build_plugin_task_lease_seconds_from_env,
+    build_plugin_task_max_concurrent_tasks_from_env,
     build_provider_config_store_path_from_env,
     build_provider_configs_from_env,
     build_qq_bot_app_id_from_env,
@@ -89,6 +92,11 @@ async def _build_runtime():
             build_plugin_python_dependency_install_timeout_seconds_from_env()
         ),
         plugin_task_database_path=build_plugin_task_database_path_from_env(),
+        plugin_task_max_concurrent_tasks=(
+            build_plugin_task_max_concurrent_tasks_from_env()
+        ),
+        plugin_task_lease_owner=build_plugin_task_lease_owner_from_env(),
+        plugin_task_lease_seconds=build_plugin_task_lease_seconds_from_env(),
         disabled_plugin_ids=build_disabled_plugin_ids_from_env(),
         plugin_fail_fast=False,
         plugin_paths=build_plugin_paths_from_env(),

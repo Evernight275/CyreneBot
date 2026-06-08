@@ -493,6 +493,28 @@ def test_build_cyrene_ai_runtime_can_create_plugin_storage(tmp_path) -> None:
     asyncio.run(_run_build_runtime_can_create_plugin_storage(tmp_path))
 
 
+async def _run_build_runtime_passes_plugin_task_scheduler_config(tmp_path) -> None:
+    runtime = await build_cyrene_ai_runtime(
+        plugin_task_database_path=tmp_path / "plugin_tasks.db",
+        plugin_task_max_concurrent_tasks=3,
+        plugin_task_lease_owner="worker-test",
+        plugin_task_lease_seconds=12.5,
+        register_builtin_plugins=False,
+    )
+    try:
+        assert runtime.plugin_task_scheduler is not None
+        assert runtime.plugin_task_scheduler._lease_owner == "worker-test"
+        assert runtime.plugin_task_scheduler._lease_seconds == 12.5
+        global_semaphore = runtime.plugin_task_scheduler._global_semaphore
+        assert global_semaphore._value == 3
+    finally:
+        await runtime.close()
+
+
+def test_build_runtime_passes_plugin_task_scheduler_config(tmp_path) -> None:
+    asyncio.run(_run_build_runtime_passes_plugin_task_scheduler_config(tmp_path))
+
+
 async def _run_build_runtime_loads_plugin_paths(tmp_path) -> None:
     plugin_path = tmp_path / "plugins" / "demo_hello"
     plugin_path.mkdir(parents=True)

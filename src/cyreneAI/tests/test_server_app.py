@@ -91,6 +91,9 @@ from cyreneAI.server.config import (
     build_plugin_python_environment_root_path_from_env,
     build_plugin_storage_path_from_env,
     build_plugin_task_database_path_from_env,
+    build_plugin_task_lease_owner_from_env,
+    build_plugin_task_lease_seconds_from_env,
+    build_plugin_task_max_concurrent_tasks_from_env,
     build_provider_config_store_path_from_env,
     build_provider_configs_from_env,
     build_qq_bot_app_id_from_env,
@@ -1394,6 +1397,16 @@ def test_server_builds_plugin_task_database_path_from_env(monkeypatch) -> None:
     )
 
     assert build_plugin_task_database_path_from_env() == "data/plugin_tasks.db"
+
+
+def test_server_builds_plugin_task_scheduler_config_from_env(monkeypatch) -> None:
+    monkeypatch.setenv("CYRENEAI_PLUGIN_TASK_MAX_CONCURRENT_TASKS", "7")
+    monkeypatch.setenv("CYRENEAI_PLUGIN_TASK_LEASE_OWNER", "worker-a")
+    monkeypatch.setenv("CYRENEAI_PLUGIN_TASK_LEASE_SECONDS", "42.5")
+
+    assert build_plugin_task_max_concurrent_tasks_from_env() == 7
+    assert build_plugin_task_lease_owner_from_env() == "worker-a"
+    assert build_plugin_task_lease_seconds_from_env() == 42.5
 
 
 def test_server_builds_disabled_plugin_ids_from_env(monkeypatch) -> None:

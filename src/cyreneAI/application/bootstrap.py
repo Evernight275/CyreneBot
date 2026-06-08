@@ -68,6 +68,9 @@ async def build_cyrene_ai_runtime(
     ) = None,
     plugin_task_scheduler: PluginTaskSchedulerProtocol | None = None,
     plugin_task_store: PluginTaskStoreProtocol | None = None,
+    plugin_task_max_concurrent_tasks: int = 10,
+    plugin_task_lease_owner: str | None = None,
+    plugin_task_lease_seconds: float = 60.0,
     disabled_plugin_ids: list[str] | None = None,
     plugin_fail_fast: bool = True,
     register_builtin_plugins: bool = True,
@@ -104,6 +107,9 @@ async def build_cyrene_ai_runtime(
     if runtime_plugin_task_scheduler is None:
         runtime_plugin_task_scheduler = ApplicationPluginTaskScheduler(
             store=plugin_task_store,
+            max_concurrent_tasks=plugin_task_max_concurrent_tasks,
+            lease_owner=plugin_task_lease_owner,
+            lease_seconds=plugin_task_lease_seconds,
         )
     await runtime_plugin_task_scheduler.start()
 

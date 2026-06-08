@@ -380,6 +380,30 @@ def build_plugin_task_database_path_from_env() -> str | None:
     return _env_str("CYRENEAI_PLUGIN_TASK_DATABASE_PATH")
 
 
+def build_plugin_task_max_concurrent_tasks_from_env() -> int:
+    load_dotenv()
+
+    raw = _env_str("CYRENEAI_PLUGIN_TASK_MAX_CONCURRENT_TASKS")
+    if raw is None:
+        return 10
+    return int(raw)
+
+
+def build_plugin_task_lease_owner_from_env() -> str | None:
+    load_dotenv()
+
+    return _env_str("CYRENEAI_PLUGIN_TASK_LEASE_OWNER")
+
+
+def build_plugin_task_lease_seconds_from_env() -> float:
+    load_dotenv()
+
+    raw = _env_str("CYRENEAI_PLUGIN_TASK_LEASE_SECONDS")
+    if raw is None:
+        return 60.0
+    return float(raw)
+
+
 def build_disabled_plugin_ids_from_env() -> list[str]:
     load_dotenv()
 
