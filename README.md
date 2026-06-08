@@ -40,8 +40,11 @@ adapters
 infra/bootstrap
   装配 provider info、adapter builder、registry、factory。
 
+cyreneAI.bootstrap
+  默认 composition root，负责把 core / application / infra 总装成可运行 runtime。
+
 application
-  编排业务流程，例如 chat、embedding、indexing、retrieval、RAG chat 和 runtime bootstrap。
+  编排业务流程，例如 chat、embedding、indexing、retrieval、RAG chat 和 runtime 容器。
 ```
 
 这让新增业务策略时通常只需要改 application 层；只有接入新的外部系统时才进入 infra/adapters。
@@ -75,7 +78,7 @@ build runtime
 索引支持两种切块策略：
 
 ```python
-from cyreneAI.application.indexing_orchestrator import ChunkStrategy
+from cyreneAI.core.schema.application import ChunkStrategy
 
 chunk_strategy=ChunkStrategy.CHARACTER
 chunk_strategy=ChunkStrategy.PARAGRAPH
@@ -92,7 +95,7 @@ collection_id="project-docs"
 RAG context 注入支持多种格式：
 
 ```python
-from cyreneAI.application.rag_chat_orchestrator import RAGContextFormat
+from cyreneAI.core.schema.application import RAGContextFormat
 
 retrieval_context_format=RAGContextFormat.PLAIN
 retrieval_context_format=RAGContextFormat.NUMBERED
@@ -115,6 +118,15 @@ include_retrieval_metadata=True
 build runtime -> 配置 provider -> index documents -> RAG chat -> close runtime
 ```
 
+完整 runtime 示例面向源码仓库，或包含 `cyreneAI.bootstrap`、`application`、
+`infra` 的运行时分发；当前 `cyreneai-plugin-sdk` 发布包只包含
+`cyreneAI.api` 和 `cyreneAI.core`。在源码仓库中直接运行示例时，确保
+`src` 在 Python import path 中，例如：
+
+```bash
+PYTHONPATH=src uv run python examples/rag_demo.py
+```
+
 需要环境变量：
 
 ```bash
@@ -133,16 +145,18 @@ import asyncio
 import os
 from datetime import timedelta
 
-from cyreneAI.application.bootstrap import build_cyrene_ai_runtime
-from cyreneAI.application.indexing_orchestrator import (
-    ApplicationIndexingRequest,
-    ChunkStrategy,
+from cyreneAI.bootstrap import build_cyrene_ai_runtime
+from cyreneAI.application.knowledge.indexing_orchestrator import (
     IndexingOrchestrator,
 )
-from cyreneAI.application.rag_chat_orchestrator import (
-    ApplicationRAGChatRequest,
-    RAGContextFormat,
+from cyreneAI.application.chat.rag_orchestrator import (
     RAGChatOrchestrator,
+)
+from cyreneAI.core.schema.application import (
+    ApplicationIndexingRequest,
+    ApplicationRAGChatRequest,
+    ChunkStrategy,
+    RAGContextFormat,
 )
 from cyreneAI.adapters.documents import FileSystemDocumentLoader
 from cyreneAI.adapters.vector_stores import create_memory_vector_store
