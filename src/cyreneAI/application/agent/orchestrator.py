@@ -819,16 +819,7 @@ def _build_planning_message(plan: AgentPlan | None) -> Message | None:
     if plan.objectives:
         lines.append("Objectives:")
         lines.extend(f"- {objective}" for objective in plan.objectives)
-    if plan.steps:
-        lines.append("Steps:")
-        lines.extend(
-            (
-                f"- {step.index}. {step.objective} "
-                f"action={step.action} tools={_render_plan_names(step.tool_names)} "
-                f"skills={_render_plan_names(step.skill_names)}"
-            )
-            for step in plan.steps
-        )
+    lines.extend(_render_plan_steps(plan))
     if plan.selected_tool_names:
         lines.append("Selected tools: " + ", ".join(plan.selected_tool_names))
     if plan.constraints.selected_skill_names:
@@ -856,6 +847,32 @@ def _render_plan_names(names: list[str]) -> str:
     if not names:
         return "-"
     return ",".join(names)
+
+
+def _render_plan_steps(plan: AgentPlan) -> list[str]:
+    if not plan.steps:
+        return []
+    lines = ["Steps:"]
+    lines.extend(
+        (
+            f"- {step.index}. {step.objective} "
+            f"action={step.action} tools={_render_plan_names(step.tool_names)} "
+            f"skills={_render_plan_names(step.skill_names)}"
+        )
+        for step in plan.steps
+    )
+    return lines
+
+
+def _render_plan_goal_objectives_steps(plan: AgentPlan) -> list[str]:
+    lines: list[str] = []
+    if plan.goal:
+        lines.append(f"Goal: {plan.goal}")
+    if plan.objectives:
+        lines.append("Objectives:")
+        lines.extend(f"- {objective}" for objective in plan.objectives)
+    lines.extend(_render_plan_steps(plan))
+    return lines
 
 
 def _tool_constraint_names(
@@ -955,12 +972,16 @@ def _run_replan_reasons(steps: list[AgentStep]) -> list[str]:
     return list(dict.fromkeys(reasons))
 
 
-_REPLAN_DEVIATION_REASONS = {
-    "planned_tool_not_called",
-    "unexpected_tool_call",
-    "tool_execution_error",
+# Deviation reasons that mean the run is ending, not adapting. These must NOT
+# trigger a replan: they are produced by _plan_execution_deviation_reason for
+# steps that the main loop finalizes (tool-limit / max-steps), so replanning
+# would override a terminal stop condition. Every other non-null deviation
+# reason the generator can return is treated as a replan trigger, so this set
+# stays the only thing that needs syncing when the generator grows a reason.
+_TERMINAL_DEVIATION_REASONS = {
+    "agent_max_steps_finalization",
+    "agent_tool_limit_finalization",
     "tool_limit_exceeded",
-    "agent_step_exceeded_plan",
 }
 
 
@@ -969,10 +990,9 @@ def _replan_reasons_from_step(step: AgentStep) -> list[str]:
     plan_execution = step.metadata.get("plan_execution")
     if isinstance(plan_execution, dict):
         deviation_reason = plan_execution.get("deviation_reason")
-        if (
-            isinstance(deviation_reason, str)
-            and deviation_reason in _REPLAN_DEVIATION_REASONS
-        ):
+        if isinstance(deviation_reason, str) and deviation_reason:
+            if deviation_reason in _TERMINAL_DEVIATION_REASONS:
+                return []
             reasons.append(deviation_reason)
     if _tool_results_changed_assumptions(step.tool_results):
         reasons.append("tool_result_changed_assumption")
@@ -980,6 +1000,11 @@ def _replan_reasons_from_step(step: AgentStep) -> list[str]:
 
 
 def _tool_results_changed_assumptions(tool_results: list[ToolResult]) -> bool:
+    # Prefer the typed signal; fall back to legacy metadata keys so tools that
+    # predate ToolResult.requires_replan keep working. New tools should set
+    # requires_replan=True rather than one of these keys.
+    if any(result.requires_replan for result in tool_results):
+        return True
     assumption_change_keys = {
         "agent_assumption_changed",
         "agent_assumptions_changed",
@@ -1568,21 +1593,7 @@ def _build_replanning_message(
         f"Replan count: {replan_count}",
         f"Reason: {reason}",
     ]
-    if plan.goal:
-        lines.append(f"Goal: {plan.goal}")
-    if plan.objectives:
-        lines.append("Objectives:")
-        lines.extend(f"- {objective}" for objective in plan.objectives)
-    if plan.steps:
-        lines.append("Steps:")
-        lines.extend(
-            (
-                f"- {step.index}. {step.objective} "
-                f"action={step.action} tools={_render_plan_names(step.tool_names)} "
-                f"skills={_render_plan_names(step.skill_names)}"
-            )
-            for step in plan.steps
-        )
+    lines.extend(_render_plan_goal_objectives_steps(plan))
     if plan.selected_tool_names:
         lines.append("Selected tools: " + ", ".join(plan.selected_tool_names))
 

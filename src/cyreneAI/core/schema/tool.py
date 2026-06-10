@@ -158,6 +158,7 @@ class ToolResult(CyreneAISchema):
     content: str | None = None
     success: bool = True
     error: str | None = None
+    requires_replan: bool = False
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 

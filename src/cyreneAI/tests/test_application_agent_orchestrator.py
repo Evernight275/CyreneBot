@@ -8,6 +8,7 @@ from cyreneAI.application.agent.orchestrator import (
     AgentOrchestrator,
     AgentRunRequest,
     AgentStopReason,
+    _tool_results_changed_assumptions,
 )
 from cyreneAI.application.runtime import CyreneAIRuntime
 from cyreneAI.core.context.builder import ContextWindowBuilder
@@ -143,6 +144,16 @@ class AssumptionChangingToolExecutor:
             name=call.name,
             content="assumption changed",
             metadata={"agent_assumption_changed": True},
+        )
+
+
+class ReplanSignalingToolExecutor:
+    async def execute(self, call: ToolCall) -> ToolResult:
+        return ToolResult(
+            call_id=call.id,
+            name=call.name,
+            content="assumption changed",
+            requires_replan=True,
         )
 
 
@@ -1212,6 +1223,20 @@ def test_agent_orchestrator_replans_when_tool_result_changes_assumptions() -> No
     asyncio.run(_run_agent_replans_when_tool_result_changes_assumptions())
 
 
+def test_tool_results_changed_assumptions_honors_typed_signal() -> None:
+    typed = ToolResult(call_id="c1", name="lookup", requires_replan=True)
+    legacy = ToolResult(
+        call_id="c2",
+        name="lookup",
+        metadata={"agent_assumption_changed": True},
+    )
+    neutral = ToolResult(call_id="c3", name="lookup", content="ok")
+
+    assert _tool_results_changed_assumptions([typed]) is True
+    assert _tool_results_changed_assumptions([legacy]) is True
+    assert _tool_results_changed_assumptions([neutral]) is False
+
+
 async def _run_agent_skips_replan_after_max_replans() -> None:
     plan_payload = {
         "goal": "Find the project status.",
@@ -1564,6 +1589,85 @@ async def _run_agent_stops_when_tool_call_limit_is_exceeded() -> None:
 
 def test_agent_orchestrator_stops_when_tool_call_limit_is_exceeded() -> None:
     asyncio.run(_run_agent_stops_when_tool_call_limit_is_exceeded())
+
+
+async def _run_agent_does_not_replan_on_tool_limit() -> None:
+    first_call = ToolCall(id="call-1", name="lookup", arguments="{}")
+    second_call = ToolCall(id="call-2", name="lookup", arguments="{}")
+    plan_payload = {
+        "goal": "Use tools.",
+        "objectives": ["Call lookup."],
+        "steps": [
+            {
+                "objective": "Call lookup.",
+                "action": "Call lookup.",
+                "tool_names": ["lookup"],
+                "skill_names": [],
+            }
+        ],
+    }
+    provider = FakeChatProvider(
+        [
+            ChatResponse(
+                provider_id="provider-1",
+                model="planner-model",
+                message=_message(
+                    MessageRole.ASSISTANT,
+                    json.dumps(plan_payload, sort_keys=True),
+                ),
+                finish_reason=ChatFinishReason.STOP,
+            ),
+            ChatResponse(
+                provider_id="provider-1",
+                model="fake-model",
+                tool_calls=[first_call, second_call],
+                finish_reason=ChatFinishReason.TOOL_CALLS,
+            ),
+            ChatResponse(
+                provider_id="provider-1",
+                model="fake-model",
+                message=_message(MessageRole.ASSISTANT, "limited final"),
+                finish_reason=ChatFinishReason.STOP,
+            ),
+        ]
+    )
+    tool_registry = ToolRegistry()
+    tool_registry.register(
+        ToolDefinition(name="lookup", description="Lookup a value."),
+        ReplanSignalingToolExecutor(),
+    )
+    runtime = await _build_runtime(provider, tool_registry)
+
+    result = await AgentOrchestrator(runtime).run(
+        AgentRunRequest(
+            session_id="session-1",
+            provider_id="provider-1",
+            model="fake-model",
+            goal="Use tools.",
+            planning=AgentPlanningConfig(
+                enabled=True,
+                mode=AgentPlanningMode.LLM,
+                planner_model="planner-model",
+                replanning_enabled=True,
+                max_replans=2,
+            ),
+            tool_selection=AgentToolSelectionConfig(allowed_tool_names=["lookup"]),
+            max_tool_calls_per_step=1,
+        )
+    )
+
+    # tool_limit_exceeded is a terminal deviation reason: replanning must not
+    # preempt the TOOL_LIMIT stop, even if an executed tool asks to replan.
+    assert result.completed is False
+    assert result.stop_reason == AgentStopReason.TOOL_LIMIT
+    assert result.metadata["replan_count"] == 0
+    assert result.steps[0].metadata.get("replan_triggered") is not True
+    # planner(1) + initial step(1) + tool-limit finalization(1) == 3, no replan call
+    assert len(provider.requests) == 3
+
+
+def test_agent_orchestrator_does_not_replan_on_tool_limit() -> None:
+    asyncio.run(_run_agent_does_not_replan_on_tool_limit())
 
 
 async def _run_agent_truncates_tool_result_content() -> None:
