@@ -607,7 +607,7 @@ def test_server_serves_frontend_dist(tmp_path) -> None:
     assets_path = dist_path / "assets"
     assets_path.mkdir(parents=True)
     (dist_path / "index.html").write_text(
-        '<html><head><script src="/assets/app.js"></script></head>'
+        '<html><head><script src="/console/assets/app.js"></script></head>'
         "<body>CyreneBot Console</body></html>",
         encoding="utf-8",
     )
@@ -626,20 +626,25 @@ def test_server_serves_frontend_dist(tmp_path) -> None:
         )
     )
 
-    index_response = client.get("/")
     console_response = client.get("/console")
-    asset_response = client.get("/assets/app.js")
+    console_slash_response = client.get("/console/")
+    asset_response = client.get("/console/assets/app.js")
 
-    assert index_response.status_code == 200
-    assert "CyreneBot Console" in index_response.text
     assert console_response.status_code == 200
     assert "CyreneBot Console" in console_response.text
+    assert console_slash_response.status_code == 200
+    assert "CyreneBot Console" in console_slash_response.text
     assert asset_response.status_code == 200
     assert "console ready" in asset_response.text
     assert client.get("/health").json() == {"status": "ok"}
+    assert client.get("/").status_code == 404
+    assert client.get("/assets/app.js").status_code == 404
+    assert client.get("/favicon.svg").status_code == 404
+    assert client.get("/icons.svg").status_code == 404
     assert client.get("/package.json").status_code == 404
     assert client.get("/src/App.vue").status_code == 404
-    assert client.get("/assets/../index.html").status_code == 404
+    assert client.get("/console/package.json").status_code == 404
+    assert client.get("/console/assets/../index.html").status_code == 404
 
 
 def test_server_request_logging_propagates_request_id(caplog) -> None:

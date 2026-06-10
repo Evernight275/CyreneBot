@@ -208,21 +208,21 @@ def _install_frontend_routes(
     icons_path = dist_path / "icons.svg"
 
     app.mount(
-        "/assets",
+        "/console/assets",
         StaticFiles(directory=assets_path),
         name="frontend_assets",
     )
 
-    @app.get("/", include_in_schema=False)
     @app.get("/console", include_in_schema=False)
+    @app.get("/console/", include_in_schema=False)
     async def frontend_index() -> FileResponse:
         return FileResponse(index_path)
 
-    @app.get("/favicon.svg", include_in_schema=False)
+    @app.get("/console/favicon.svg", include_in_schema=False)
     async def frontend_favicon() -> FileResponse:
         return FileResponse(favicon_path)
 
-    @app.get("/icons.svg", include_in_schema=False)
+    @app.get("/console/icons.svg", include_in_schema=False)
     async def frontend_icons() -> FileResponse:
         return FileResponse(icons_path)
 
