@@ -125,6 +125,7 @@ class AgentOrchestrator:
         steps: list[AgentStep] = []
         response: ChatResponse | None = None
         total_tool_calls = 0
+        replan_count = 0
 
         for index in range(request.max_steps):
             try:
@@ -145,24 +146,50 @@ class AgentOrchestrator:
                 )
                 raise
             total_tool_calls += len(tool_calls)
-            steps.append(
-                AgentStep(
+            step = AgentStep(
+                index=index,
+                request=current_request,
+                response=response,
+                tool_calls=tool_calls,
+                tool_results=tool_results,
+                metadata=_build_step_metadata(
                     index=index,
                     request=current_request,
                     response=response,
                     tool_calls=tool_calls,
                     tool_results=tool_results,
-                    metadata=_build_step_metadata(
-                        index=index,
-                        request=current_request,
-                        response=response,
-                        tool_calls=tool_calls,
-                        tool_results=tool_results,
-                        tool_limit_exceeded=tool_limit_exceeded,
-                        plan=plan,
+                    tool_limit_exceeded=tool_limit_exceeded,
+                    plan=plan,
+                ),
+            )
+            steps.append(step)
+
+            replan_result = await self._maybe_replan(
+                request=request,
+                tools=tools,
+                skill_bundle=skill_bundle,
+                current_plan=plan,
+                step=step,
+                replan_count=replan_count,
+            )
+            if replan_result is not None:
+                replan_count += 1
+                plan = replan_result
+                current_request = _append_tool_feedback_messages(
+                    request=current_request,
+                    response=response,
+                    tool_results=tool_results,
+                )
+                current_request = _append_replanning_message(
+                    request=current_request,
+                    plan=plan,
+                    replan_count=replan_count,
+                    reason=_metadata_str(
+                        step.metadata.get("replan_reason"),
+                        default="replan_requested",
                     ),
                 )
-            )
+                continue
 
             if not tool_calls:
                 run_metadata = _build_run_metadata(
@@ -366,6 +393,81 @@ class AgentOrchestrator:
                 planner_request,
             ),
         )
+
+    async def _maybe_replan(
+        self,
+        *,
+        request: AgentRunRequest,
+        tools: list[ToolDefinition],
+        skill_bundle: SkillInstructionBundle | None,
+        current_plan: AgentPlan | None,
+        step: AgentStep,
+        replan_count: int,
+    ) -> AgentPlan | None:
+        planning = request.planning
+        if (
+            planning is None
+            or not planning.enabled
+            or not planning.replanning_enabled
+            or current_plan is None
+        ):
+            return None
+
+        reasons = _replan_reasons_from_step(step)
+        if not reasons:
+            return None
+
+        if replan_count >= planning.max_replans:
+            step.metadata["replan_skipped"] = True
+            step.metadata["replan_skip_reason"] = "max_replans_reached"
+            step.metadata["replan_reasons"] = reasons
+            step.metadata["replan_count"] = replan_count
+            return None
+
+        reason = reasons[0]
+        replan_request = request.model_copy(
+            update={
+                "metadata": {
+                    **request.metadata,
+                    "agent_replan_context": _build_replan_context(
+                        current_plan=current_plan,
+                        step=step,
+                        reasons=reasons,
+                        replan_count=replan_count + 1,
+                    ),
+                }
+            }
+        )
+        new_plan = await self._build_agent_plan(
+            request=replan_request,
+            tools=tools,
+            skill_bundle=skill_bundle,
+        )
+        if new_plan is None:
+            step.metadata["replan_skipped"] = True
+            step.metadata["replan_skip_reason"] = "planner_returned_no_plan"
+            step.metadata["replan_reasons"] = reasons
+            step.metadata["replan_count"] = replan_count
+            return None
+
+        new_plan.metadata.update(
+            {
+                "replanned": True,
+                "replan_count": replan_count + 1,
+                "replan_reason": reason,
+                "replan_reasons": reasons,
+                "previous_planning_mode": current_plan.metadata.get("planning_mode"),
+                "previous_plan_step_count": len(current_plan.steps),
+                "trigger_step_index": step.index,
+                "plan_start_step_index": step.index + 1,
+            }
+        )
+        step.metadata["replan_triggered"] = True
+        step.metadata["replan_reason"] = reason
+        step.metadata["replan_reasons"] = reasons
+        step.metadata["replan_count"] = replan_count + 1
+        step.metadata["replanned_plan_step_count"] = len(new_plan.steps)
+        return new_plan
 
     async def _load_session_history_messages(self, session_id: str) -> list[Message]:
         if self._runtime.context_manager is None:
@@ -825,10 +927,106 @@ def _build_run_metadata(
         "tool_success_count": sum(1 for result in tool_results if result.success),
         "tool_error_count": sum(1 for result in tool_results if not result.success),
         "tool_names": sorted({result.name for result in tool_results}),
+        "replan_count": sum(
+            1 for step in steps if step.metadata.get("replan_triggered") is True
+        ),
+        "replan_reasons": _run_replan_reasons(steps),
         "dropped_context_items": [
             item.item_id for item in context_result.dropped_items
         ],
         "steps": [step.metadata for step in steps],
+    }
+
+
+def _run_replan_reasons(steps: list[AgentStep]) -> list[str]:
+    reasons: list[str] = []
+    for step in steps:
+        value = step.metadata.get("replan_reasons")
+        if isinstance(value, list):
+            reasons.extend(
+                reason
+                for reason in cast(list[object], value)
+                if isinstance(reason, str) and reason
+            )
+            continue
+        value = step.metadata.get("replan_reason")
+        if isinstance(value, str) and value:
+            reasons.append(value)
+    return list(dict.fromkeys(reasons))
+
+
+_REPLAN_DEVIATION_REASONS = {
+    "planned_tool_not_called",
+    "unexpected_tool_call",
+    "tool_execution_error",
+    "tool_limit_exceeded",
+    "agent_step_exceeded_plan",
+}
+
+
+def _replan_reasons_from_step(step: AgentStep) -> list[str]:
+    reasons: list[str] = []
+    plan_execution = step.metadata.get("plan_execution")
+    if isinstance(plan_execution, dict):
+        deviation_reason = plan_execution.get("deviation_reason")
+        if (
+            isinstance(deviation_reason, str)
+            and deviation_reason in _REPLAN_DEVIATION_REASONS
+        ):
+            reasons.append(deviation_reason)
+    if _tool_results_changed_assumptions(step.tool_results):
+        reasons.append("tool_result_changed_assumption")
+    return list(dict.fromkeys(reasons))
+
+
+def _tool_results_changed_assumptions(tool_results: list[ToolResult]) -> bool:
+    assumption_change_keys = {
+        "agent_assumption_changed",
+        "agent_assumptions_changed",
+        "agent_replan_required",
+        "assumption_changed",
+        "assumptions_changed",
+        "replan_required",
+    }
+    return any(
+        result.metadata.get(key) is True
+        for result in tool_results
+        for key in assumption_change_keys
+    )
+
+
+def _build_replan_context(
+    *,
+    current_plan: AgentPlan,
+    step: AgentStep,
+    reasons: list[str],
+    replan_count: int,
+) -> dict[str, object]:
+    return {
+        "replan_count": replan_count,
+        "replan_reasons": reasons,
+        "previous_plan": {
+            "goal": current_plan.goal,
+            "objectives": list(current_plan.objectives),
+            "step_count": len(current_plan.steps),
+            "metadata": dict(current_plan.metadata),
+        },
+        "trigger_step": {
+            "index": step.index,
+            "finish_reason": step.response.finish_reason.value,
+            "tool_calls": [call.name for call in step.tool_calls],
+            "tool_results": [
+                {
+                    "name": result.name,
+                    "success": result.success,
+                    "error": result.error,
+                    "content_preview": _truncate_line(result.content or "", 240),
+                    "metadata": dict(result.metadata),
+                }
+                for result in step.tool_results
+            ],
+            "plan_execution": _metadata_dict(step.metadata.get("plan_execution")),
+        },
     }
 
 
@@ -889,7 +1087,13 @@ def _build_plan_execution_metadata(
             "deviation_reason": None,
         }
 
-    plan_step = plan.steps[index] if index < len(plan.steps) else None
+    plan_start_step_index = _plan_start_step_index(plan)
+    relative_step_index = index - plan_start_step_index
+    plan_step = (
+        plan.steps[relative_step_index]
+        if 0 <= relative_step_index < len(plan.steps)
+        else None
+    )
     actual_tool_names = [call.name for call in tool_calls]
     expected_tool_names = list(plan_step.tool_names) if plan_step is not None else []
     finalization_reason = _plan_execution_finalization_reason(request)
@@ -915,6 +1119,8 @@ def _build_plan_execution_metadata(
         "completed": completed,
         "deviation_reason": deviation_reason,
         "plan_step_index": plan_step.index if plan_step is not None else None,
+        "plan_start_step_index": plan_start_step_index,
+        "relative_step_index": relative_step_index,
         "plan_step_objective": plan_step.objective if plan_step is not None else None,
         "plan_step_action": plan_step.action if plan_step is not None else None,
         "expected_tool_names": expected_tool_names,
@@ -931,6 +1137,13 @@ def _plan_execution_finalization_reason(request: ChatRequest) -> str | None:
     if request.metadata.get("agent_tool_limit_finalization") is True:
         return "agent_tool_limit_finalization"
     return None
+
+
+def _plan_start_step_index(plan: AgentPlan) -> int:
+    value = plan.metadata.get("plan_start_step_index")
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        return value
+    return 0
 
 
 def _plan_execution_deviation_reason(
@@ -1315,6 +1528,76 @@ def _append_tool_feedback_messages(
     return request.model_copy(update={"messages": messages})
 
 
+def _append_replanning_message(
+    *,
+    request: ChatRequest,
+    plan: AgentPlan,
+    replan_count: int,
+    reason: str,
+) -> ChatRequest:
+    return request.model_copy(
+        update={
+            "messages": [
+                *request.messages,
+                _build_replanning_message(
+                    plan=plan,
+                    replan_count=replan_count,
+                    reason=reason,
+                ),
+            ],
+            "metadata": {
+                **request.metadata,
+                "agent_replan_count": replan_count,
+                "agent_replan_reason": reason,
+                "agent_plan_enabled": True,
+                "agent_plan_mode": _plan_metadata_str(plan, "planning_mode"),
+                "agent_plan_step_count": len(plan.steps),
+            },
+        }
+    )
+
+
+def _build_replanning_message(
+    *,
+    plan: AgentPlan,
+    replan_count: int,
+    reason: str,
+) -> Message:
+    lines = [
+        "Agent revised plan:",
+        f"Replan count: {replan_count}",
+        f"Reason: {reason}",
+    ]
+    if plan.goal:
+        lines.append(f"Goal: {plan.goal}")
+    if plan.objectives:
+        lines.append("Objectives:")
+        lines.extend(f"- {objective}" for objective in plan.objectives)
+    if plan.steps:
+        lines.append("Steps:")
+        lines.extend(
+            (
+                f"- {step.index}. {step.objective} "
+                f"action={step.action} tools={_render_plan_names(step.tool_names)} "
+                f"skills={_render_plan_names(step.skill_names)}"
+            )
+            for step in plan.steps
+        )
+    if plan.selected_tool_names:
+        lines.append("Selected tools: " + ", ".join(plan.selected_tool_names))
+
+    return Message(
+        role=MessageRole.SYSTEM,
+        name="agent_replan",
+        content=[
+            ContentPart(
+                type=ContentPartType.TEXT,
+                text="\n".join(lines),
+            )
+        ],
+    )
+
+
 def _build_max_steps_final_response_request(request: ChatRequest) -> ChatRequest:
     messages = [
         *request.messages,
@@ -1560,6 +1843,27 @@ def _optional_string(value: object) -> str | None:
     if isinstance(value, str) and value:
         return value
     return None
+
+
+def _metadata_str(value: object, *, default: str) -> str:
+    if isinstance(value, str) and value:
+        return value
+    return default
+
+
+def _metadata_dict(value: object) -> dict[str, object]:
+    if isinstance(value, dict):
+        return cast(dict[str, object], value)
+    return {}
+
+
+def _truncate_line(text: str, max_chars: int) -> str:
+    normalized = " ".join(text.split())
+    if len(normalized) <= max_chars:
+        return normalized
+    if max_chars <= 3:
+        return normalized[:max_chars]
+    return f"{normalized[: max_chars - 3]}..."
 
 
 def _plan_metadata_str(plan: AgentPlan | None, key: str) -> str | None:

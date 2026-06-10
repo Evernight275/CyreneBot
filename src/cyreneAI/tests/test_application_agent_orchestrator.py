@@ -136,6 +136,16 @@ class LongOutputToolExecutor:
         )
 
 
+class AssumptionChangingToolExecutor:
+    async def execute(self, call: ToolCall) -> ToolResult:
+        return ToolResult(
+            call_id=call.id,
+            name=call.name,
+            content="assumption changed",
+            metadata={"agent_assumption_changed": True},
+        )
+
+
 class FakeContextStore:
     def __init__(self) -> None:
         self.snapshots: list[ContextSnapshot] = []
@@ -955,6 +965,322 @@ async def _run_agent_records_plan_execution_awareness() -> None:
 
 def test_agent_orchestrator_records_plan_execution_awareness() -> None:
     asyncio.run(_run_agent_records_plan_execution_awareness())
+
+
+async def _run_agent_replans_after_planned_tool_is_not_called() -> None:
+    initial_plan_payload = {
+        "goal": "Find the project status.",
+        "objectives": ["Look up project status evidence."],
+        "steps": [
+            {
+                "objective": "Look up project status evidence.",
+                "action": "Call lookup before answering.",
+                "tool_names": ["lookup"],
+                "skill_names": [],
+            }
+        ],
+    }
+    revised_plan_payload = {
+        "goal": "Find the project status.",
+        "objectives": ["Answer from the available context."],
+        "steps": [
+            {
+                "objective": "Answer from the available context.",
+                "action": "Return the best available answer without tools.",
+                "tool_names": [],
+                "skill_names": [],
+            }
+        ],
+    }
+    provider = FakeChatProvider(
+        [
+            ChatResponse(
+                provider_id="provider-1",
+                model="planner-model",
+                message=_message(
+                    MessageRole.ASSISTANT,
+                    json.dumps(initial_plan_payload, sort_keys=True),
+                ),
+                finish_reason=ChatFinishReason.STOP,
+            ),
+            ChatResponse(
+                provider_id="provider-1",
+                model="fake-model",
+                message=_message(MessageRole.ASSISTANT, "premature final"),
+                finish_reason=ChatFinishReason.STOP,
+            ),
+            ChatResponse(
+                provider_id="provider-1",
+                model="planner-model",
+                message=_message(
+                    MessageRole.ASSISTANT,
+                    json.dumps(revised_plan_payload, sort_keys=True),
+                ),
+                finish_reason=ChatFinishReason.STOP,
+            ),
+            ChatResponse(
+                provider_id="provider-1",
+                model="fake-model",
+                message=_message(MessageRole.ASSISTANT, "final after replan"),
+                finish_reason=ChatFinishReason.STOP,
+            ),
+        ]
+    )
+    tool_registry = ToolRegistry()
+    tool_registry.register(
+        ToolDefinition(name="lookup", description="Lookup a value."),
+        RecordingToolExecutor(),
+    )
+    runtime = await _build_runtime(provider, tool_registry)
+
+    result = await AgentOrchestrator(runtime).run(
+        AgentRunRequest(
+            session_id="session-1",
+            provider_id="provider-1",
+            model="fake-model",
+            goal="Find the project status.",
+            max_steps=3,
+            planning=AgentPlanningConfig(
+                enabled=True,
+                mode=AgentPlanningMode.LLM,
+                planner_model="planner-model",
+                replanning_enabled=True,
+                max_replans=1,
+            ),
+            tool_selection=AgentToolSelectionConfig(
+                allowed_tool_names=["lookup"],
+            ),
+        )
+    )
+
+    assert result.completed is True
+    assert result.response.message == _message(
+        MessageRole.ASSISTANT,
+        "final after replan",
+    )
+    assert result.plan is not None
+    assert result.plan.metadata["replanned"] is True
+    assert result.plan.metadata["replan_reason"] == "planned_tool_not_called"
+    assert result.metadata["replan_count"] == 1
+    assert result.metadata["replan_reasons"] == ["planned_tool_not_called"]
+
+    first_step = result.steps[0]
+    assert first_step.metadata["replan_triggered"] is True
+    assert first_step.metadata["replan_reason"] == "planned_tool_not_called"
+    assert first_step.metadata["replanned_plan_step_count"] == 1
+
+    replan_request = provider.requests[2]
+    assert replan_request.metadata["agent_planner"] is True
+    assert replan_request.messages[1].content is not None
+    replan_payload = json.loads(replan_request.messages[1].content[0].text)
+    assert replan_payload["replan_context"]["replan_reasons"] == [
+        "planned_tool_not_called"
+    ]
+    assert replan_payload["replan_context"]["trigger_step"]["index"] == 0
+
+    second_agent_request = provider.requests[3]
+    assert second_agent_request.messages[-1].name == "agent_replan"
+    assert second_agent_request.metadata["agent_replan_count"] == 1
+    assert second_agent_request.metadata["agent_replan_reason"] == (
+        "planned_tool_not_called"
+    )
+
+
+def test_agent_orchestrator_replans_after_planned_tool_is_not_called() -> None:
+    asyncio.run(_run_agent_replans_after_planned_tool_is_not_called())
+
+
+async def _run_agent_replans_when_tool_result_changes_assumptions() -> None:
+    tool_call = ToolCall(id="call-1", name="lookup", arguments="{}")
+    initial_plan_payload = {
+        "goal": "Find the project status.",
+        "objectives": ["Look up project status evidence."],
+        "steps": [
+            {
+                "objective": "Look up project status evidence.",
+                "action": "Call lookup.",
+                "tool_names": ["lookup"],
+                "skill_names": [],
+            }
+        ],
+    }
+    revised_plan_payload = {
+        "goal": "Find the project status.",
+        "objectives": ["Adapt to changed assumptions."],
+        "steps": [
+            {
+                "objective": "Adapt to changed assumptions.",
+                "action": "Answer with the updated evidence.",
+                "tool_names": [],
+                "skill_names": [],
+            }
+        ],
+    }
+    provider = FakeChatProvider(
+        [
+            ChatResponse(
+                provider_id="provider-1",
+                model="planner-model",
+                message=_message(
+                    MessageRole.ASSISTANT,
+                    json.dumps(initial_plan_payload, sort_keys=True),
+                ),
+                finish_reason=ChatFinishReason.STOP,
+            ),
+            ChatResponse(
+                provider_id="provider-1",
+                model="fake-model",
+                message=Message(
+                    role=MessageRole.ASSISTANT,
+                    tool_calls=[tool_call],
+                ),
+                tool_calls=[tool_call],
+                finish_reason=ChatFinishReason.TOOL_CALLS,
+            ),
+            ChatResponse(
+                provider_id="provider-1",
+                model="planner-model",
+                message=_message(
+                    MessageRole.ASSISTANT,
+                    json.dumps(revised_plan_payload, sort_keys=True),
+                ),
+                finish_reason=ChatFinishReason.STOP,
+            ),
+            ChatResponse(
+                provider_id="provider-1",
+                model="fake-model",
+                message=_message(MessageRole.ASSISTANT, "updated final"),
+                finish_reason=ChatFinishReason.STOP,
+            ),
+        ]
+    )
+    tool_registry = ToolRegistry()
+    tool_registry.register(
+        ToolDefinition(name="lookup", description="Lookup a value."),
+        AssumptionChangingToolExecutor(),
+    )
+    runtime = await _build_runtime(provider, tool_registry)
+
+    result = await AgentOrchestrator(runtime).run(
+        AgentRunRequest(
+            session_id="session-1",
+            provider_id="provider-1",
+            model="fake-model",
+            goal="Find the project status.",
+            max_steps=3,
+            planning=AgentPlanningConfig(
+                enabled=True,
+                mode=AgentPlanningMode.LLM,
+                planner_model="planner-model",
+                replanning_enabled=True,
+                max_replans=1,
+            ),
+            tool_selection=AgentToolSelectionConfig(
+                allowed_tool_names=["lookup"],
+            ),
+        )
+    )
+
+    assert result.completed is True
+    assert result.metadata["replan_count"] == 1
+    assert result.metadata["replan_reasons"] == ["tool_result_changed_assumption"]
+    assert result.steps[0].metadata["replan_triggered"] is True
+    assert result.steps[0].metadata["replan_reason"] == (
+        "tool_result_changed_assumption"
+    )
+    assert result.steps[0].tool_results[0].metadata["agent_assumption_changed"] is True
+
+    replan_request = provider.requests[2]
+    assert replan_request.messages[1].content is not None
+    replan_payload = json.loads(replan_request.messages[1].content[0].text)
+    assert replan_payload["replan_context"]["replan_reasons"] == [
+        "tool_result_changed_assumption"
+    ]
+    assert (
+        replan_payload["replan_context"]["trigger_step"]["tool_results"][0]["metadata"][
+            "agent_assumption_changed"
+        ]
+        is True
+    )
+
+    second_agent_request = provider.requests[3]
+    assert second_agent_request.messages[-2].role == MessageRole.TOOL
+    assert second_agent_request.messages[-1].name == "agent_replan"
+
+
+def test_agent_orchestrator_replans_when_tool_result_changes_assumptions() -> None:
+    asyncio.run(_run_agent_replans_when_tool_result_changes_assumptions())
+
+
+async def _run_agent_skips_replan_after_max_replans() -> None:
+    plan_payload = {
+        "goal": "Find the project status.",
+        "objectives": ["Look up project status evidence."],
+        "steps": [
+            {
+                "objective": "Look up project status evidence.",
+                "action": "Call lookup before answering.",
+                "tool_names": ["lookup"],
+                "skill_names": [],
+            }
+        ],
+    }
+    provider = FakeChatProvider(
+        [
+            ChatResponse(
+                provider_id="provider-1",
+                model="planner-model",
+                message=_message(
+                    MessageRole.ASSISTANT,
+                    json.dumps(plan_payload, sort_keys=True),
+                ),
+                finish_reason=ChatFinishReason.STOP,
+            ),
+            ChatResponse(
+                provider_id="provider-1",
+                model="fake-model",
+                message=_message(MessageRole.ASSISTANT, "premature final"),
+                finish_reason=ChatFinishReason.STOP,
+            ),
+        ]
+    )
+    tool_registry = ToolRegistry()
+    tool_registry.register(
+        ToolDefinition(name="lookup", description="Lookup a value."),
+        RecordingToolExecutor(),
+    )
+    runtime = await _build_runtime(provider, tool_registry)
+
+    result = await AgentOrchestrator(runtime).run(
+        AgentRunRequest(
+            session_id="session-1",
+            provider_id="provider-1",
+            model="fake-model",
+            goal="Find the project status.",
+            planning=AgentPlanningConfig(
+                enabled=True,
+                mode=AgentPlanningMode.LLM,
+                planner_model="planner-model",
+                replanning_enabled=True,
+                max_replans=0,
+            ),
+            tool_selection=AgentToolSelectionConfig(
+                allowed_tool_names=["lookup"],
+            ),
+        )
+    )
+
+    assert result.completed is True
+    assert result.metadata["replan_count"] == 0
+    assert result.metadata["replan_reasons"] == ["planned_tool_not_called"]
+    assert len(provider.requests) == 2
+    assert result.steps[0].metadata["replan_skipped"] is True
+    assert result.steps[0].metadata["replan_skip_reason"] == "max_replans_reached"
+    assert result.steps[0].metadata["replan_reasons"] == ["planned_tool_not_called"]
+
+
+def test_agent_orchestrator_skips_replan_after_max_replans() -> None:
+    asyncio.run(_run_agent_skips_replan_after_max_replans())
 
 
 async def _run_agent_falls_back_when_llm_plan_is_invalid() -> None:

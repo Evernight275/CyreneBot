@@ -89,6 +89,8 @@ class AgentPlanningConfig(CyreneAISchema):
     max_plan_steps: int = Field(default=6, ge=1, le=20)
     planner_provider_id: str | None = None
     planner_model: str | None = None
+    replanning_enabled: bool = False
+    max_replans: int = Field(default=1, ge=0, le=5)
 
 
 class AgentToolSelectionConfig(CyreneAISchema):

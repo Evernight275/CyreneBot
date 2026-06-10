@@ -195,6 +195,9 @@ def _build_llm_planner_request(
             "max_skills": request.max_skills,
         },
     }
+    replan_context = request.metadata.get("agent_replan_context")
+    if isinstance(replan_context, dict):
+        payload["replan_context"] = cast(dict[str, Any], replan_context)
     return ChatRequest(
         provider_id=planner_provider_id,
         model=planner_model,
