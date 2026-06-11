@@ -5,6 +5,14 @@ import vue from '@vitejs/plugin-vue'
 export default defineConfig({
   base: '/console/',
   plugins: [vue()],
+  build: {
+    rollupOptions: {
+      input: {
+        console: 'index.html',
+        login: 'login.html',
+      },
+    },
+  },
   server: {
     port: 5173,
     proxy: {

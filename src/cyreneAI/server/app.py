@@ -5,11 +5,12 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from cyreneAI.application.runtime import CyreneAIRuntime
+from cyreneAI.server.auth import verify_admin_session
 from cyreneAI.server.channel_polling import ChannelPollingRunner
 from cyreneAI.server.channel_websocket import ChannelWebSocketRunner
 from cyreneAI.server.config import ServerSettings, build_server_settings_from_env
@@ -191,8 +192,20 @@ def _install_frontend_routes(
     app: FastAPI,
     frontend_dist_path: str | Path | None,
 ) -> None:
+    settings = app.state.server_settings
+    if settings.auth_enabled and (
+        not settings.admin_username or not settings.admin_password
+    ):
+        logger.warning(
+            "CyreneBot frontend disabled: admin auth is enabled but "
+            "CYRENEAI_ADMIN_USERNAME or CYRENEAI_ADMIN_PASSWORD is missing"
+        )
+        app.state.frontend_dist_path = None
+        return
+
     dist_path = _resolve_frontend_dist_path(frontend_dist_path)
     index_path = dist_path / "index.html"
+    login_path = dist_path / "login.html"
     if not index_path.is_file():
         logger.info("CyreneBot frontend disabled: dist not found at %s", dist_path)
         app.state.frontend_dist_path = None
@@ -213,10 +226,19 @@ def _install_frontend_routes(
         name="frontend_assets",
     )
 
-    @app.get("/console", include_in_schema=False)
-    @app.get("/console/", include_in_schema=False)
-    async def frontend_index() -> FileResponse:
+    @app.get("/console", include_in_schema=False, response_model=None)
+    @app.get("/console/", include_in_schema=False, response_model=None)
+    async def frontend_index(request: Request) -> Response:
+        if not verify_admin_session(request, app.state.server_settings):
+            return RedirectResponse("/console/login", status_code=303)
         return FileResponse(index_path)
+
+    if login_path.is_file():
+
+        @app.get("/console/login", include_in_schema=False)
+        @app.get("/console/login.html", include_in_schema=False)
+        async def frontend_login() -> FileResponse:
+            return FileResponse(login_path)
 
     @app.get("/console/favicon.svg", include_in_schema=False)
     async def frontend_favicon() -> FileResponse:

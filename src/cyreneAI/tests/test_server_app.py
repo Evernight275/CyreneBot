@@ -5,6 +5,7 @@ import importlib
 import json
 import logging
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -603,20 +604,7 @@ def test_server_health() -> None:
 
 
 def test_server_serves_frontend_dist(tmp_path) -> None:
-    dist_path = tmp_path / "frontend-dist"
-    assets_path = dist_path / "assets"
-    assets_path.mkdir(parents=True)
-    (dist_path / "index.html").write_text(
-        '<html><head><script src="/console/assets/app.js"></script></head>'
-        "<body>CyreneBot Console</body></html>",
-        encoding="utf-8",
-    )
-    (assets_path / "app.js").write_text(
-        "console.log('console ready')",
-        encoding="utf-8",
-    )
-    (dist_path / "favicon.svg").write_text("<svg />", encoding="utf-8")
-    (dist_path / "icons.svg").write_text("<svg />", encoding="utf-8")
+    dist_path = _write_frontend_dist(tmp_path)
     runtime = asyncio.run(_build_fake_runtime())
     client = TestClient(
         create_app(
@@ -628,12 +616,18 @@ def test_server_serves_frontend_dist(tmp_path) -> None:
 
     console_response = client.get("/console")
     console_slash_response = client.get("/console/")
+    login_response = client.get("/console/login")
+    login_html_response = client.get("/console/login.html")
     asset_response = client.get("/console/assets/app.js")
 
     assert console_response.status_code == 200
     assert "CyreneBot Console" in console_response.text
     assert console_slash_response.status_code == 200
     assert "CyreneBot Console" in console_slash_response.text
+    assert login_response.status_code == 200
+    assert "CyreneBot Login" in login_response.text
+    assert login_html_response.status_code == 200
+    assert "CyreneBot Login" in login_html_response.text
     assert asset_response.status_code == 200
     assert "console ready" in asset_response.text
     assert client.get("/health").json() == {"status": "ok"}
@@ -641,10 +635,95 @@ def test_server_serves_frontend_dist(tmp_path) -> None:
     assert client.get("/assets/app.js").status_code == 404
     assert client.get("/favicon.svg").status_code == 404
     assert client.get("/icons.svg").status_code == 404
+    assert client.get("/login.html").status_code == 404
     assert client.get("/package.json").status_code == 404
     assert client.get("/src/App.vue").status_code == 404
     assert client.get("/console/package.json").status_code == 404
     assert client.get("/console/assets/../index.html").status_code == 404
+
+
+def test_server_disables_frontend_when_admin_auth_is_unconfigured(tmp_path) -> None:
+    dist_path = _write_frontend_dist(tmp_path)
+    runtime = asyncio.run(_build_fake_runtime())
+    client = TestClient(
+        create_app(
+            runtime,
+            settings=ServerSettings(),
+            frontend_dist_path=dist_path,
+        )
+    )
+
+    assert client.get("/health").json() == {"status": "ok"}
+    assert client.get("/console").status_code == 404
+    assert client.get("/console/login").status_code == 404
+    assert client.get("/console/assets/app.js").status_code == 404
+
+
+def test_server_redirects_console_to_login_without_session(tmp_path) -> None:
+    dist_path = _write_frontend_dist(tmp_path)
+    runtime = asyncio.run(_build_fake_runtime())
+    client = TestClient(
+        create_app(
+            runtime,
+            settings=ServerSettings(admin_username="admin", admin_password="secret"),
+            frontend_dist_path=dist_path,
+        )
+    )
+
+    console_response = client.get("/console", follow_redirects=False)
+    login_response = client.get("/console/login")
+
+    assert console_response.status_code == 303
+    assert console_response.headers["location"] == "/console/login"
+    assert login_response.status_code == 200
+    assert "CyreneBot Login" in login_response.text
+
+
+def test_server_serves_console_after_login_session(tmp_path) -> None:
+    dist_path = _write_frontend_dist(tmp_path)
+    runtime = asyncio.run(_build_fake_runtime())
+    client = TestClient(
+        create_app(
+            runtime,
+            settings=ServerSettings(admin_username="admin", admin_password="secret"),
+            frontend_dist_path=dist_path,
+        )
+    )
+
+    login = client.post(
+        "/auth/login",
+        data={
+            "username": "admin",
+            "password": "secret",
+        },
+    )
+    console_response = client.get("/console")
+
+    assert login.status_code == 200
+    assert console_response.status_code == 200
+    assert "CyreneBot Console" in console_response.text
+
+
+def _write_frontend_dist(tmp_path) -> Path:
+    dist_path = tmp_path / "frontend-dist"
+    assets_path = dist_path / "assets"
+    assets_path.mkdir(parents=True)
+    (dist_path / "index.html").write_text(
+        '<html><head><script src="/console/assets/app.js"></script></head>'
+        "<body>CyreneBot Console</body></html>",
+        encoding="utf-8",
+    )
+    (dist_path / "login.html").write_text(
+        "<html><body>CyreneBot Login</body></html>",
+        encoding="utf-8",
+    )
+    (assets_path / "app.js").write_text(
+        "console.log('console ready')",
+        encoding="utf-8",
+    )
+    (dist_path / "favicon.svg").write_text("<svg />", encoding="utf-8")
+    (dist_path / "icons.svg").write_text("<svg />", encoding="utf-8")
+    return dist_path
 
 
 def test_server_request_logging_propagates_request_id(caplog) -> None:
