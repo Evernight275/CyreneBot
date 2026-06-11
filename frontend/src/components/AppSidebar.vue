@@ -1,22 +1,27 @@
 <script setup lang="ts">
-import { Cpu, KeyRound, MessageSquareText, RefreshCw, Square } from '@lucide/vue'
+import { Cpu, KeyRound, MessageSquareText, RefreshCw, Square, Trash2 } from '@lucide/vue'
 
 import { useAuth } from '../composables/useAuth'
 import { useConsole, views } from '../composables/useConsole'
-import { useFeed } from '../composables/useFeed'
 import { useHealth } from '../composables/useHealth'
 import { usePlugins } from '../composables/usePlugins'
+import { useSessions } from '../composables/useSessions'
 import { statusLabel } from '../utils/format'
 
 const { activeView, loading, refreshAll } = useConsole()
-const { clearFeed } = useFeed()
 const { healthStatus, readyStatus } = useHealth()
 const { plugins, enabledPlugins, failedPlugins } = usePlugins()
 const { authOpen, submitLogout } = useAuth()
+const { sessions, activeSessionId, createSession, switchSession, deleteSession } = useSessions()
 
 function startNewChat() {
   activeView.value = 'workspace'
-  clearFeed()
+  createSession()
+}
+
+function openSession(id: string) {
+  activeView.value = 'workspace'
+  switchSession(id)
 }
 </script>
 
@@ -50,6 +55,27 @@ function startNewChat() {
         <span>{{ view.label }}</span>
       </button>
     </nav>
+
+    <div class="session-list" aria-label="会话列表">
+      <div class="block-title">会话</div>
+      <button
+        v-for="session in sessions"
+        :key="session.id"
+        class="session-item"
+        :class="{ active: activeView === 'workspace' && activeSessionId === session.id }"
+        type="button"
+        @click="openSession(session.id)"
+      >
+        <span class="session-title">{{ session.title }}</span>
+        <span
+          class="session-delete"
+          title="删除会话"
+          @click.stop="deleteSession(session.id)"
+        >
+          <Trash2 :size="14" />
+        </span>
+      </button>
+    </div>
 
     <div class="sidebar-block">
       <div class="block-title">运行状态</div>

@@ -1153,6 +1153,78 @@ textarea:focus {
   gap: 6px;
 }
 
+.session-list {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.session-list .block-title {
+  position: sticky;
+  top: 0;
+  padding: 4px 6px;
+  background: #ffffff;
+}
+
+.session-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 12px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  text-align: left;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.session-item:hover {
+  color: var(--text);
+  background: rgba(15, 23, 42, 0.05);
+}
+
+.session-item.active {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: rgba(8, 145, 178, 0.32);
+}
+
+.session-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-delete {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  color: var(--muted);
+  border-radius: 7px;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.session-item:hover .session-delete {
+  opacity: 1;
+}
+
+.session-delete:hover {
+  color: var(--danger);
+  background: rgba(220, 38, 38, 0.12);
+}
+
 .nav-item {
   height: 56px;
   padding: 0 18px;
@@ -1355,6 +1427,19 @@ h1 {
   overflow-wrap: anywhere;
 }
 
+.stream-caret {
+  display: inline-block;
+  margin-left: 1px;
+  color: var(--accent, #2563eb);
+  animation: stream-blink 1s steps(2, start) infinite;
+}
+
+@keyframes stream-blink {
+  to {
+    visibility: hidden;
+  }
+}
+
 .tool-call-list {
   display: grid;
   gap: 8px;
@@ -1375,6 +1460,93 @@ h1 {
   font-family: Consolas, "JetBrains Mono", monospace;
   font-size: 12px;
   overflow-wrap: anywhere;
+}
+
+.message-row.error .message-avatar {
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-color: rgba(220, 38, 38, 0.35);
+}
+
+.message-row.error .message-role {
+  color: var(--danger);
+}
+
+.error-card {
+  display: grid;
+  gap: 10px;
+  padding: 13px 15px;
+  border: 1px solid rgba(220, 38, 38, 0.32);
+  border-radius: 12px;
+  background: var(--danger-soft);
+}
+
+.error-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.error-tag {
+  color: var(--danger);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.error-status {
+  padding: 1px 8px;
+  color: var(--danger);
+  font-family: Consolas, "JetBrains Mono", monospace;
+  font-size: 11px;
+  font-weight: 700;
+  background: rgba(220, 38, 38, 0.14);
+  border-radius: 6px;
+}
+
+.error-detail {
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.error-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.error-retry,
+.error-dismiss {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px;
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.error-retry {
+  color: #fff;
+  background: var(--danger);
+  border: 1px solid var(--danger);
+}
+
+.error-retry:hover {
+  background: #b91c1c;
+}
+
+.error-dismiss {
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border);
+}
+
+.error-dismiss:hover {
+  border-color: rgba(220, 38, 38, 0.35);
+  color: var(--danger);
 }
 
 .composer {

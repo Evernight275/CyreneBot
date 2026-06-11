@@ -108,6 +108,7 @@ export interface ChatProviderResponse {
 export interface ChatResponse {
   response: ChatProviderResponse
   context_snapshot?: unknown
+  tool_results?: ToolResult[]
   completed?: boolean
   stop_reason?: string
   metadata?: Record<string, unknown>
@@ -224,6 +225,108 @@ export async function chat(body: Record<string, unknown>) {
     method: 'POST',
     json: body,
   })
+}
+
+// 编排层流式事件，与后端 ChatStreamEvent 对应。
+export interface ChatStreamEvent {
+  type: 'delta' | 'tool_call' | 'tool_result' | 'done' | 'error'
+  delta_text?: string | null
+  reasoning_delta?: string | null
+  tool_calls?: ToolCall[]
+  tool_results?: ToolResult[]
+  content?: string | null
+  finish_reason?: string | null
+  usage?: unknown
+  detail?: string | null
+  metadata?: Record<string, unknown>
+}
+
+export interface ChatStreamHandlers {
+  onDelta?: (text: string, reasoning?: string | null) => void
+  onToolCall?: (calls: ToolCall[]) => void
+  onToolResult?: (results: ToolResult[]) => void
+  onDone?: (event: ChatStreamEvent) => void
+  onError?: (detail: string) => void
+}
+
+// 通过 SSE 逐事件读取 /chat/stream。
+// 用 fetch + ReadableStream，按空行切分 SSE frame，解析 data: 行的 JSON。
+export async function chatStream(
+  body: Record<string, unknown>,
+  handlers: ChatStreamHandlers,
+  signal?: AbortSignal
+): Promise<void> {
+  const response = await fetch(`${API_BASE}/chat/stream`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    credentials: 'include',
+    signal,
+  })
+
+  if (!response.ok || !response.body) {
+    const payload = await parsePayload(response)
+    const message = extractErrorMessage(payload) || response.statusText
+    throw new ApiError(response.status, message, payload)
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  const dispatch = (event: ChatStreamEvent) => {
+    switch (event.type) {
+      case 'delta':
+        if (event.delta_text || event.reasoning_delta) {
+          handlers.onDelta?.(event.delta_text ?? '', event.reasoning_delta)
+        }
+        break
+      case 'tool_call':
+        handlers.onToolCall?.(event.tool_calls ?? [])
+        break
+      case 'tool_result':
+        handlers.onToolResult?.(event.tool_results ?? [])
+        break
+      case 'done':
+        handlers.onDone?.(event)
+        break
+      case 'error':
+        handlers.onError?.(event.detail || '流式输出失败')
+        break
+    }
+  }
+
+  // 解析缓冲区里完整的 SSE frame（以空行分隔），保留未完成的尾部。
+  const flushFrames = () => {
+    let separator = buffer.indexOf('\n\n')
+    while (separator !== -1) {
+      const frame = buffer.slice(0, separator)
+      buffer = buffer.slice(separator + 2)
+      const dataLine = frame
+        .split('\n')
+        .find((line) => line.startsWith('data:'))
+      if (dataLine) {
+        const raw = dataLine.slice(5).trim()
+        if (raw) {
+          try {
+            dispatch(JSON.parse(raw) as ChatStreamEvent)
+          } catch {
+            // 跳过无法解析的 frame，保持流不中断。
+          }
+        }
+      }
+      separator = buffer.indexOf('\n\n')
+    }
+  }
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    flushFrames()
+  }
+  buffer += decoder.decode()
+  flushFrames()
 }
 
 export async function runAgent(body: Record<string, unknown>) {

@@ -48,10 +48,6 @@ const {
         <input v-model="chatForm.system" type="text" placeholder="可选，例如：用简洁中文回答" />
       </label>
       <label>
-        会话
-        <input v-model="chatForm.sessionId" type="text" />
-      </label>
-      <label>
         温度
         <input v-model="chatForm.temperature" type="number" step="0.1" placeholder="默认" />
       </label>
@@ -63,10 +59,6 @@ const {
 
     <!-- Agent 模式参数 -->
     <div v-else-if="composerMode === 'agent'" class="composer-options agent-options">
-      <label>
-        会话
-        <input v-model="agentForm.sessionId" type="text" />
-      </label>
       <label>
         最大步数
         <input v-model.number="agentForm.maxSteps" type="number" min="1" />
@@ -145,6 +137,10 @@ const {
       />
       <div class="composer-actions">
         <template v-if="composerMode === 'chat'">
+          <label class="mini-check">
+            <input v-model="chatForm.stream" type="checkbox" />
+            流式
+          </label>
           <label class="mini-check">
             <input v-model="chatForm.allowTools" type="checkbox" />
             工具

@@ -1,9 +1,9 @@
-from typing import Any, cast
+from typing import Any, AsyncIterator, cast
 
 from openai import AsyncOpenAI
 
 from cyreneAI.core.errors.provider import ProviderConfigurationError
-from cyreneAI.core.schema.chat import ChatRequest, ChatResponse
+from cyreneAI.core.schema.chat import ChatRequest, ChatResponse, ChatStreamChunk
 from cyreneAI.core.schema.embedding import EmbeddingRequest, EmbeddingResponse
 from cyreneAI.core.schema.provider import (
     ProviderConfig,
@@ -15,6 +15,7 @@ from cyreneAI.infra.adapters.providers.openai_compatible.errors import (
     raise_openai_error,
 )
 from cyreneAI.infra.adapters.providers.openai_compatible.mapper import (
+    map_chat_chunk,
     map_chat_request,
     map_chat_response,
     map_embedding_request,
@@ -59,6 +60,33 @@ class OpenAICompatibleProviderInstance:
                 provider_id=self.config.provider_id,
                 response=response,
             )
+        except Exception as exc:
+            raise_openai_error(exc)
+
+    async def chat_stream(
+        self,
+        request: ChatRequest,
+    ) -> AsyncIterator[ChatStreamChunk]:
+        try:
+            payload = map_chat_request(
+                request.model_copy(update={"stream": True}),
+                include_reasoning_content=_is_deepseek_provider(self.config),
+            )
+            # 请求在流末尾附带 usage 统计（OpenAI 兼容扩展，provider 不支持时会被忽略）。
+            payload.setdefault("stream_options", {"include_usage": True})
+            stream = cast(
+                Any,
+                await self._client.chat.completions.create(**payload),
+            )
+        except Exception as exc:
+            raise_openai_error(exc)
+
+        try:
+            async for chunk in stream:
+                yield map_chat_chunk(
+                    provider_id=self.config.provider_id,
+                    chunk=chunk,
+                )
         except Exception as exc:
             raise_openai_error(exc)
 

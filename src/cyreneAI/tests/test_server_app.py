@@ -903,6 +903,43 @@ def test_server_chat() -> None:
     assert response.json()["response"]["message"]["content"][0]["text"] == "pong"
 
 
+def _parse_sse_events(body: str) -> list[dict]:
+    events: list[dict] = []
+    for frame in body.split("\n\n"):
+        for line in frame.splitlines():
+            if line.startswith("data:"):
+                payload = line[len("data:") :].strip()
+                if payload:
+                    events.append(json.loads(payload))
+    return events
+
+
+def test_server_chat_stream_emits_sse_events() -> None:
+    response = _client().post(
+        "/chat/stream",
+        json={
+            "provider_id": "provider-1",
+            "model": "chat-model",
+            "messages": [{"role": "user", "content": "ping"}],
+            "stream": True,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+
+    events = _parse_sse_events(response.text)
+    types = [event["type"] for event in events]
+    assert "delta" in types
+    assert types[-1] == "done"
+
+    # FakeServerProvider 不支持流式，编排器回退到非流式并把整段文本作为 done。
+    done = events[-1]
+    assert done["content"] == "pong"
+    assert done.get("metadata", {}).get("fallback") is True
+
+
+
 def test_server_runs_agent() -> None:
     response = _client().post(
         "/agents/run",

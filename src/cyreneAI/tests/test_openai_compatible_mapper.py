@@ -15,6 +15,7 @@ from cyreneAI.core.schema.message import (
 )
 from cyreneAI.core.schema.tool import ToolCall, ToolChoice, ToolDefinition
 from cyreneAI.infra.adapters.providers.openai_compatible.mapper import (
+    map_chat_chunk,
     map_chat_request,
     map_chat_response,
     map_embedding_request,
@@ -161,6 +162,32 @@ def test_map_chat_request_filters_empty_assistant_messages() -> None:
             "content": "hello",
         }
     ]
+
+
+def test_map_chat_request_uses_generic_reasoning_metadata() -> None:
+    request = ChatRequest(
+        provider_id="provider-1",
+        model="test-model",
+        messages=[
+            Message(
+                role=MessageRole.ASSISTANT,
+                tool_calls=[
+                    ToolCall(
+                        id="call-1",
+                        name="lookup",
+                        arguments='{"key":"value"}',
+                    )
+                ],
+                metadata={"reasoning_content": "thinking before tool call"},
+            ),
+        ],
+    )
+
+    payload = map_chat_request(request, include_reasoning_content=True)
+
+    assert payload["messages"][0]["reasoning_content"] == (
+        "thinking before tool call"
+    )
 
 
 def test_map_chat_response_builds_core_response() -> None:
@@ -326,3 +353,71 @@ def test_map_embedding_response_builds_core_response() -> None:
     assert mapped.usage.prompt_tokens == 3
     assert mapped.usage.total_tokens == 3
     assert mapped.raw is not None
+
+
+def _chunk(delta: object, *, finish_reason: object = None, usage: object = None):
+    return SimpleNamespace(
+        model="stream-model",
+        choices=[SimpleNamespace(delta=delta, finish_reason=finish_reason)],
+        usage=usage,
+    )
+
+
+def test_map_chat_chunk_maps_text_delta() -> None:
+    chunk = _chunk(SimpleNamespace(content="Hello", reasoning_content=None, tool_calls=None))
+
+    mapped = map_chat_chunk("provider-1", chunk)
+
+    assert mapped.provider_id == "provider-1"
+    assert mapped.model == "stream-model"
+    assert mapped.delta_text == "Hello"
+    assert mapped.reasoning_delta is None
+    assert mapped.tool_call_deltas == []
+    assert mapped.finish_reason is None
+
+
+def test_map_chat_chunk_maps_reasoning_delta() -> None:
+    chunk = _chunk(
+        SimpleNamespace(content=None, reasoning_content="thinking", tool_calls=None)
+    )
+
+    mapped = map_chat_chunk("provider-1", chunk)
+
+    assert mapped.delta_text is None
+    assert mapped.reasoning_delta == "thinking"
+
+
+def test_map_chat_chunk_maps_tool_call_deltas() -> None:
+    tool_call = SimpleNamespace(
+        index=0,
+        id="call-1",
+        function=SimpleNamespace(name="lookup", arguments='{"k":'),
+    )
+    chunk = _chunk(
+        SimpleNamespace(content=None, reasoning_content=None, tool_calls=[tool_call]),
+        finish_reason="tool_calls",
+    )
+
+    mapped = map_chat_chunk("provider-1", chunk)
+
+    assert mapped.finish_reason == ChatFinishReason.TOOL_CALLS
+    assert len(mapped.tool_call_deltas) == 1
+    delta = mapped.tool_call_deltas[0]
+    assert delta.index == 0
+    assert delta.id == "call-1"
+    assert delta.name == "lookup"
+    assert delta.arguments == '{"k":'
+
+
+def test_map_chat_chunk_maps_usage_on_final_chunk() -> None:
+    chunk = _chunk(
+        SimpleNamespace(content=None, reasoning_content=None, tool_calls=None),
+        finish_reason="stop",
+        usage=SimpleNamespace(prompt_tokens=5, completion_tokens=7, total_tokens=12),
+    )
+
+    mapped = map_chat_chunk("provider-1", chunk)
+
+    assert mapped.finish_reason == ChatFinishReason.STOP
+    assert mapped.usage is not None
+    assert mapped.usage.total_tokens == 12

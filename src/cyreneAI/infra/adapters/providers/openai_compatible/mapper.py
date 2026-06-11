@@ -15,6 +15,8 @@ from cyreneAI.core.schema.chat import (
     ChatFinishReason,
     ChatRequest,
     ChatResponse,
+    ChatStreamChunk,
+    ToolCallDelta,
 )
 from cyreneAI.core.schema.embedding import (
     EmbeddingRequest,
@@ -191,6 +193,10 @@ def map_message_tool_calls(
 
 
 def map_reasoning_content(message: Message) -> str | None:
+    reasoning_content = message.metadata.get("reasoning_content")
+    if isinstance(reasoning_content, str):
+        return reasoning_content
+
     metadata = message.metadata.get("openai_compatible")
     if not isinstance(metadata, dict):
         return None
@@ -296,6 +302,52 @@ def map_chat_response(provider_id: str, response: ChatCompletion) -> ChatRespons
         usage=map_usage(usage),
         raw=response.model_dump(mode="json"),
     )
+
+
+def map_chat_chunk(provider_id: str, chunk: Any) -> ChatStreamChunk:
+    """
+    把 OpenAI 流式 ChatCompletionChunk 映射成 ChatStreamChunk。
+    """
+    choice = chunk.choices[0] if getattr(chunk, "choices", None) else None
+    delta = getattr(choice, "delta", None) if choice is not None else None
+
+    delta_text = normalize_response_content(getattr(delta, "content", None))
+    reasoning_delta = getattr(delta, "reasoning_content", None)
+    if not isinstance(reasoning_delta, str):
+        reasoning_delta = None
+
+    tool_call_deltas = map_tool_call_deltas(getattr(delta, "tool_calls", None))
+
+    raw_finish = getattr(choice, "finish_reason", None) if choice is not None else None
+    finish_reason = map_finish_reason(raw_finish) if raw_finish else None
+
+    return ChatStreamChunk(
+        provider_id=provider_id,
+        model=getattr(chunk, "model", None),
+        delta_text=delta_text,
+        reasoning_delta=reasoning_delta,
+        tool_call_deltas=tool_call_deltas,
+        finish_reason=finish_reason,
+        usage=map_usage(getattr(chunk, "usage", None)),
+    )
+
+
+def map_tool_call_deltas(tool_calls: Any | None) -> list[ToolCallDelta]:
+    if not tool_calls:
+        return []
+
+    deltas: list[ToolCallDelta] = []
+    for index, tool_call in enumerate(tool_calls):
+        function = getattr(tool_call, "function", None)
+        deltas.append(
+            ToolCallDelta(
+                index=getattr(tool_call, "index", index),
+                id=getattr(tool_call, "id", None) or None,
+                name=getattr(function, "name", None) if function else None,
+                arguments=getattr(function, "arguments", None) if function else None,
+            )
+        )
+    return deltas
 
 
 def map_finish_reason(reason: str | None) -> ChatFinishReason:

@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import json
+from typing import AsyncIterator
+
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 
 from cyreneAI.application.chat.orchestrator import (
     ApplicationChatRequest,
@@ -8,6 +12,7 @@ from cyreneAI.application.chat.orchestrator import (
 )
 from cyreneAI.application.runtime import CyreneAIRuntime
 from cyreneAI.core.errors.base import CyreneAIError
+from cyreneAI.core.schema.chat import ChatStreamEvent, ChatStreamEventType
 from cyreneAI.server.dependencies import get_runtime, require_admin
 from cyreneAI.server.schemas import ChatRequestBody
 
@@ -18,6 +23,23 @@ router = APIRouter(
 )
 
 
+def _build_application_request(body: ChatRequestBody) -> ApplicationChatRequest:
+    return ApplicationChatRequest(
+        session_id=body.metadata.get("session_id", "http"),
+        provider_id=body.provider_id,
+        model=body.model,
+        messages=[message.to_core_message() for message in body.messages],
+        temperature=body.temperature,
+        max_tokens=body.max_tokens,
+        stream=body.stream,
+        tool_choice=body.tool_choice,
+        allowed_tool_names=body.allowed_tool_names,
+        tool_execution_policy=body.tool_execution_policy,
+        max_tool_rounds=body.max_tool_rounds,
+        metadata=body.metadata.copy(),
+    )
+
+
 @router.post("")
 async def chat(
     body: ChatRequestBody,
@@ -25,20 +47,44 @@ async def chat(
 ) -> dict:
     try:
         result = await ChatOrchestrator(runtime).chat(
-            ApplicationChatRequest(
-                session_id=body.metadata.get("session_id", "http"),
-                provider_id=body.provider_id,
-                model=body.model,
-                messages=[message.to_core_message() for message in body.messages],
-                temperature=body.temperature,
-                max_tokens=body.max_tokens,
-                tool_choice=body.tool_choice,
-                allowed_tool_names=body.allowed_tool_names,
-                tool_execution_policy=body.tool_execution_policy,
-                max_tool_rounds=body.max_tool_rounds,
-                metadata=body.metadata.copy(),
-            )
+            _build_application_request(body)
         )
     except CyreneAIError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return result.model_dump(mode="json")
+
+
+def _sse(event: ChatStreamEvent) -> str:
+    payload = event.model_dump(mode="json", exclude_none=True)
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+@router.post("/stream")
+async def chat_stream(
+    body: ChatRequestBody,
+    runtime: CyreneAIRuntime = Depends(get_runtime),
+) -> StreamingResponse:
+    orchestrator = ChatOrchestrator(runtime)
+    request = _build_application_request(body)
+
+    async def event_source() -> AsyncIterator[str]:
+        try:
+            async for event in orchestrator.chat_stream(request):
+                yield _sse(event)
+        except CyreneAIError as exc:
+            yield _sse(
+                ChatStreamEvent(type=ChatStreamEventType.ERROR, detail=str(exc))
+            )
+        except Exception as exc:  # noqa: BLE001 - 兜底，避免流中断后前端无反馈
+            yield _sse(
+                ChatStreamEvent(type=ChatStreamEventType.ERROR, detail=str(exc))
+            )
+
+    return StreamingResponse(
+        event_source(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )

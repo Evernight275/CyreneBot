@@ -82,6 +82,7 @@ class ChatRequestBody(CyreneAISchema):
     allowed_tool_names: list[str] | None = None
     tool_execution_policy: ToolExecutionPolicy | None = None
     max_tool_rounds: int = Field(default=1, ge=0)
+    stream: bool = False
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 

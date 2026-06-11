@@ -1,6 +1,6 @@
-from typing import Protocol
+from typing import AsyncIterator, Protocol, runtime_checkable
 
-from cyreneAI.core.schema.chat import ChatRequest, ChatResponse
+from cyreneAI.core.schema.chat import ChatRequest, ChatResponse, ChatStreamChunk
 from cyreneAI.core.schema.embedding import EmbeddingRequest, EmbeddingResponse
 from cyreneAI.core.schema.image import ImageGenerationRequest, ImageGenerationResponse
 from cyreneAI.core.schema.provider import ProviderConfig, ProviderInfo, ProviderModel
@@ -65,6 +65,17 @@ class ChatProviderProtocol(ProviderInstanceProtocol, Protocol):
     async def chat(self, request: ChatRequest) -> ChatResponse:
         """
         调用 provider 进行聊天
+        """
+        ...
+
+
+@runtime_checkable
+class StreamingChatProviderProtocol(ChatProviderProtocol, Protocol):
+    def chat_stream(self, request: ChatRequest) -> AsyncIterator[ChatStreamChunk]:
+        """
+        调用 provider 进行流式聊天，逐片段返回增量。
+
+        实现为 async generator；仅在 provider 支持流式时实现该方法。
         """
         ...
 
