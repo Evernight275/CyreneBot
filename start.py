@@ -24,8 +24,7 @@ def main() -> int:
     env = os.environ.copy()
     env["PYTHONPATH"] = env.get("PYTHONPATH") or "src"
 
-    print(f"Starting CyreneBot on http://{args.host}:{args.port}", flush=True)
-    print(f"Console: http://{args.host}:{args.port}/console", flush=True)
+    print(f"Successfully Start the Server", flush=True)
     print(f"Login:   http://{args.host}:{args.port}/console/login", flush=True)
 
     return _run_server(
