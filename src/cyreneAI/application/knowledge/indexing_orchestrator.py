@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
 from typing import cast
 
 from cyreneAI.application.runtime import CyreneAIRuntime
@@ -208,11 +207,11 @@ def _chunk_documents_by_paragraph(
     return chunks
 
 
-@dataclass(frozen=True)
 class _ParagraphSpan:
-    text: str
-    start: int
-    end: int
+    def __init__(self, *, text: str, start: int, end: int) -> None:
+        self.text = text
+        self.start = start
+        self.end = end
 
 
 def _iter_paragraph_spans(text: str) -> list[_ParagraphSpan]:
