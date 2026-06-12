@@ -23,6 +23,8 @@ def main() -> int:
 
     env = os.environ.copy()
     env["PYTHONPATH"] = env.get("PYTHONPATH") or "src"
+    if args.config:
+        env["CYRENEAI_CONFIG"] = str(args.config)
 
     print("Starting CyreneBot server...", flush=True)
     print(f"Login:   http://{args.host}:{args.port}/console/login", flush=True)
@@ -84,6 +86,11 @@ def _parse_args() -> argparse.Namespace:
         "--npm-registry",
         default=os.getenv("NPM_REGISTRY"),
         help="Optional npm registry used for npm ci.",
+    )
+    parser.add_argument(
+        "--config",
+        default=os.getenv("CYRENEAI_CONFIG"),
+        help="Optional runtime config file path, for example /etc/cyrene/cyrene.toml.",
     )
     return parser.parse_args()
 

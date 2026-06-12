@@ -96,6 +96,7 @@ from cyreneAI.server.config import (
     build_plugin_task_lease_seconds_from_env,
     build_plugin_task_max_concurrent_tasks_from_env,
     build_provider_config_store_path_from_env,
+    build_provider_configs_from_file,
     build_provider_configs_from_env,
     build_qq_bot_app_id_from_env,
     build_qq_bot_app_secret_from_env,
@@ -1265,6 +1266,7 @@ def test_server_qq_webhook_validation_requires_secret() -> None:
 
 
 def test_server_builds_provider_configs_from_env(monkeypatch) -> None:
+    monkeypatch.delenv("CYRENEAI_CONFIG", raising=False)
     monkeypatch.setenv("OPENAI_COMPATIBLE_API_KEY", "compatible-key")
     monkeypatch.setenv("OPENAI_COMPATIBLE_BASE_URL", "https://compatible.example/v1")
     monkeypatch.setenv("OPENAI_RESPONSES_API_KEY", "openai-key")
@@ -1280,6 +1282,102 @@ def test_server_builds_provider_configs_from_env(monkeypatch) -> None:
         ProviderType.GOOGLE,
     ]
     assert configs[0].base_url == "https://compatible.example/v1"
+
+
+def test_server_builds_provider_configs_from_file(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("OPENAI_LOCAL_API_KEY", "openai-env-key")
+    config_path = tmp_path / "cyrene.toml"
+    config_path.write_text(
+        """
+[providers.openai-main]
+type = "openai_responses"
+api_key_env = "OPENAI_LOCAL_API_KEY"
+base_url = "https://openai.example/v1"
+model = "gpt-test"
+timeout_seconds = 12.5
+
+[providers.openai-main.metadata]
+owner = "local"
+
+[providers.anthropic-alt]
+provider_type = "anthropic"
+api_key = "anthropic-file-key"
+enabled = false
+""",
+        encoding="utf-8",
+    )
+    config_path.chmod(0o600)
+
+    configs = build_provider_configs_from_file(config_path)
+
+    assert len(configs) == 2
+    assert configs[0] == ProviderConfig(
+        provider_id="openai-main",
+        provider_type=ProviderType.OPENAI_RESPONSES,
+        api_key="openai-env-key",
+        base_url="https://openai.example/v1",
+        timeout=timedelta(seconds=12.5),
+        metadata={"owner": "local", "model": "gpt-test"},
+    )
+    assert configs[1].provider_id == "anthropic-alt"
+    assert configs[1].provider_type == ProviderType.ANTHROPIC
+    assert configs[1].api_key == "anthropic-file-key"
+    assert configs[1].enabled is False
+
+
+def test_server_provider_config_file_requires_private_permissions(tmp_path) -> None:
+    config_path = tmp_path / "cyrene.toml"
+    config_path.write_text(
+        """
+[providers.openai-main]
+type = "openai_responses"
+api_key = "openai-file-key"
+""",
+        encoding="utf-8",
+    )
+    config_path.chmod(0o644)
+
+    with pytest.raises(PermissionError):
+        build_provider_configs_from_file(config_path)
+
+
+def test_server_merges_provider_config_file_with_env_overrides(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    config_path = tmp_path / "cyrene.toml"
+    config_path.write_text(
+        """
+[providers.openai]
+type = "openai_responses"
+api_key = "file-key"
+base_url = "https://file.example/v1"
+
+[providers.local-compatible]
+type = "openai_compatible"
+api_key = "local-key"
+""",
+        encoding="utf-8",
+    )
+    config_path.chmod(0o600)
+    monkeypatch.setenv("CYRENEAI_CONFIG", str(config_path))
+    monkeypatch.setenv("OPENAI_RESPONSES_PROVIDER_ID", "openai")
+    monkeypatch.setenv("OPENAI_RESPONSES_API_KEY", "env-key")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_COMPATIBLE_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_GENAI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+
+    configs = build_provider_configs_from_env()
+
+    assert [config.provider_id for config in configs] == [
+        "openai",
+        "local-compatible",
+    ]
+    assert configs[0].api_key == "env-key"
+    assert configs[0].base_url is None
+    assert configs[1].api_key == "local-key"
 
 
 def test_server_builds_telegram_webhook_config_from_env(monkeypatch) -> None:

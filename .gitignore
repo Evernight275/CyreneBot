@@ -2,6 +2,11 @@
 .env
 .env.*
 
+# 配置文件
+config.yaml
+config.toml
+
+
 # 虚拟环境
 .venv/
 venv/

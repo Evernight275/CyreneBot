@@ -2,15 +2,30 @@ from __future__ import annotations
 
 import json
 import os
+import tomllib
 from datetime import timedelta
+from pathlib import Path
 from typing import Any, Literal, cast
 
 from dotenv import load_dotenv
 
 from cyreneAI.core.schema.application import BotAdminConfig
+from cyreneAI.core.schema.config import ConfigProvider, RuntimeConfig
 from cyreneAI.core.schema.provider import ProviderConfig, ProviderType
 from cyreneAI.core.schema.server import ServerSettings
 from cyreneAI.core.schema.tool import MCPStdioServerConfig, ShellCommandPolicy
+
+
+_SECRET_CONFIG_FIELD_NAMES = {
+    "api_key",
+    "access_token",
+    "refresh_token",
+    "client_secret",
+    "password",
+    "password_hash",
+    "secret_key",
+    "encryption_key",
+}
 
 
 def build_server_settings_from_env() -> ServerSettings:
@@ -413,9 +428,35 @@ def build_disabled_plugin_ids_from_env() -> list[str]:
     return [part.strip() for part in raw.replace(";", ",").split(",") if part.strip()]
 
 
+def build_provider_configs_from_file(path: str | Path) -> list[ProviderConfig]:
+    config = load_runtime_config_file(path)
+    return _build_provider_configs_from_runtime_config(config)
+
+
+def load_runtime_config_file(path: str | Path) -> RuntimeConfig:
+    config_path = Path(path)
+    raw = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    if _contains_secret_config_value(raw):
+        _validate_secret_config_file_permissions(config_path)
+    return RuntimeConfig.model_validate(raw)
+
+
 def build_provider_configs_from_env() -> list[ProviderConfig]:
     load_dotenv()
 
+    configs_by_id: dict[str, ProviderConfig] = {}
+    config_path = _env_str("CYRENEAI_CONFIG")
+    if config_path is not None:
+        for config in build_provider_configs_from_file(config_path):
+            configs_by_id[config.provider_id] = config
+
+    for config in _build_provider_configs_from_legacy_env():
+        configs_by_id[config.provider_id] = config
+
+    return list(configs_by_id.values())
+
+
+def _build_provider_configs_from_legacy_env() -> list[ProviderConfig]:
     configs: list[ProviderConfig] = []
     timeout = timedelta(seconds=int(os.getenv("CYRENE_PROVIDER_TIMEOUT_SECONDS", "60")))
 
@@ -478,6 +519,73 @@ def build_provider_configs_from_env() -> list[ProviderConfig]:
         )
 
     return configs
+
+
+def _build_provider_configs_from_runtime_config(
+    config: RuntimeConfig,
+) -> list[ProviderConfig]:
+    return [
+        _build_provider_config_from_config_provider(provider_id, provider_config)
+        for provider_id, provider_config in config.providers.items()
+    ]
+
+
+def _build_provider_config_from_config_provider(
+    provider_id: str,
+    provider_config: ConfigProvider,
+) -> ProviderConfig:
+    provider_type = provider_config.provider_type or provider_config.type
+    if provider_type is None:
+        raise ValueError(
+            f"providers.{provider_id} must define provider_type or type"
+        )
+
+    metadata = provider_config.metadata.copy()
+    if provider_config.model is not None:
+        metadata.setdefault("model", provider_config.model)
+
+    api_key = provider_config.api_key
+    if provider_config.api_key_env:
+        api_key = _env_str(provider_config.api_key_env) or api_key
+
+    timeout = None
+    if provider_config.timeout_seconds is not None:
+        timeout = timedelta(seconds=provider_config.timeout_seconds)
+
+    return ProviderConfig(
+        provider_id=provider_config.provider_id or provider_id,
+        provider_type=provider_type,
+        api_key=api_key,
+        base_url=provider_config.base_url,
+        timeout=timeout,
+        enabled=provider_config.enabled,
+        metadata=metadata,
+    )
+
+
+def _contains_secret_config_value(value: object, key: str | None = None) -> bool:
+    if key in _SECRET_CONFIG_FIELD_NAMES and value not in {None, ""}:
+        return True
+    if isinstance(value, dict):
+        return any(
+            _contains_secret_config_value(child_value, str(child_key))
+            for child_key, child_value in value.items()
+        )
+    if isinstance(value, list):
+        return any(_contains_secret_config_value(item) for item in value)
+    return False
+
+
+def _validate_secret_config_file_permissions(path: Path) -> None:
+    if os.name == "nt":
+        return
+
+    mode = path.stat().st_mode
+    if mode & 0o027:
+        raise PermissionError(
+            "configuration file contains secret fields and must not be "
+            f"group-writable or accessible by other users: {path}"
+        )
 
 
 def _env_bool(name: str, *, default: bool) -> bool:
