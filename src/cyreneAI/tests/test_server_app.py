@@ -17,6 +17,7 @@ from cyreneAI.core.bot.registry import BotChannelRegistry
 from cyreneAI.core.context.builder import ContextWindowBuilder
 from cyreneAI.core.context.manager import ContextManager
 from cyreneAI.core.errors.context import ContextNotFoundError
+from cyreneAI.core.errors.provider import ProviderError
 from cyreneAI.core.plugin.manager import PluginManager
 from cyreneAI.core.plugin.registry import PluginRegistry
 from cyreneAI.core.provider.factory import ProviderFactory
@@ -29,7 +30,12 @@ from cyreneAI.core.schema.bot import (
     BotEventType,
     BotMessage,
 )
-from cyreneAI.core.schema.chat import ChatFinishReason, ChatRequest, ChatResponse
+from cyreneAI.core.schema.chat import (
+    ChatFinishReason,
+    ChatRequest,
+    ChatResponse,
+    ChatStreamChunk,
+)
 from cyreneAI.core.schema.context import (
     ContextItem,
     ContextItemSource,
@@ -96,8 +102,8 @@ from cyreneAI.server.config import (
     build_plugin_task_lease_seconds_from_env,
     build_plugin_task_max_concurrent_tasks_from_env,
     build_provider_config_store_path_from_env,
-    build_provider_configs_from_file,
     build_provider_configs_from_env,
+    build_provider_configs_from_file,
     build_qq_bot_app_id_from_env,
     build_qq_bot_app_secret_from_env,
     build_qq_bot_base_url_from_env,
@@ -187,6 +193,21 @@ class FakeServerProvider:
         pass
 
 
+class FailingModelListServerProvider(FakeServerProvider):
+    async def list_models(self) -> list[ProviderModel]:
+        raise ProviderError("model listing failed")
+
+
+class FailingChatStreamServerProvider(FakeServerProvider):
+    async def chat_stream(self, request: ChatRequest):
+        raise ProviderError(
+            "Connection error.",
+            cause=RuntimeError("connect failed"),
+        )
+        if False:
+            yield ChatStreamChunk(provider_id=request.provider_id, model=request.model)
+
+
 class FakeServerChannel:
     def __init__(self, *, channel_id: str = "fake") -> None:
         self.channel_id = channel_id
@@ -253,8 +274,12 @@ class FakeServerContextStore:
         return deleted_count
 
 
-async def _build_fake_runtime(*, channel_id: str = "fake") -> CyreneAIRuntime:
-    provider = FakeServerProvider()
+async def _build_fake_runtime(
+    *,
+    channel_id: str = "fake",
+    provider: FakeServerProvider | None = None,
+) -> CyreneAIRuntime:
+    provider = provider or FakeServerProvider()
     channel = FakeServerChannel(channel_id=channel_id)
     bot_channel_registry = BotChannelRegistry()
     bot_channel_registry.register(
@@ -282,6 +307,7 @@ async def _build_fake_runtime(*, channel_id: str = "fake") -> CyreneAIRuntime:
 def _client(
     *,
     channel_id: str = "fake",
+    provider: FakeServerProvider | None = None,
     settings: ServerSettings | None = None,
     telegram_webhook_secret: str | None = None,
     telegram_provider_id: str | None = None,
@@ -296,7 +322,7 @@ def _client(
 ) -> TestClient:
     return TestClient(
         create_app(
-            asyncio.run(_build_fake_runtime(channel_id=channel_id)),
+            asyncio.run(_build_fake_runtime(channel_id=channel_id, provider=provider)),
             settings=settings or ServerSettings(auth_enabled=False),
             telegram_webhook_secret=telegram_webhook_secret,
             telegram_provider_id=telegram_provider_id,
@@ -832,6 +858,15 @@ def test_server_lists_providers_and_models() -> None:
     assert models.json()["models"][0]["model_id"] == "runtime-model"
 
 
+def test_server_reports_provider_model_listing_errors() -> None:
+    client = _client(provider=FailingModelListServerProvider())
+
+    response = client.get("/providers/provider-1/models")
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": "model listing failed"}
+
+
 def test_server_manages_provider_admin_lifecycle(tmp_path) -> None:
     client = _provider_admin_client(tmp_path)
 
@@ -939,6 +974,23 @@ def test_server_chat_stream_emits_sse_events() -> None:
     assert done["content"] == "pong"
     assert done.get("metadata", {}).get("fallback") is True
 
+
+def test_server_chat_stream_emits_error_detail_with_cause() -> None:
+    response = _client(provider=FailingChatStreamServerProvider()).post(
+        "/chat/stream",
+        json={
+            "provider_id": "provider-1",
+            "model": "chat-model",
+            "messages": [{"role": "user", "content": "ping"}],
+            "stream": True,
+        },
+    )
+
+    assert response.status_code == 200
+    events = _parse_sse_events(response.text)
+
+    assert events[-1]["type"] == "error"
+    assert events[-1]["detail"] == "Connection error."
 
 
 def test_server_runs_agent() -> None:
@@ -1317,6 +1369,7 @@ enabled = false
         api_key="openai-env-key",
         base_url="https://openai.example/v1",
         timeout=timedelta(seconds=12.5),
+        models=[ProviderModel(model_id="gpt-test")],
         metadata={"owner": "local", "model": "gpt-test"},
     )
     assert configs[1].provider_id == "anthropic-alt"
@@ -1336,6 +1389,9 @@ providers:
     api_key_env: OPENAI_LOCAL_API_KEY
     base_url: https://openai.example/v1
     model: gpt-test
+    models:
+      - gpt-extra
+      - gpt-test
     timeout_seconds: 12.5
     metadata:
       owner: local
@@ -1357,6 +1413,10 @@ providers:
         api_key="openai-env-key",
         base_url="https://openai.example/v1",
         timeout=timedelta(seconds=12.5),
+        models=[
+            ProviderModel(model_id="gpt-test"),
+            ProviderModel(model_id="gpt-extra"),
+        ],
         metadata={"owner": "local", "model": "gpt-test"},
     )
     assert configs[1].provider_id == "anthropic-alt"
@@ -1418,6 +1478,30 @@ api_key = "local-key"
     assert configs[0].api_key == "env-key"
     assert configs[0].base_url is None
     assert configs[1].api_key == "local-key"
+
+
+def test_server_builds_provider_models_from_legacy_env(monkeypatch) -> None:
+    monkeypatch.delenv("CYRENEAI_CONFIG", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_COMPATIBLE_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_GENAI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_RESPONSES_PROVIDER_ID", raising=False)
+    monkeypatch.setenv("OPENAI_RESPONSES_API_KEY", "responses-key")
+    monkeypatch.setenv("OPENAI_RESPONSES_MODEL", "gpt-main")
+    monkeypatch.setenv("OPENAI_RESPONSES_MODELS", "gpt-main, gpt-alt; gpt-long")
+
+    configs = build_provider_configs_from_env()
+
+    assert len(configs) == 1
+    assert configs[0].provider_id == "openai"
+    assert configs[0].models == [
+        ProviderModel(model_id="gpt-main"),
+        ProviderModel(model_id="gpt-alt"),
+        ProviderModel(model_id="gpt-long"),
+    ]
+    assert configs[0].metadata == {"model": "gpt-main"}
 
 
 def test_server_builds_telegram_webhook_config_from_env(monkeypatch) -> None:

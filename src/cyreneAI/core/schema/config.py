@@ -18,6 +18,7 @@ class ConfigProvider(CyreneAISchema):
     api_key_env: str | None = None
     base_url: str | None = None
     model: str | None = None
+    models: list[str] = Field(default_factory=list)
     timeout_seconds: float | None = Field(default=None, ge=0)
     enabled: bool = True
     metadata: dict[str, str] = Field(default_factory=dict)

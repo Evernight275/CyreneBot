@@ -7,7 +7,7 @@ from typing import Any, cast
 from pydantic import ValidationError as PydanticValidationError
 
 from cyreneAI.core.errors.base import NotFoundError, StateError
-from cyreneAI.core.schema.provider import ProviderConfig
+from cyreneAI.core.schema.provider import ProviderConfig, ProviderModel
 
 
 class FileSystemProviderConfigStore:
@@ -66,10 +66,11 @@ class FileSystemProviderConfigStore:
             for provider_id, item in cast(dict[str, Any], raw).items():
                 if not isinstance(provider_id, str) or not isinstance(item, dict):
                     raise StateError("Provider config store entries must be objects")
-                config = ProviderConfig.model_validate(item)
+                payload = _normalize_provider_config_payload(item)
+                config = ProviderConfig.model_validate(payload)
                 if config.provider_id != provider_id:
                     raise StateError("Provider config store key must match provider_id")
-                data[provider_id] = cast(dict[str, Any], item)
+                data[provider_id] = payload
         except PydanticValidationError as exc:
             raise StateError(
                 "Provider config store contains invalid config", cause=exc
@@ -88,3 +89,32 @@ class FileSystemProviderConfigStore:
                 f"Failed to save provider config store: {self._path}",
                 cause=exc,
             ) from exc
+
+
+def _normalize_provider_config_payload(item: dict[str, Any]) -> dict[str, Any]:
+    payload = dict(item)
+    models = payload.get("models")
+    if isinstance(models, list):
+        payload["models"] = [
+            model.model_dump(mode="json")
+            for model in _provider_models_from_legacy_items(models)
+        ]
+    return payload
+
+
+def _provider_models_from_legacy_items(items: list[Any]) -> list[ProviderModel]:
+    models: list[ProviderModel] = []
+    seen: set[str] = set()
+    for item in items:
+        if isinstance(item, str):
+            model = ProviderModel(model_id=item)
+        elif isinstance(item, dict):
+            model = ProviderModel.model_validate(item)
+        else:
+            continue
+        model_id = model.model_id.strip()
+        if not model_id or model_id in seen:
+            continue
+        seen.add(model_id)
+        models.append(model.model_copy(update={"model_id": model_id}))
+    return models

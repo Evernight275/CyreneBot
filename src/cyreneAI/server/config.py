@@ -11,10 +11,9 @@ import yaml
 
 from cyreneAI.core.schema.application import BotAdminConfig
 from cyreneAI.core.schema.config import ConfigProvider, RuntimeConfig
-from cyreneAI.core.schema.provider import ProviderConfig, ProviderType
+from cyreneAI.core.schema.provider import ProviderConfig, ProviderModel, ProviderType
 from cyreneAI.core.schema.server import ServerSettings
 from cyreneAI.core.schema.tool import MCPStdioServerConfig, ShellCommandPolicy
-
 
 _SECRET_CONFIG_FIELD_NAMES = {
     "api_key",
@@ -372,6 +371,7 @@ def _build_provider_configs_from_legacy_env() -> list[ProviderConfig]:
         "OPENAI_API_KEY"
     )
     if openai_compatible_key:
+        model = _env_str("OPENAI_COMPATIBLE_MODEL") or _env_str("OPENAI_MODEL")
         configs.append(
             ProviderConfig(
                 provider_id=os.getenv(
@@ -383,6 +383,14 @@ def _build_provider_configs_from_legacy_env() -> list[ProviderConfig]:
                 base_url=os.getenv("OPENAI_COMPATIBLE_BASE_URL")
                 or os.getenv("OPENAI_BASE_URL"),
                 timeout=timeout,
+                models=_provider_models_from_ids(
+                    _model_ids_from_values(
+                        model,
+                        _env_str("OPENAI_COMPATIBLE_MODELS"),
+                        _env_str("OPENAI_MODELS"),
+                    )
+                ),
+                metadata=_metadata_with_default_model({}, model),
             )
         )
 
@@ -390,6 +398,7 @@ def _build_provider_configs_from_legacy_env() -> list[ProviderConfig]:
         "OPENAI_API_KEY"
     )
     if openai_responses_key:
+        model = _env_str("OPENAI_RESPONSES_MODEL") or _env_str("OPENAI_MODEL")
         configs.append(
             ProviderConfig(
                 provider_id=os.getenv("OPENAI_RESPONSES_PROVIDER_ID", "openai"),
@@ -398,11 +407,20 @@ def _build_provider_configs_from_legacy_env() -> list[ProviderConfig]:
                 base_url=os.getenv("OPENAI_RESPONSES_BASE_URL")
                 or os.getenv("OPENAI_BASE_URL"),
                 timeout=timeout,
+                models=_provider_models_from_ids(
+                    _model_ids_from_values(
+                        model,
+                        _env_str("OPENAI_RESPONSES_MODELS"),
+                        _env_str("OPENAI_MODELS"),
+                    )
+                ),
+                metadata=_metadata_with_default_model({}, model),
             )
         )
 
     anthropic_key = os.getenv("ANTHROPIC_API_KEY")
     if anthropic_key:
+        model = _env_str("ANTHROPIC_MODEL")
         configs.append(
             ProviderConfig(
                 provider_id=os.getenv("ANTHROPIC_PROVIDER_ID", "anthropic"),
@@ -410,11 +428,16 @@ def _build_provider_configs_from_legacy_env() -> list[ProviderConfig]:
                 api_key=anthropic_key,
                 base_url=os.getenv("ANTHROPIC_BASE_URL"),
                 timeout=timeout,
+                models=_provider_models_from_ids(
+                    _model_ids_from_values(model, _env_str("ANTHROPIC_MODELS"))
+                ),
+                metadata=_metadata_with_default_model({}, model),
             )
         )
 
     google_key = os.getenv("GOOGLE_GENAI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     if google_key:
+        model = _env_str("GOOGLE_GENAI_MODEL") or _env_str("GOOGLE_MODEL")
         configs.append(
             ProviderConfig(
                 provider_id=os.getenv("GOOGLE_GENAI_PROVIDER_ID", "google"),
@@ -423,6 +446,14 @@ def _build_provider_configs_from_legacy_env() -> list[ProviderConfig]:
                 base_url=os.getenv("GOOGLE_GENAI_BASE_URL")
                 or os.getenv("GOOGLE_BASE_URL"),
                 timeout=timeout,
+                models=_provider_models_from_ids(
+                    _model_ids_from_values(
+                        model,
+                        _env_str("GOOGLE_GENAI_MODELS"),
+                        _env_str("GOOGLE_MODELS"),
+                    )
+                ),
+                metadata=_metadata_with_default_model({}, model),
             )
         )
 
@@ -449,8 +480,11 @@ def _build_provider_config_from_config_provider(
         )
 
     metadata = provider_config.metadata.copy()
-    if provider_config.model is not None:
-        metadata.setdefault("model", provider_config.model)
+    model_ids = _model_ids_from_values(provider_config.model, *provider_config.models)
+    metadata = _metadata_with_default_model(
+        metadata,
+        provider_config.model or (model_ids[0] if model_ids else None),
+    )
 
     api_key = provider_config.api_key
     if provider_config.api_key_env:
@@ -467,8 +501,41 @@ def _build_provider_config_from_config_provider(
         base_url=provider_config.base_url,
         timeout=timeout,
         enabled=provider_config.enabled,
+        models=_provider_models_from_ids(model_ids),
         metadata=metadata,
     )
+
+
+def _metadata_with_default_model(
+    metadata: dict[str, str],
+    model: str | None,
+) -> dict[str, str]:
+    if model is None:
+        return metadata
+    stripped = model.strip()
+    if not stripped:
+        return metadata
+    metadata.setdefault("model", stripped)
+    return metadata
+
+
+def _provider_models_from_ids(model_ids: list[str]) -> list[ProviderModel]:
+    return [ProviderModel(model_id=model_id) for model_id in model_ids]
+
+
+def _model_ids_from_values(*values: str | None) -> list[str]:
+    model_ids: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        if value is None:
+            continue
+        for item in value.replace(";", ",").split(","):
+            model_id = item.strip()
+            if not model_id or model_id in seen:
+                continue
+            seen.add(model_id)
+            model_ids.append(model_id)
+    return model_ids
 
 
 def _load_runtime_config_mapping(path: Path) -> dict[str, object]:

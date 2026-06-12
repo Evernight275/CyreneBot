@@ -240,13 +240,10 @@ def test_provider_manager_lists_models_from_instance() -> None:
     asyncio.run(run())
 
 
-def test_provider_manager_falls_back_to_catalog_models() -> None:
+def test_provider_manager_falls_back_to_catalog_models_when_runtime_models_empty() -> None:
     async def run() -> None:
         async def build(config: ProviderConfig) -> _FakeModelListingProviderInstance:
-            return _FakeModelListingProviderInstance(
-                config,
-                list_error=ProviderError("model listing failed"),
-            )
+            return _FakeModelListingProviderInstance(config)
 
         factory = ProviderFactory()
         factory.register(ProviderType.OPENAI_COMPATIBLE, build)
@@ -255,6 +252,60 @@ def test_provider_manager_falls_back_to_catalog_models() -> None:
 
         assert await manager.list_models("provider-1") == [
             ProviderModel(model_id="catalog-model")
+        ]
+
+    asyncio.run(run())
+
+
+def test_provider_manager_propagates_runtime_model_listing_errors() -> None:
+    async def run() -> None:
+        failure = ProviderError("model listing failed")
+
+        async def build(config: ProviderConfig) -> _FakeModelListingProviderInstance:
+            return _FakeModelListingProviderInstance(
+                config.model_copy(
+                    update={"models": [ProviderModel(model_id="custom-model")]}
+                ),
+                list_error=failure,
+            )
+
+        factory = ProviderFactory()
+        factory.register(ProviderType.OPENAI_COMPATIBLE, build)
+        manager = ProviderManager(factory)
+        await manager.add(_config())
+
+        with pytest.raises(ProviderError) as caught:
+            await manager.list_models("provider-1")
+
+        assert caught.value is failure
+
+    asyncio.run(run())
+
+
+def test_provider_manager_falls_back_to_config_models_when_runtime_models_empty() -> None:
+    async def run() -> None:
+        async def build(config: ProviderConfig) -> _FakeModelListingProviderInstance:
+            return _FakeModelListingProviderInstance(config)
+
+        factory = ProviderFactory()
+        factory.register(ProviderType.OPENAI_COMPATIBLE, build)
+        manager = ProviderManager(factory)
+        await manager.add(
+            _config().model_copy(
+                update={
+                    "models": [
+                        ProviderModel(model_id="custom-model"),
+                        ProviderModel(model_id=" custom-model "),
+                        ProviderModel(model_id=""),
+                    ],
+                    "metadata": {"model": "metadata-model"},
+                }
+            )
+        )
+
+        assert await manager.list_models("provider-1") == [
+            ProviderModel(model_id="custom-model"),
+            ProviderModel(model_id="metadata-model"),
         ]
 
     asyncio.run(run())

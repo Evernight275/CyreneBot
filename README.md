@@ -42,6 +42,8 @@ providers:
     enabled: true
     api_key_env: OPENAI_RESPONSES_API_KEY
     model: gpt-5-mini
+    models:
+      - gpt-5-mini
     timeout_seconds: 60
 
   compatible-local:
@@ -50,9 +52,12 @@ providers:
     api_key: local-secret
     base_url: https://api.example.com/v1
     model: example-chat-model
+    models:
+      - example-chat-model
+      - example-reasoning-model
 ```
 
-`api_key_env` 会从进程环境变量读取密钥；如果直接在配置文件写 `api_key`，该文件必须收紧权限。Linux/macOS 下，包含 `api_key`、`password`、`secret_key`、`token` 等敏感字段的配置文件不能被其他用户读取，也不能 group-writable。
+`model` 会作为默认模型，同时也会出现在后台模型选择里；如果 provider 的 `/models` 接口返回空内容，可以用 `models` 显式声明可选模型。`api_key_env` 会从进程环境变量读取密钥；如果直接在配置文件写 `api_key`，该文件必须收紧权限。Linux/macOS 下，包含 `api_key`、`password`、`secret_key`、`token` 等敏感字段的配置文件不能被其他用户读取，也不能 group-writable。
 
 推荐的生产布局：
 
@@ -71,7 +76,7 @@ sudo chmod 750 /etc/cyrene
 sudo install -m 640 -o root -g cyrene config.yaml /etc/cyrene/config.yaml
 ```
 
-环境变量模板见 `env.example`。服务不会自动读取项目目录里的 `.env`；请通过 systemd `EnvironmentFile=`、Docker/Compose `env_file`、shell `export` 或部署平台注入环境变量。管理后台用户名、密码和 session secret 仍然只走环境变量；如果启用认证但缺少用户名或密码，服务不会挂载 `/console` 前端入口。
+环境变量模板见 `env.example`。`start.py` 会在本地启动时加载项目根目录 `.env`，且不会覆盖已经由 shell、systemd、Docker/Compose 或部署平台注入的同名环境变量；如果需要禁用本地 `.env`，使用 `python start.py --no-env-file`。服务模块本身不会自动读取 `.env`。管理后台用户名、密码和 session secret 仍然只走环境变量；如果启用认证但缺少用户名或密码，服务不会挂载 `/console` 前端入口。
 
 ## 架构边界
 

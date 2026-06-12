@@ -239,6 +239,7 @@ async function executeStream(body: Record<string, unknown>) {
   // 拿到 feed 里的真实对象引用，后续直接原地修改（深层响应式会刷新视图）。
   const item = feed.value.find((entry) => entry.id === placeholder.id) ?? placeholder
   let received = false
+  let completed = false
 
   try {
     await chatStream(body, {
@@ -258,6 +259,7 @@ async function executeStream(body: Record<string, unknown>) {
         item.streamStatus = '工具结果已返回'
       },
       onDone: (event) => {
+        completed = true
         item.pending = false
         item.streamFallback = event.metadata?.fallback === true
         item.streamStatus = item.streamFallback ? '非流式回退完成' : '流式完成'
@@ -276,6 +278,11 @@ async function executeStream(body: Record<string, unknown>) {
         throw new ApiError(0, detail, { detail })
       },
     })
+    if (!completed) {
+      throw new ApiError(0, '流式输出中断：未收到完成事件', {
+        detail: '流式输出中断：未收到完成事件',
+      })
+    }
     item.pending = false
     item.streamStatus = item.streamStatus || '流式完成'
     if (!received && !(item.toolResults && item.toolResults.length)) {

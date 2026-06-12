@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from cyreneAI.core.errors.base import ConflictError, NotFoundError, StateError
-from cyreneAI.core.errors.provider import ProviderError
 from cyreneAI.core.provider.provider_protocol import (
     ProviderFactoryProtocol,
     ProviderInstanceProtocol,
@@ -84,19 +83,22 @@ class ProviderManager:
         """
         列出 provider 可用模型。
 
-        如果运行时 provider 不支持实时列模型，或实时请求失败，则回退到
-        provider catalog 中声明的静态模型列表。
+        如果运行时 provider 不支持实时列模型，或实时返回空列表，则回退到
+        provider config 中声明的自定义模型，再回退到 provider catalog 中声明的
+        静态模型列表。
+
+        实时请求失败必须继续向上抛出，避免把错误 base_url、错误路径或鉴权
+        失败伪装成“配置模型可用”。
         """
 
         instance = self.get(provider_id)
         list_models = getattr(instance, "list_models", None)
         if list_models is not None:
-            try:
-                return await list_models()
-            except ProviderError:
-                return _catalog_models(instance.info)
+            models = _deduplicate_models(await list_models())
+            if models:
+                return models
 
-        return _catalog_models(instance.info)
+        return _fallback_models(instance)
 
     async def remove(self, provider_id: str) -> None:
         """
@@ -151,4 +153,33 @@ class ProviderManager:
 
 
 def _catalog_models(info: ProviderInfo) -> list[ProviderModel]:
-    return [ProviderModel(model_id=model_id) for model_id in (info.models or [])]
+    return _deduplicate_models(
+        [ProviderModel(model_id=model_id) for model_id in (info.models or [])]
+    )
+
+
+def _fallback_models(instance: ProviderInstanceProtocol) -> list[ProviderModel]:
+    config_models = _config_models(instance.config)
+    if config_models:
+        return config_models
+    return _catalog_models(instance.info)
+
+
+def _config_models(config: ProviderConfig) -> list[ProviderModel]:
+    models = list(config.models)
+    metadata_model = config.metadata.get("model")
+    if metadata_model:
+        models.append(ProviderModel(model_id=metadata_model))
+    return _deduplicate_models(models)
+
+
+def _deduplicate_models(models: list[ProviderModel]) -> list[ProviderModel]:
+    result: list[ProviderModel] = []
+    seen: set[str] = set()
+    for model in models:
+        model_id = model.model_id.strip()
+        if not model_id or model_id in seen:
+            continue
+        seen.add(model_id)
+        result.append(model.model_copy(update={"model_id": model_id}))
+    return result

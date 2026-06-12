@@ -221,6 +221,7 @@ def _config_summary(config: ProviderConfig) -> ProviderConfigSummary:
         base_url=config.base_url,
         timeout=config.timeout,
         enabled=config.enabled,
+        models=list(config.models),
         metadata=config.metadata.copy(),
     )
 

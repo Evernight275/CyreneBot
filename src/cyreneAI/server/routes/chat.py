@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import AsyncIterator
 
 from fastapi import APIRouter, Depends
@@ -23,6 +24,8 @@ router = APIRouter(
     tags=["chat"],
     dependencies=[Depends(require_admin)],
 )
+
+logger = logging.getLogger("cyreneAI.server.chat")
 
 
 def _build_application_request(body: ChatRequestBody) -> ApplicationChatRequest:
@@ -52,6 +55,15 @@ async def chat(
             _build_application_request(body)
         )
     except CyreneAIError as exc:
+        logger.exception(
+            "Chat request failed: %s",
+            str(exc),
+            extra={
+                "provider_id": body.provider_id,
+                "model": body.model,
+                "session_id": body.metadata.get("session_id"),
+            },
+        )
         raise_http_error(exc)
     return result.model_dump(mode="json")
 
@@ -74,11 +86,29 @@ async def chat_stream(
             async for event in orchestrator.chat_stream(request):
                 yield _sse(event)
         except CyreneAIError as exc:
+            logger.exception(
+                "Chat stream failed: %s",
+                str(exc),
+                extra={
+                    "provider_id": body.provider_id,
+                    "model": body.model,
+                    "session_id": body.metadata.get("session_id"),
+                },
+            )
             yield _sse(
                 ChatStreamEvent(type=ChatStreamEventType.ERROR, detail=str(exc))
             )
         except Exception as exc:  # noqa: BLE001 - 兜底，避免流中断后前端无反馈
             error = ChatStreamError(str(exc), cause=exc)
+            logger.exception(
+                "Chat stream failed unexpectedly: %s",
+                str(error),
+                extra={
+                    "provider_id": body.provider_id,
+                    "model": body.model,
+                    "session_id": body.metadata.get("session_id"),
+                },
+            )
             yield _sse(
                 ChatStreamEvent(type=ChatStreamEventType.ERROR, detail=str(error))
             )

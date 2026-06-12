@@ -32,6 +32,7 @@ export interface ProviderConfigSummary {
   base_url?: string | null
   timeout?: string | number | null
   enabled: boolean
+  models?: ProviderModel[]
   metadata?: Record<string, string>
 }
 
@@ -291,8 +292,11 @@ export async function chatStream(
         handlers.onDone?.(event)
         break
       case 'error':
-        handlers.onError?.(event.detail || '流式输出失败')
-        break
+        {
+          const detail = event.detail || '流式输出失败'
+          handlers.onError?.(detail)
+          throw new ApiError(0, detail, { detail })
+        }
     }
   }
 
@@ -308,11 +312,15 @@ export async function chatStream(
       if (dataLine) {
         const raw = dataLine.slice(5).trim()
         if (raw) {
+          let event: ChatStreamEvent
           try {
-            dispatch(JSON.parse(raw) as ChatStreamEvent)
+            event = JSON.parse(raw) as ChatStreamEvent
           } catch {
             // 跳过无法解析的 frame，保持流不中断。
+            separator = buffer.indexOf('\n\n')
+            continue
           }
+          dispatch(event)
         }
       }
       separator = buffer.indexOf('\n\n')

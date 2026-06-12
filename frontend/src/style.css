@@ -624,6 +624,21 @@ textarea:focus {
   background: var(--surface-muted);
 }
 
+.compact-list > .error-state {
+  border-color: var(--danger-soft);
+  background: var(--danger-soft);
+}
+
+.compact-list > .error-state strong,
+.compact-list > .error-state span {
+  color: var(--danger);
+}
+
+.compact-list > .error-state span {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

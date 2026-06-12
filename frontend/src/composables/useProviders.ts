@@ -21,6 +21,7 @@ const providers = ref<ProviderAdminStatus[]>([])
 const providerCatalog = ref<ProviderInfo[]>([])
 const providerConfigs = ref<ProviderConfigSummary[]>([])
 const providerModels = ref<Record<string, ProviderModel[]>>({})
+const providerModelErrors = ref<Record<string, string>>({})
 const selectedProviderId = ref('')
 const selectedModel = ref('')
 const providersLoading = ref(false)
@@ -32,6 +33,11 @@ const selectedProvider = computed(() =>
 const selectedProviderModels = computed(() => {
   if (!selectedProviderId.value) return []
   return providerModels.value[selectedProviderId.value] ?? []
+})
+
+const selectedProviderModelError = computed(() => {
+  if (!selectedProviderId.value) return ''
+  return providerModelErrors.value[selectedProviderId.value] ?? ''
 })
 
 const runnableProviders = computed(() =>
@@ -59,22 +65,59 @@ function ensureProviderSelection() {
   selectedModel.value = ''
 }
 
+function ensureModelSelection(models: ProviderModel[]) {
+  if (models.some((model) => model.model_id === selectedModel.value)) return
+  selectedModel.value = models[0]?.model_id ?? ''
+}
+
+function configuredModelsFor(providerId: string) {
+  const statusModels =
+    providers.value.find((provider) => provider.provider_id === providerId)?.config
+      ?.models ?? []
+  if (statusModels.length > 0) return normalizeProviderModels(statusModels)
+  return normalizeProviderModels(configFor(providerId)?.models ?? [])
+}
+
+function normalizeProviderModels(models: ProviderModel[]) {
+  const normalized: ProviderModel[] = []
+  const seen = new Set<string>()
+  for (const model of models) {
+    const modelId = model.model_id.trim()
+    if (!modelId || seen.has(modelId)) continue
+    seen.add(modelId)
+    normalized.push({ ...model, model_id: modelId })
+  }
+  return normalized
+}
+
 async function refreshSelectedProviderModels() {
   if (!selectedProviderId.value) return
+  const providerId = selectedProviderId.value
   try {
-    const result = await listProviderModels(selectedProviderId.value)
+    const result = await listProviderModels(providerId)
+    const models = normalizeProviderModels(result.models)
     providerModels.value = {
       ...providerModels.value,
-      [selectedProviderId.value]: result.models,
+      [providerId]: models,
     }
-    if (!selectedModel.value && result.models.length > 0) {
-      selectedModel.value = result.models[0].model_id
+    providerModelErrors.value = {
+      ...providerModelErrors.value,
+      [providerId]: '',
     }
-  } catch {
+    ensureModelSelection(models)
+  } catch (error) {
+    const fallbackModels = configuredModelsFor(providerId)
     providerModels.value = {
       ...providerModels.value,
-      [selectedProviderId.value]: [],
+      [providerId]: fallbackModels,
     }
+    providerModelErrors.value = {
+      ...providerModelErrors.value,
+      [providerId]:
+        error instanceof Error ? error.message : '供应商模型列表加载失败',
+    }
+    ensureModelSelection(fallbackModels)
+    showApiError(error, '供应商模型列表加载失败')
   }
 }
 
@@ -105,7 +148,11 @@ function setProvider(providerId: string) {
 }
 
 function configFor(providerId: string) {
-  return providerConfigs.value.find((config) => config.provider_id === providerId)
+  return (
+    providerConfigs.value.find((config) => config.provider_id === providerId) ??
+    providers.value.find((provider) => provider.provider_id === providerId)?.config ??
+    undefined
+  )
 }
 
 async function operateProvider(
@@ -134,11 +181,13 @@ export function useProviders() {
     providerCatalog,
     providerConfigs,
     providerModels,
+    providerModelErrors,
     selectedProviderId,
     selectedModel,
     providersLoading,
     selectedProvider,
     selectedProviderModels,
+    selectedProviderModelError,
     runnableProviders,
     providerSummary,
     refreshProviders,

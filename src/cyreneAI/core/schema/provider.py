@@ -81,10 +81,6 @@ class ProviderModel(ProviderBase):
     metadata: dict[str, str] = Field(default_factory=dict)
 
 
-def _empty_provider_models() -> list[ProviderModel]:
-    return []
-
-
 class ProviderReference(ProviderBase):
     """
     提供商引用schema
@@ -107,6 +103,7 @@ class ProviderConfig(ProviderBase):
         default=None, ge=timedelta(seconds=0), description="请求超时时间"
     )
     enabled: bool = True
+    models: list[ProviderModel] = Field(default_factory=list)
     metadata: dict[str, str] = Field(default_factory=dict)
 
 
@@ -121,6 +118,7 @@ class ProviderConfigSummary(ProviderBase):
     base_url: str | None = None
     timeout: timedelta | None = None
     enabled: bool = True
+    models: list[ProviderModel] = Field(default_factory=list)
     metadata: dict[str, str] = Field(default_factory=dict)
 
 
@@ -158,4 +156,4 @@ class ProviderConnectionCheckResult(ProviderBase):
     provider_id: str
     ok: bool
     detail: str | None = None
-    models: list[ProviderModel] = Field(default_factory=_empty_provider_models)
+    models: list[ProviderModel] = Field(default_factory=list)

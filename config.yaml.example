@@ -21,6 +21,8 @@ providers:
     # api_key: sk-...
     base_url: null
     model: gpt-5-mini
+    models:
+      - gpt-5-mini
     timeout_seconds: 60
     metadata:
       purpose: primary-chat
@@ -32,6 +34,9 @@ providers:
     # api_key: local-secret
     base_url: https://api.example.com/v1
     model: example-chat-model
+    models:
+      - example-chat-model
+      - example-reasoning-model
     timeout_seconds: 60
     metadata:
       purpose: compatible-chat

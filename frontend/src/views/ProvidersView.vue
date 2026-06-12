@@ -10,6 +10,7 @@ const {
   selectedProviderId,
   selectedProvider,
   selectedProviderModels,
+  selectedProviderModelError,
   providerSummary,
   refreshProviders,
   setProvider,
@@ -140,7 +141,11 @@ const {
             </div>
           </div>
           <div class="compact-list">
-            <div v-if="selectedProviderModels.length === 0">
+            <div v-if="selectedProviderModelError" class="error-state">
+              <strong>模型加载失败</strong>
+              <span>{{ selectedProviderModelError }}</span>
+            </div>
+            <div v-else-if="selectedProviderModels.length === 0">
               <strong>暂无模型</strong>
               <span>选择运行中的供应商后刷新模型。</span>
             </div>
