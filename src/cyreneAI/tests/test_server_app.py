@@ -4,6 +4,7 @@ import asyncio
 import importlib
 import json
 import logging
+import os
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -133,6 +134,25 @@ from cyreneAI.server.config import (
     build_tool_sandbox_timeout_seconds_from_env,
     build_vector_database_path_from_env,
 )
+
+_SERVER_ENV_PREFIXES = (
+    "ANTHROPIC_",
+    "CYRENEAI_",
+    "GOOGLE_",
+    "OPENAI_",
+    "QQ_BOT_",
+    "TELEGRAM_",
+)
+_SERVER_ENV_NAMES = {
+    "BOT_TOKEN",
+}
+
+
+@pytest.fixture(autouse=True)
+def _isolate_server_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in list(os.environ):
+        if name in _SERVER_ENV_NAMES or name.startswith(_SERVER_ENV_PREFIXES):
+            monkeypatch.delenv(name, raising=False)
 
 
 @pytest.mark.asyncio

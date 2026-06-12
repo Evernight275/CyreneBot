@@ -34,6 +34,25 @@ from cyreneAI.server.config import ServerSettings
 _SESSION_ID = "real-agent-smoke"
 _SKILL_NAME = "agent_smoke_skill"
 _MEMORY_NAMESPACE = "real-agent-smoke"
+_SKIPPABLE_HTTP_STATUSES = {400, 422, 502, 503, 504}
+
+
+def _skip(reason: str) -> None:
+    print(f"openai-compatible real agent smoke skipped: {reason}")
+    pytest.skip(reason)
+
+
+def _skip_if_configured_endpoint_rejected(response) -> None:
+    if response.status_code not in _SKIPPABLE_HTTP_STATUSES:
+        return
+    try:
+        detail = response.json().get("detail")
+    except ValueError:
+        detail = response.text
+    _skip(
+        "configured endpoint rejected or could not complete the real Agent "
+        f"smoke request: {detail}"
+    )
 
 
 def _load_real_agent_config() -> ProviderConfig:
@@ -75,7 +94,7 @@ def _load_real_agent_config() -> ProviderConfig:
             metadata={"model": responses_model},
         )
 
-    pytest.skip(
+    _skip(
         "OPENAI_COMPATIBLE_API_KEY/OPENAI_RESPONSES_API_KEY or OPENAI_API_KEY "
         "and a matching model are required"
     )
@@ -214,11 +233,7 @@ def test_openai_compatible_real_agent_http_smoke() -> None:
                 },
             )
 
-        if response.status_code == 400:
-            pytest.skip(
-                "configured endpoint rejected the OpenAI-compatible Agent "
-                f"smoke request: {response.json().get('detail')}"
-            )
+        _skip_if_configured_endpoint_rejected(response)
         assert response.status_code == 200
 
         payload: dict[str, Any] = response.json()
