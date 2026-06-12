@@ -16,13 +16,10 @@ dependencies = [
 cyrene-plugin = "cyreneAI.api.cli:main"
 
 [dependency-groups]
-dev = [
+server = [
     "openai",
     "python-dotenv",
     "httpx",
-    "pytest",
-    "pytest-asyncio",
-    "pytest-cov",
     "google-genai",
     "anthropic",
     "cryptography",
@@ -32,6 +29,12 @@ dev = [
     "uvicorn[standard]>=0.48.0",
     "python-multipart>=0.0.20",
     "qq-botpy>=1.2.1",
+]
+dev = [
+    { include-group = "server" },
+    "pytest",
+    "pytest-asyncio",
+    "pytest-cov",
     "black",
     "ruff",
     "pyright",

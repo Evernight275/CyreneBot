@@ -563,6 +563,20 @@ dev = [
     { name = "twine" },
     { name = "uvicorn", extra = ["standard"] },
 ]
+server = [
+    { name = "aiosqlite" },
+    { name = "anthropic" },
+    { name = "cryptography" },
+    { name = "fastapi" },
+    { name = "google-genai" },
+    { name = "httpx" },
+    { name = "openai" },
+    { name = "python-dotenv" },
+    { name = "python-multipart" },
+    { name = "qq-botpy" },
+    { name = "sqlalchemy" },
+    { name = "uvicorn", extra = ["standard"] },
+]
 
 [package.metadata]
 requires-dist = [{ name = "pydantic" }]
@@ -587,6 +601,20 @@ dev = [
     { name = "ruff" },
     { name = "sqlalchemy" },
     { name = "twine" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.48.0" },
+]
+server = [
+    { name = "aiosqlite" },
+    { name = "anthropic" },
+    { name = "cryptography" },
+    { name = "fastapi", specifier = ">=0.136.3" },
+    { name = "google-genai" },
+    { name = "httpx" },
+    { name = "openai" },
+    { name = "python-dotenv" },
+    { name = "python-multipart", specifier = ">=0.0.20" },
+    { name = "qq-botpy", specifier = ">=1.2.1" },
+    { name = "sqlalchemy" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.48.0" },
 ]
 

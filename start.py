@@ -24,13 +24,17 @@ def main() -> int:
     env = os.environ.copy()
     env["PYTHONPATH"] = env.get("PYTHONPATH") or "src"
 
-    print(f"Successfully Start the Server", flush=True)
+    print("Starting CyreneBot server...", flush=True)
     print(f"Login:   http://{args.host}:{args.port}/console/login", flush=True)
 
     return _run_server(
         [
             "uv",
             "run",
+            "--group",
+            "server",
+            "python",
+            "-m",
             "uvicorn",
             "cyreneAI.server.main:app",
             "--host",
