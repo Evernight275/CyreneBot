@@ -240,7 +240,9 @@ def test_provider_manager_lists_models_from_instance() -> None:
     asyncio.run(run())
 
 
-def test_provider_manager_falls_back_to_catalog_models_when_runtime_models_empty() -> None:
+def test_provider_manager_falls_back_to_catalog_models_when_runtime_models_empty() -> (
+    None
+):
     async def run() -> None:
         async def build(config: ProviderConfig) -> _FakeModelListingProviderInstance:
             return _FakeModelListingProviderInstance(config)
@@ -282,7 +284,9 @@ def test_provider_manager_propagates_runtime_model_listing_errors() -> None:
     asyncio.run(run())
 
 
-def test_provider_manager_falls_back_to_config_models_when_runtime_models_empty() -> None:
+def test_provider_manager_falls_back_to_config_models_when_runtime_models_empty() -> (
+    None
+):
     async def run() -> None:
         async def build(config: ProviderConfig) -> _FakeModelListingProviderInstance:
             return _FakeModelListingProviderInstance(config)

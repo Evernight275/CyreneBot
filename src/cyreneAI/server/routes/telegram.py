@@ -96,6 +96,4 @@ def _verify_telegram_secret_token(
 
     actual_secret = request.headers.get(TELEGRAM_SECRET_TOKEN_HEADER)
     if actual_secret != expected_secret:
-        raise_http_error(
-            AuthorizationError("Invalid Telegram webhook secret token")
-        )
+        raise_http_error(AuthorizationError("Invalid Telegram webhook secret token"))

@@ -59,7 +59,9 @@ def test_start_script_preparse_env_file_skips_help(monkeypatch) -> None:
 
 
 def _load_start_script() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("cyrene_start_for_tests", START_SCRIPT)
+    spec = importlib.util.spec_from_file_location(
+        "cyrene_start_for_tests", START_SCRIPT
+    )
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)

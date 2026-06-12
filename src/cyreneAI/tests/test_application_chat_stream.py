@@ -92,9 +92,7 @@ class StreamingFakeProvider:
     async def chat(self, request: ChatRequest):  # pragma: no cover - 流式路径不会用到
         raise AssertionError("streaming provider should use chat_stream")
 
-    async def chat_stream(
-        self, request: ChatRequest
-    ) -> AsyncIterator[ChatStreamChunk]:
+    async def chat_stream(self, request: ChatRequest) -> AsyncIterator[ChatStreamChunk]:
         index = min(len(self.requests), len(self._rounds) - 1)
         self.requests.append(request)
         for chunk in self._rounds[index]:
@@ -149,7 +147,9 @@ async def _build_manager(provider) -> ProviderManager:
 
 
 def _text_chunk(text: str) -> ChatStreamChunk:
-    return ChatStreamChunk(provider_id="provider-1", model="fake-model", delta_text=text)
+    return ChatStreamChunk(
+        provider_id="provider-1", model="fake-model", delta_text=text
+    )
 
 
 async def _run_text_stream() -> None:

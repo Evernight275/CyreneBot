@@ -302,9 +302,7 @@ def map_anthropic_stream_event(
                 tool_call_deltas=[
                     ToolCallDelta(
                         index=_stream_index(getattr(event, "index", None)),
-                        arguments=_optional_str(
-                            getattr(delta, "partial_json", None)
-                        ),
+                        arguments=_optional_str(getattr(delta, "partial_json", None)),
                     )
                 ],
             )

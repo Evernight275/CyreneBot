@@ -185,9 +185,7 @@ def test_map_chat_request_uses_generic_reasoning_metadata() -> None:
 
     payload = map_chat_request(request, include_reasoning_content=True)
 
-    assert payload["messages"][0]["reasoning_content"] == (
-        "thinking before tool call"
-    )
+    assert payload["messages"][0]["reasoning_content"] == ("thinking before tool call")
 
 
 def test_map_chat_response_builds_core_response() -> None:
@@ -364,7 +362,9 @@ def _chunk(delta: object, *, finish_reason: object = None, usage: object = None)
 
 
 def test_map_chat_chunk_maps_text_delta() -> None:
-    chunk = _chunk(SimpleNamespace(content="Hello", reasoning_content=None, tool_calls=None))
+    chunk = _chunk(
+        SimpleNamespace(content="Hello", reasoning_content=None, tool_calls=None)
+    )
 
     mapped = map_chat_chunk("provider-1", chunk)
 

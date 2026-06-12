@@ -52,9 +52,7 @@ async def chat(
     runtime: CyreneAIRuntime = Depends(get_runtime),
 ) -> dict:
     try:
-        result = await ChatOrchestrator(runtime).chat(
-            _build_application_request(body)
-        )
+        result = await ChatOrchestrator(runtime).chat(_build_application_request(body))
     except CyreneAIError as exc:
         with bind_log_context(**_chat_error_log_context(body, exc)):
             logger.exception("Chat request failed")
@@ -82,9 +80,7 @@ async def chat_stream(
         except CyreneAIError as exc:
             with bind_log_context(**_chat_error_log_context(body, exc)):
                 logger.exception("Chat stream failed")
-            yield _sse(
-                ChatStreamEvent(type=ChatStreamEventType.ERROR, detail=str(exc))
-            )
+            yield _sse(ChatStreamEvent(type=ChatStreamEventType.ERROR, detail=str(exc)))
         except Exception as exc:  # noqa: BLE001 - 兜底，避免流中断后前端无反馈
             error = ChatStreamError(str(exc), cause=exc)
             with bind_log_context(**_chat_error_log_context(body, error)):

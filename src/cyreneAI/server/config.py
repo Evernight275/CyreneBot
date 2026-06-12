@@ -475,9 +475,7 @@ def _build_provider_config_from_config_provider(
 ) -> ProviderConfig:
     provider_type = provider_config.provider_type or provider_config.type
     if provider_type is None:
-        raise ValueError(
-            f"providers.{provider_id} must define provider_type or type"
-        )
+        raise ValueError(f"providers.{provider_id} must define provider_type or type")
 
     metadata = provider_config.metadata.copy()
     model_ids = _model_ids_from_values(provider_config.model, *provider_config.models)
@@ -546,9 +544,7 @@ def _load_runtime_config_mapping(path: Path) -> dict[str, object]:
     elif suffix in {".yaml", ".yml"}:
         raw = yaml.safe_load(text) or {}
     else:
-        raise ValueError(
-            "configuration file must use .yaml, .yml, or .toml extension"
-        )
+        raise ValueError("configuration file must use .yaml, .yml, or .toml extension")
 
     if not isinstance(raw, dict):
         raise ValueError("configuration file must contain a mapping at the root")

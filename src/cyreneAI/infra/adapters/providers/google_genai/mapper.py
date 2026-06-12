@@ -264,8 +264,7 @@ def map_google_genai_stream_chunk(
     tool_call_deltas = [
         delta
         for delta in (
-            map_stream_tool_call_delta(part, index)
-            for index, part in enumerate(parts)
+            map_stream_tool_call_delta(part, index) for index, part in enumerate(parts)
         )
         if delta is not None
     ]
