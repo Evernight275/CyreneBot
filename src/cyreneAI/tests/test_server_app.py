@@ -219,7 +219,10 @@ class FakeServerProvider:
 
 class FailingModelListServerProvider(FakeServerProvider):
     async def list_models(self) -> list[ProviderModel]:
-        raise ProviderError("model listing failed")
+        raise ProviderError(
+            "model listing failed",
+            cause=RuntimeError("upstream unavailable"),
+        )
 
 
 class FailingChatStreamServerProvider(FakeServerProvider):
@@ -951,6 +954,8 @@ def test_server_reports_provider_model_listing_errors(caplog) -> None:
     assert record.provider_id == "provider-1"
     assert record.error_type == "ProviderError"
     assert record.error == "model listing failed"
+    assert record.cause_type == "RuntimeError"
+    assert record.cause == "upstream unavailable"
 
 
 def test_server_manages_provider_admin_lifecycle(tmp_path) -> None:

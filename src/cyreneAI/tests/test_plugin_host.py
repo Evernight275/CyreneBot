@@ -12,6 +12,7 @@ from cyreneAI.core.errors.base import ConflictError
 from cyreneAI.core.errors.plugin import (
     PluginAuthorizationError,
     PluginConfigurationError,
+    PluginError,
     PluginStateError,
 )
 from cyreneAI.core.plugin.registry import PluginRegistry
@@ -43,7 +44,12 @@ from cyreneAI.core.schema.plugin import (
     PluginManifest,
     PluginPermission,
 )
-from cyreneAI.core.schema.provider import ProviderConfig, ProviderInfo, ProviderType
+from cyreneAI.core.schema.provider import (
+    ProviderConfig,
+    ProviderInfo,
+    ProviderModel,
+    ProviderType,
+)
 from cyreneAI.core.schema.tool import ToolCall, ToolDefinition, ToolResult
 from cyreneAI.infra.adapters.bot_sessions.memory import InMemoryBotSessionStore
 from cyreneAI.infra.adapters.channels.memory import InMemoryBotChannel
@@ -101,6 +107,9 @@ class _FakeLLMProvider:
             ),
             finish_reason=ChatFinishReason.STOP,
         )
+
+    async def list_models(self) -> list[ProviderModel]:
+        return [ProviderModel(model_id="runtime-model")]
 
     async def close(self) -> None:
         pass
@@ -386,6 +395,68 @@ def test_plugin_runtime_context_allows_declared_permission() -> None:
     asyncio.run(run())
 
 
+def test_plugin_runtime_context_can_skip_permission_audit_without_plugin_manager() -> None:
+    async def run() -> None:
+        plugin = _HelloPlugin()
+        runtime = await build_cyrene_ai_runtime(
+            plugin_loaders=[_FakePluginLoader(plugin)],
+            register_builtin_plugins=False,
+        )
+        try:
+            assert plugin.runtime_context is not None
+            runtime.plugin_manager = None
+
+            with pytest.raises(PluginAuthorizationError):
+                plugin.runtime_context.list_providers()
+        finally:
+            await runtime.close()
+
+    asyncio.run(run())
+
+
+def test_plugin_runtime_context_lists_provider_models_with_permission() -> None:
+    class ProviderReadPlugin(_HelloPlugin):
+        manifest = _HelloPlugin.manifest.model_copy(
+            update={
+                "plugin_id": "thirdparty.provider_models",
+                "permissions": [PluginPermission.PROVIDER_READ],
+            }
+        )
+
+    async def run() -> None:
+        plugin = ProviderReadPlugin()
+        provider = _FakeLLMProvider()
+        factory = ProviderFactory()
+
+        async def build_provider(config: ProviderConfig) -> _FakeLLMProvider:
+            return provider
+
+        factory.register(ProviderType.OPENAI_COMPATIBLE, build_provider)
+        provider_manager = ProviderManager(factory)
+        await provider_manager.add(provider.config)
+        runtime = await build_cyrene_ai_runtime(
+            provider_manager=provider_manager,
+            plugin_loaders=[_FakePluginLoader(plugin)],
+            register_builtin_plugins=False,
+        )
+        try:
+            assert plugin.runtime_context is not None
+
+            models = await plugin.runtime_context.list_provider_models("provider-1")
+
+            assert [model.model_id for model in models] == ["runtime-model"]
+            assert runtime.plugin_manager is not None
+            audit = runtime.plugin_manager.list_permission_audit(
+                "thirdparty.provider_models"
+            )
+            assert audit[0].permission == PluginPermission.PROVIDER_READ
+            assert audit[0].decision == "allowed"
+        finally:
+            await runtime.close()
+
+    asyncio.run(run())
+
+
 def test_plugin_runtime_context_injects_llm_dependency_with_bot_defaults() -> None:
     manifest = PluginManifest(
         plugin_id="thirdparty.llm",
@@ -444,6 +515,40 @@ def test_plugin_runtime_context_injects_llm_dependency_with_bot_defaults() -> No
             assert result.actions[0].message.content[0].text == "llm:ping"
             assert provider.requests[0].provider_id == "provider-1"
             assert provider.requests[0].model == "chat-model"
+        finally:
+            await runtime.close()
+
+    asyncio.run(run())
+
+
+def test_plugin_runtime_context_requires_llm_defaults_or_explicit_args() -> None:
+    manifest = PluginManifest(
+        plugin_id="thirdparty.llm_defaults",
+        name="LLM Defaults",
+        description="LLM defaults plugin.",
+        entrypoint="plugin.py",
+        capabilities=[PluginCapability.BOT_COMMAND],
+        permissions=[PluginPermission.LLM],
+    )
+    plugin = CyreneBot(manifest)
+
+    @plugin.command("/ask")
+    async def ask(request, llm=Depends("llm")):
+        return await llm.chat("hello")
+
+    async def run() -> None:
+        runtime = await build_cyrene_ai_runtime(
+            plugin_loaders=[_FakePluginLoader(plugin)],
+            register_builtin_plugins=False,
+        )
+        try:
+            assert runtime.plugin_manager is not None
+            with pytest.raises(PluginConfigurationError, match="provider_id"):
+                await runtime.plugin_manager.execute_command(
+                    PluginCommandRequest(
+                        command=BotCommand(raw_text="/ask", name="ask")
+                    )
+                )
         finally:
             await runtime.close()
 
@@ -1149,6 +1254,47 @@ def test_plugin_host_wraps_loader_errors() -> None:
     asyncio.run(run())
 
 
+def test_plugin_host_records_loader_errors_without_fail_fast() -> None:
+    class PluginFailLoader:
+        def load(self) -> list[object]:
+            raise PluginError("plugin loader failed")
+
+    class RuntimeFailLoader:
+        def load(self) -> list[object]:
+            raise RuntimeError("runtime loader failed")
+
+    async def run() -> None:
+        plugin_error_runtime = await build_cyrene_ai_runtime(
+            plugin_loaders=[PluginFailLoader()],
+            plugin_fail_fast=False,
+            register_builtin_plugins=False,
+        )
+        runtime_error_runtime = await build_cyrene_ai_runtime(
+            plugin_loaders=[RuntimeFailLoader()],
+            plugin_fail_fast=False,
+            register_builtin_plugins=False,
+        )
+        try:
+            assert plugin_error_runtime.plugin_manager is not None
+            assert runtime_error_runtime.plugin_manager is not None
+            plugin_status = plugin_error_runtime.plugin_manager.list_statuses()[0]
+            runtime_status = runtime_error_runtime.plugin_manager.list_statuses()[0]
+
+            assert plugin_status.plugin_id.endswith("PluginFailLoader")
+            assert plugin_status.status == PluginLifecycleStatus.FAILED
+            assert plugin_status.reason == "loader_failed"
+            assert plugin_status.error == "plugin loader failed"
+            assert runtime_status.plugin_id.endswith("RuntimeFailLoader")
+            assert runtime_status.status == PluginLifecycleStatus.FAILED
+            assert runtime_status.reason == "loader_failed"
+            assert runtime_status.error == "runtime loader failed"
+        finally:
+            await plugin_error_runtime.close()
+            await runtime_error_runtime.close()
+
+    asyncio.run(run())
+
+
 def test_plugin_host_rejects_manifest_command_without_executor() -> None:
     class MissingExecutorPlugin:
         manifest = PluginManifest(
@@ -1174,6 +1320,47 @@ def test_plugin_host_rejects_manifest_command_without_executor() -> None:
                 plugin_loaders=[_FakePluginLoader(MissingExecutorPlugin())],
                 register_builtin_plugins=False,
             )
+
+    asyncio.run(run())
+
+
+def test_plugin_host_can_disable_plugin_by_manifest() -> None:
+    class DisabledPlugin:
+        manifest = PluginManifest(
+            plugin_id="thirdparty.disabled",
+            name="Disabled",
+            description="Manifest-disabled plugin.",
+            entrypoint="plugin.py",
+            capabilities=[PluginCapability.BOT_COMMAND],
+            commands=[
+                PluginCommandDefinition(
+                    name="disabled",
+                    description="Disabled command.",
+                )
+            ],
+            enabled=False,
+        )
+
+        def setup(self, context) -> None:
+            raise AssertionError("disabled plugins should not be set up")
+
+    async def run() -> None:
+        runtime = await build_cyrene_ai_runtime(
+            plugin_loaders=[_FakePluginLoader(DisabledPlugin())],
+            register_builtin_plugins=False,
+        )
+        try:
+            assert runtime.plugin_manager is not None
+            plugins = runtime.plugin_manager.list_plugins()
+            statuses = runtime.plugin_manager.list_statuses()
+
+            assert plugins[0].plugin_id == "thirdparty.disabled"
+            assert plugins[0].enabled is False
+            assert runtime.plugin_manager.list_commands() == []
+            assert statuses[0].status == PluginLifecycleStatus.DISABLED
+            assert statuses[0].reason == "disabled_by_manifest"
+        finally:
+            await runtime.close()
 
     asyncio.run(run())
 

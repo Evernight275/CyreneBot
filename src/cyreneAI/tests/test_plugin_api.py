@@ -1901,3 +1901,295 @@ def test_cyrene_bot_command_decorator_rejects_argument_after_rest() -> None:
         @plugin.command("/say")
         async def say(message: Rest[str], excited=False):
             return message
+
+
+def _setup_command_executor(plugin: CyreneBot):
+    class Context:
+        runtime = object()
+        manifest = plugin.manifest
+
+        def register_command(self, definition, executor):
+            self.executor = executor
+
+        def register_task(self, definition, executor):
+            raise AssertionError
+
+        def register_tool(self, definition, executor):
+            raise AssertionError
+
+        def register_skill(self):
+            raise AssertionError
+
+    context = Context()
+    plugin.setup(context)
+    return context.executor
+
+
+def _command_request(
+    command_name: str,
+    *args: str,
+    raw_text: str | None = None,
+) -> PluginCommandRequest:
+    args_text = " ".join(args)
+    return PluginCommandRequest(
+        command=BotCommand(
+            raw_text=raw_text or f"/{command_name}" + (f" {args_text}" if args else ""),
+            name=command_name,
+            args=args,
+            args_text=args_text,
+        ),
+        event=_event(raw_text or f"/{command_name}" + (f" {args_text}" if args else "")),
+    )
+
+
+def test_cyrene_bot_command_executor_reports_inline_empty_option_value() -> None:
+    async def run() -> None:
+        plugin = CyreneBot(
+            PluginManifest(
+                plugin_id="demo.inline_empty_option",
+                name="Inline Empty Option",
+                description="Option argument plugin.",
+                entrypoint="main.py",
+                capabilities=["bot_command"],
+            )
+        )
+
+        @plugin.command("/search")
+        async def search(query: Rest[str], limit: Option[int] = 10):
+            return f"{query}:{limit}"
+
+        executor = _setup_command_executor(plugin)
+
+        with pytest.raises(PluginInputError) as exc_info:
+            await executor.execute(_command_request("search", "hello", "--limit="))
+
+        assert "参数 limit 缺少值" in str(exc_info.value)
+        assert "用法: /search <query...> [--limit:int=10]" in str(exc_info.value)
+
+    asyncio.run(run())
+
+
+def test_cyrene_bot_command_executor_reports_trailing_option_without_value() -> None:
+    async def run() -> None:
+        plugin = CyreneBot(
+            PluginManifest(
+                plugin_id="demo.trailing_option",
+                name="Trailing Option",
+                description="Option argument plugin.",
+                entrypoint="main.py",
+                capabilities=["bot_command"],
+            )
+        )
+
+        @plugin.command("/search")
+        async def search(query: Rest[str], limit: Option[int] = 10):
+            return f"{query}:{limit}"
+
+        executor = _setup_command_executor(plugin)
+
+        with pytest.raises(PluginInputError) as exc_info:
+            await executor.execute(_command_request("search", "hello", "--limit"))
+
+        assert "参数 limit 缺少值" in str(exc_info.value)
+        assert "用法: /search <query...> [--limit:int=10]" in str(exc_info.value)
+
+    asyncio.run(run())
+
+
+def test_cyrene_bot_command_executor_accepts_negative_numeric_option_values() -> None:
+    async def run() -> None:
+        plugin = CyreneBot(
+            PluginManifest(
+                plugin_id="demo.negative_option_value",
+                name="Negative Option Value",
+                description="Option argument plugin.",
+                entrypoint="main.py",
+                capabilities=["bot_command"],
+            )
+        )
+
+        @plugin.command("/scale")
+        async def scale(amount: Option[float]):
+            return f"{amount:.1f}"
+
+        executor = _setup_command_executor(plugin)
+        result = await executor.execute(_command_request("scale", "--amount", "-1.5"))
+
+        assert result.actions[0].message is not None
+        assert result.actions[0].message.content[0].text == "-1.5"
+
+    asyncio.run(run())
+
+
+def test_cyrene_bot_command_executor_reports_extra_positional_arguments() -> None:
+    async def run() -> None:
+        plugin = CyreneBot(
+            PluginManifest(
+                plugin_id="demo.extra_args",
+                name="Extra Args",
+                description="Positional argument plugin.",
+                entrypoint="main.py",
+                capabilities=["bot_command"],
+            )
+        )
+
+        @plugin.command("/hello")
+        async def hello(name: str):
+            return f"Hello, {name}!"
+
+        executor = _setup_command_executor(plugin)
+
+        with pytest.raises(PluginInputError) as exc_info:
+            await executor.execute(_command_request("hello", "Cyrene", "again"))
+
+        assert "参数过多: again" in str(exc_info.value)
+        assert "用法: /hello <name>" in str(exc_info.value)
+
+    asyncio.run(run())
+
+
+def test_cyrene_bot_command_executor_reports_missing_and_invalid_positionals() -> None:
+    async def run() -> None:
+        plugin = CyreneBot(
+            PluginManifest(
+                plugin_id="demo.positionals",
+                name="Positionals",
+                description="Positional argument plugin.",
+                entrypoint="main.py",
+                capabilities=["bot_command"],
+            )
+        )
+
+        @plugin.command("/repeat")
+        async def repeat(word: str, count: int):
+            return " ".join([word] * count)
+
+        executor = _setup_command_executor(plugin)
+
+        with pytest.raises(PluginInputError) as missing:
+            await executor.execute(_command_request("repeat", "hi"))
+        with pytest.raises(PluginInputError) as invalid:
+            await executor.execute(_command_request("repeat", "hi", "many"))
+
+        assert "缺少参数 count" in str(missing.value)
+        assert "用法: /repeat <word> <count:int>" in str(missing.value)
+        assert "参数 count 应为 int，收到 'many'" in str(invalid.value)
+        assert "用法: /repeat <word> <count:int>" in str(invalid.value)
+
+    asyncio.run(run())
+
+
+def test_cyrene_bot_command_executor_reports_missing_required_option() -> None:
+    async def run() -> None:
+        plugin = CyreneBot(
+            PluginManifest(
+                plugin_id="demo.required_option",
+                name="Required Option",
+                description="Option argument plugin.",
+                entrypoint="main.py",
+                capabilities=["bot_command"],
+            )
+        )
+
+        @plugin.command("/search")
+        async def search(query: Rest[str], limit: Option[int]):
+            return f"{query}:{limit}"
+
+        route = plugin.routes[0]
+        executor = _setup_command_executor(plugin)
+
+        assert route.usage == "/search <query...> <--limit:int>"
+        with pytest.raises(PluginInputError) as exc_info:
+            await executor.execute(_command_request("search", "hello"))
+
+        assert "缺少参数 limit" in str(exc_info.value)
+        assert "用法: /search <query...> <--limit:int>" in str(exc_info.value)
+
+    asyncio.run(run())
+
+
+def test_cyrene_bot_command_executor_reports_invalid_explicit_flag_value() -> None:
+    async def run() -> None:
+        plugin = CyreneBot(
+            PluginManifest(
+                plugin_id="demo.invalid_flag",
+                name="Invalid Flag",
+                description="Flag argument plugin.",
+                entrypoint="main.py",
+                capabilities=["bot_command"],
+            )
+        )
+
+        @plugin.command("/search")
+        async def search(query: Rest[str], verbose: Flag = False):
+            return f"{query}:{verbose}"
+
+        executor = _setup_command_executor(plugin)
+
+        with pytest.raises(PluginInputError) as exc_info:
+            await executor.execute(_command_request("search", "hello", "--verbose=maybe"))
+
+        assert "参数 verbose 应为 bool，收到 'maybe'" in str(exc_info.value)
+        assert "用法: /search <query...> [--verbose]" in str(exc_info.value)
+
+    asyncio.run(run())
+
+
+def test_cyrene_bot_command_executor_uses_default_for_optional_rest_argument() -> None:
+    async def run() -> None:
+        plugin = CyreneBot(
+            PluginManifest(
+                plugin_id="demo.optional_rest",
+                name="Optional Rest",
+                description="Rest argument plugin.",
+                entrypoint="main.py",
+                capabilities=["bot_command"],
+            )
+        )
+
+        @plugin.command("/say")
+        async def say(message: Rest[str] = "default message"):
+            return message
+
+        executor = _setup_command_executor(plugin)
+        result = await executor.execute(_command_request("say"))
+
+        assert plugin.routes[0].usage == "/say [message...=default message]"
+        assert result.actions[0].message is not None
+        assert result.actions[0].message.content[0].text == "default message"
+
+    asyncio.run(run())
+
+
+def test_cyrene_bot_command_decorator_rejects_empty_choice_and_invalid_rest_marker() -> None:
+    with pytest.raises(TypeError, match=r"Choice\[\.\.\.\] requires"):
+        Choice[()]
+
+    plugin = CyreneBot()
+    with pytest.raises(PluginConfigurationError, match="标记类型不支持"):
+
+        @plugin.command("/bad")
+        async def bad(message: Rest[int]):
+            return message
+
+
+def test_cyrene_bot_command_setup_rejects_varargs_and_varkwargs() -> None:
+    for handler_source, expected in [
+        ("async def bad(*args):\n    return args", "*args"),
+        ("async def bad(**kwargs):\n    return kwargs", "**kwargs"),
+    ]:
+        namespace: dict[str, object] = {}
+        exec(handler_source, namespace)
+        plugin = CyreneBot(
+            PluginManifest(
+                plugin_id=f"demo.{expected.replace('*', 'star')}",
+                name="Bad Signature",
+                description="Bad command plugin.",
+                entrypoint="main.py",
+                capabilities=["bot_command"],
+            )
+        )
+        plugin.command("/bad")(namespace["bad"])
+
+        with pytest.raises(PluginConfigurationError, match=r"\*args 或 \*\*kwargs"):
+            _setup_command_executor(plugin)

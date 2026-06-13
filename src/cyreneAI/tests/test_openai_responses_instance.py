@@ -135,6 +135,14 @@ class _FakeModels:
         )()
 
 
+class _FailingModels:
+    def __init__(self, error: Exception) -> None:
+        self.error = error
+
+    async def list(self) -> Any:
+        raise self.error
+
+
 class _FakeImages:
     def __init__(self) -> None:
         self.payload: dict[str, Any] | None = None
@@ -153,6 +161,14 @@ class _FakeImages:
         )
 
 
+class _FailingImages:
+    def __init__(self, error: Exception) -> None:
+        self.error = error
+
+    async def generate(self, **payload: Any) -> Any:
+        raise self.error
+
+
 class _FakeOpenAIClient:
     def __init__(self, responses: _FakeResponses) -> None:
         self.responses = responses
@@ -162,6 +178,28 @@ class _FakeOpenAIClient:
 
     async def close(self) -> None:
         self.closed = True
+
+
+class _FailingStream:
+    def __init__(self, error: Exception) -> None:
+        self.error = error
+
+    def __aiter__(self):
+        return self._iterate()
+
+    async def _iterate(self):
+        raise self.error
+        yield
+
+
+class _BrokenStreamResponses:
+    def __init__(self, error: Exception) -> None:
+        self.error = error
+        self.payload: dict[str, Any] | None = None
+
+    async def create(self, **payload: Any) -> Any:
+        self.payload = payload
+        return _FailingStream(self.error)
 
 
 def test_openai_responses_instance_requires_api_key() -> None:
@@ -284,6 +322,92 @@ def test_openai_responses_instance_stream_translates_error_event() -> None:
     asyncio.run(run())
 
 
+def test_openai_responses_instance_stream_translates_create_errors() -> None:
+    async def run() -> None:
+        error = RuntimeError("stream create failed")
+        instance = OpenAIResponsesProviderInstance(
+            config=_config(),
+            info=_provider_info(),
+            client=_FakeOpenAIClient(_FakeResponses(error=error)),
+        )
+
+        with pytest.raises(ProviderError) as caught:
+            _ = [chunk async for chunk in instance.chat_stream(_request())]
+
+        assert caught.value.cause is error
+
+    asyncio.run(run())
+
+
+def test_openai_responses_instance_stream_translates_iteration_errors() -> None:
+    async def run() -> None:
+        error = RuntimeError("stream iteration failed")
+        responses = _BrokenStreamResponses(error)
+        instance = OpenAIResponsesProviderInstance(
+            config=_config(),
+            info=_provider_info(),
+            client=_FakeOpenAIClient(responses),  # type: ignore[arg-type]
+        )
+
+        with pytest.raises(ProviderError) as caught:
+            _ = [chunk async for chunk in instance.chat_stream(_request())]
+
+        assert responses.payload is not None
+        assert responses.payload["stream"] is True
+        assert caught.value.cause is error
+
+    asyncio.run(run())
+
+
+def test_openai_responses_instance_stream_translates_failed_response_events() -> None:
+    async def run() -> None:
+        failed_with_error = SimpleNamespace(
+            type="response.failed",
+            response=SimpleNamespace(
+                error=SimpleNamespace(message="response failed", code=None)
+            ),
+        )
+        failed_without_error = SimpleNamespace(
+            type="response.failed",
+            response=SimpleNamespace(error=None),
+        )
+
+        for event, expected in [
+            (failed_with_error, "response failed"),
+            (failed_without_error, "OpenAI Responses stream failed"),
+        ]:
+            instance = OpenAIResponsesProviderInstance(
+                config=_config(),
+                info=_provider_info(),
+                client=_FakeOpenAIClient(_FakeResponses(stream_events=[event])),
+            )
+
+            with pytest.raises(ProviderResponseError) as caught:
+                _ = [chunk async for chunk in instance.chat_stream(_request())]
+
+            assert str(caught.value) == expected
+
+    asyncio.run(run())
+
+
+def test_openai_responses_instance_stream_error_event_uses_object_fallback_message() -> None:
+    async def run() -> None:
+        error_event = SimpleNamespace(type="error", message=None, code="bad_stream")
+        instance = OpenAIResponsesProviderInstance(
+            config=_config(),
+            info=_provider_info(),
+            client=_FakeOpenAIClient(_FakeResponses(stream_events=[error_event])),
+        )
+
+        with pytest.raises(ProviderResponseError) as caught:
+            _ = [chunk async for chunk in instance.chat_stream(_request())]
+
+        assert "namespace(" in str(caught.value)
+        assert "bad_stream" in str(caught.value)
+
+    asyncio.run(run())
+
+
 def test_openai_responses_instance_lists_models() -> None:
     async def run() -> None:
         instance = OpenAIResponsesProviderInstance(
@@ -295,6 +419,25 @@ def test_openai_responses_instance_lists_models() -> None:
         models = await instance.list_models()
 
         assert [model.model_id for model in models] == ["gpt-test"]
+
+    asyncio.run(run())
+
+
+def test_openai_responses_instance_list_models_translates_errors() -> None:
+    async def run() -> None:
+        error = RuntimeError("models failed")
+        client = _FakeOpenAIClient(_FakeResponses(response=_response()))
+        client.models = _FailingModels(error)
+        instance = OpenAIResponsesProviderInstance(
+            config=_config(),
+            info=_provider_info(),
+            client=client,
+        )
+
+        with pytest.raises(ProviderError) as caught:
+            await instance.list_models()
+
+        assert caught.value.cause is error
 
     asyncio.run(run())
 
@@ -331,5 +474,30 @@ def test_openai_responses_instance_generates_images() -> None:
         assert response.model == "gpt-image-test"
         assert response.images[0].b64_json == "aW1hZ2U="
         assert response.images[0].revised_prompt == "A small robot."
+
+    asyncio.run(run())
+
+
+def test_openai_responses_instance_generate_image_translates_errors() -> None:
+    async def run() -> None:
+        error = RuntimeError("image failed")
+        client = _FakeOpenAIClient(_FakeResponses(response=_response()))
+        client.images = _FailingImages(error)
+        instance = OpenAIResponsesProviderInstance(
+            config=_config(),
+            info=_provider_info(),
+            client=client,
+        )
+
+        with pytest.raises(ProviderError) as caught:
+            await instance.generate_image(
+                ImageGenerationRequest(
+                    provider_id="responses-test",
+                    model="gpt-image-test",
+                    prompt="A small robot.",
+                )
+            )
+
+        assert caught.value.cause is error
 
     asyncio.run(run())

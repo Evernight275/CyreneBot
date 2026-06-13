@@ -7,10 +7,12 @@ from pathlib import Path
 
 import pytest
 
+from cyreneAI.application.runtime import CyreneAIRuntime
 from cyreneAI.bootstrap import build_cyrene_ai_runtime
 from cyreneAI.core.bot.registry import BotChannelRegistry
 from cyreneAI.core.bot.session_manager import BotSessionManager
 from cyreneAI.core.schema.bot import BotChannelDefinition
+from cyreneAI.core.errors.base import StateError
 from cyreneAI.core.schema.skill import SkillSelectionRequest
 from cyreneAI.core.schema.tool import (
     ToolCall,
@@ -641,3 +643,96 @@ async def _run_build_runtime_rejects_duplicate_bot_session_config() -> None:
 
 def test_build_cyrene_ai_runtime_rejects_duplicate_bot_session_config() -> None:
     asyncio.run(_run_build_runtime_rejects_duplicate_bot_session_config())
+
+
+class _RecordingProviderManager:
+    def __init__(
+        self,
+        calls: list[str],
+        *,
+        error: Exception | None = None,
+    ) -> None:
+        self._calls = calls
+        self._error = error
+
+    async def close_all(self) -> None:
+        self._calls.append("provider_manager")
+        if self._error is not None:
+            raise self._error
+
+
+class _RecordingTaskScheduler:
+    def __init__(
+        self,
+        calls: list[str],
+        *,
+        error: Exception | None = None,
+    ) -> None:
+        self._calls = calls
+        self._error = error
+
+    async def shutdown(self) -> None:
+        self._calls.append("plugin_task_scheduler")
+        if self._error is not None:
+            raise self._error
+
+
+class _RecordingClosable:
+    def __init__(
+        self,
+        name: str,
+        calls: list[str],
+        *,
+        error: Exception | None = None,
+    ) -> None:
+        self._name = name
+        self._calls = calls
+        self._error = error
+
+    async def close(self) -> None:
+        self._calls.append(self._name)
+        if self._error is not None:
+            raise self._error
+
+
+async def _run_runtime_close_attempts_all_resources_after_failures() -> None:
+    calls: list[str] = []
+    first_error = RuntimeError("scheduler failed")
+    runtime = CyreneAIRuntime(
+        provider_manager=_RecordingProviderManager(
+            calls,
+            error=RuntimeError("provider manager failed"),
+        ),
+        context_builder=object(),
+        provider_config_store=_RecordingClosable("provider_config_store", calls),
+        context_manager=_RecordingClosable("context_manager", calls),
+        vector_manager=_RecordingClosable(
+            "vector_manager",
+            calls,
+            error=RuntimeError("vector manager failed"),
+        ),
+        bot_polling_state_store=_RecordingClosable("bot_polling_state_store", calls),
+        plugin_storage=_RecordingClosable("plugin_storage", calls),
+        plugin_assets=_RecordingClosable("plugin_assets", calls),
+        plugin_task_scheduler=_RecordingTaskScheduler(calls, error=first_error),
+    )
+
+    with pytest.raises(StateError) as exc_info:
+        await runtime.close()
+
+    assert str(exc_info.value) == "Failed to close 3 runtime resource(s)"
+    assert exc_info.value.cause is first_error
+    assert calls == [
+        "plugin_task_scheduler",
+        "provider_manager",
+        "provider_config_store",
+        "context_manager",
+        "vector_manager",
+        "bot_polling_state_store",
+        "plugin_storage",
+        "plugin_assets",
+    ]
+
+
+def test_runtime_close_attempts_all_resources_after_failures() -> None:
+    asyncio.run(_run_runtime_close_attempts_all_resources_after_failures())

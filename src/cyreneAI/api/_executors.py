@@ -18,7 +18,7 @@ from cyreneAI.api._types import (
     PluginToolHandler,
 )
 from cyreneAI.core.errors.plugin import PluginError, PluginExecutionError
-from cyreneAI.core.errors.tool import ToolExecutionError, ToolInputError
+from cyreneAI.core.errors.tool import ToolError, ToolExecutionError, ToolInputError
 from cyreneAI.core.schema.plugin import (
     PluginCommandDefinition,
     PluginCommandRequest,
@@ -228,7 +228,7 @@ class _ToolHandlerExecutor:
             result = self._handler(*args, **kwargs)
             if isawaitable(result):
                 result = await result
-        except (PluginError, ToolExecutionError):
+        except (PluginError, ToolError):
             raise
         except Exception as exc:
             raise ToolExecutionError(

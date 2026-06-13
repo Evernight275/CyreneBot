@@ -442,7 +442,10 @@ def _eval_node(node: ast.AST) -> float:
         right = _eval_node(node.right)
         if isinstance(node.op, ast.Pow) and abs(right) > 12:
             raise ToolExecutionError("exponent is too large")
-        return float(_BINARY_OPERATORS[operator_type](left, right))
+        try:
+            return float(_BINARY_OPERATORS[operator_type](left, right))
+        except (OverflowError, ValueError, ZeroDivisionError) as exc:
+            raise ToolExecutionError("calculation failed", cause=exc) from exc
 
     if isinstance(node, ast.UnaryOp):
         operator_type = type(node.op)

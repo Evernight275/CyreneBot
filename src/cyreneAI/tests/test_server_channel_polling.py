@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import asyncio
 from datetime import timedelta
+from types import SimpleNamespace
+
+import pytest
 
 from cyreneAI.application.runtime import CyreneAIRuntime
 from cyreneAI.core.bot.registry import BotChannelRegistry
@@ -353,5 +356,133 @@ def test_channel_polling_runner_uses_persisted_state_after_restart(tmp_path) -> 
         assert second_provider.requests == []
         assert second_channel.actions == []
         await second_runtime.close()
+
+    asyncio.run(run())
+
+
+def test_channel_polling_runner_reports_missing_registry_and_poller() -> None:
+    async def run() -> None:
+        no_registry_runner = ChannelPollingRunner(
+            runtime=SimpleNamespace(
+                bot_channel_registry=None,
+                bot_polling_state_store=None,
+            ),
+            channel_id="telegram",
+            provider_id="provider-1",
+            model="chat-model",
+            interval_seconds=0,
+        )
+
+        with pytest.raises(RuntimeError, match="registry is not set"):
+            await no_registry_runner.run_once()
+
+        registry = BotChannelRegistry()
+        registry.register(
+            BotChannelDefinition(channel_id="telegram", name="Telegram"),
+            object(),
+        )
+        missing_poller_runner = ChannelPollingRunner(
+            runtime=SimpleNamespace(
+                bot_channel_registry=registry,
+                bot_polling_state_store=None,
+            ),
+            channel_id="telegram",
+            provider_id="provider-1",
+            model="chat-model",
+            interval_seconds=0,
+        )
+
+        with pytest.raises(RuntimeError, match="does not support polling"):
+            await missing_poller_runner.run_once()
+
+    asyncio.run(run())
+
+
+def test_channel_polling_runner_non_numeric_events_do_not_advance_offset() -> None:
+    async def run() -> None:
+        provider = FakePollingProvider()
+        channel = FakePollingChannel()
+        channel.event_batches = [[_event("abc", "one")]]
+        state_store = InMemoryBotPollingStateStore()
+        runtime = await _build_runtime(
+            provider,
+            channel,
+            polling_state_store=state_store,
+        )
+        runner = ChannelPollingRunner(
+            runtime=runtime,
+            channel_id="telegram",
+            provider_id="provider-1",
+            model="chat-model",
+            interval_seconds=0,
+        )
+
+        processed = await runner.run_once()
+
+        assert processed == 1
+        assert runner.offset is None
+        assert await state_store.get_offset("telegram") is None
+        assert await state_store.is_event_processed("telegram", "abc") is True
+        await runtime.close()
+
+    asyncio.run(run())
+
+
+def test_channel_polling_runner_start_is_idempotent_and_stop_cancels() -> None:
+    async def run() -> None:
+        provider = FakePollingProvider()
+        channel = FakePollingChannel()
+        channel.event_batches = [[]]
+        runtime = await _build_runtime(provider, channel)
+        runner = ChannelPollingRunner(
+            runtime=runtime,
+            channel_id="telegram",
+            provider_id="provider-1",
+            model="chat-model",
+            interval_seconds=10,
+        )
+
+        runner.start()
+        first_task = runner._task
+        assert runner.is_running is True
+
+        runner.start()
+        assert runner._task is first_task
+
+        await runner.stop()
+
+        assert runner.is_running is False
+        assert runner._task is None
+        await runtime.close()
+
+    asyncio.run(run())
+
+
+def test_channel_polling_runner_run_forever_logs_iteration_failures() -> None:
+    class FailingPollChannel(FakePollingChannel):
+        async def poll_events(self, **kwargs) -> list[BotEvent]:
+            raise RuntimeError("poll failed")
+
+    async def run() -> None:
+        provider = FakePollingProvider()
+        channel = FailingPollChannel()
+        runtime = await _build_runtime(provider, channel)
+        runner = ChannelPollingRunner(
+            runtime=runtime,
+            channel_id="telegram",
+            provider_id="provider-1",
+            model="chat-model",
+            interval_seconds=0.01,
+        )
+
+        task = asyncio.create_task(runner.run_forever())
+        await asyncio.sleep(0.03)
+        await runner.stop()
+        if not task.done():
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
+        await runtime.close()
 
     asyncio.run(run())

@@ -10,6 +10,7 @@ from cyreneAI.core.errors.tool import ToolConfigurationError, ToolExecutionError
 from cyreneAI.core.schema.tool import (
     ToolCall,
     ToolDefinition,
+    ToolExecutionPolicy,
     ToolPermission,
     ToolResult,
     ToolRiskLevel,
@@ -151,3 +152,110 @@ def test_subprocess_sandbox_runner_requires_command() -> None:
 def test_subprocess_sandbox_runner_rejects_empty_command() -> None:
     with pytest.raises(ToolConfigurationError):
         SubprocessToolSandboxRunner({"lookup": []})
+
+
+async def _execute_subprocess_runner(
+    command: list[str],
+    *,
+    definition: ToolDefinition | None = None,
+    max_stdout_bytes: int = 1_048_576,
+    max_stderr_bytes: int = 65_536,
+    max_error_message_chars: int = 1_000,
+) -> ToolResult:
+    runner = SubprocessToolSandboxRunner(
+        {"lookup": command},
+        max_stdout_bytes=max_stdout_bytes,
+        max_stderr_bytes=max_stderr_bytes,
+        max_error_message_chars=max_error_message_chars,
+    )
+    return await runner.execute(
+        call=ToolCall(
+            id="call-1",
+            name="lookup",
+            arguments=json.dumps({"key": "answer"}),
+        ),
+        definition=definition or _sandboxed_definition(),
+        executor=_FakeToolExecutor(),
+        policy=ToolExecutionPolicy(),
+    )
+
+
+def test_subprocess_sandbox_runner_translates_start_failure() -> None:
+    async def run() -> None:
+        with pytest.raises(ToolExecutionError, match="failed to start"):
+            await _execute_subprocess_runner(["definitely-not-a-cyrene-command"])
+
+    asyncio.run(run())
+
+
+def test_subprocess_sandbox_runner_kills_timed_out_process() -> None:
+    async def run() -> None:
+        with pytest.raises(ToolExecutionError, match="timed out"):
+            await _execute_subprocess_runner(
+                [
+                    sys.executable,
+                    "-c",
+                    "import time; time.sleep(5)",
+                ],
+                definition=_sandboxed_definition(timeout_seconds=1),
+            )
+
+    asyncio.run(run())
+
+
+def test_subprocess_sandbox_runner_rejects_oversized_stdout_and_stderr() -> None:
+    async def run() -> None:
+        with pytest.raises(ToolExecutionError, match="stdout exceeded"):
+            await _execute_subprocess_runner(
+                [sys.executable, "-c", "print('abcdef')"],
+                max_stdout_bytes=3,
+            )
+
+        with pytest.raises(ToolExecutionError, match="stderr exceeded"):
+            await _execute_subprocess_runner(
+                [
+                    sys.executable,
+                    "-c",
+                    "import sys; sys.stderr.write('abcdef')",
+                ],
+                max_stderr_bytes=3,
+            )
+
+    asyncio.run(run())
+
+
+def test_subprocess_sandbox_runner_reports_nonzero_exit_with_truncated_stderr() -> None:
+    async def run() -> None:
+        with pytest.raises(ToolExecutionError) as caught:
+            await _execute_subprocess_runner(
+                [
+                    sys.executable,
+                    "-c",
+                    "import sys; sys.stderr.write('abcdef'); raise SystemExit(5)",
+                ],
+                max_error_message_chars=3,
+            )
+
+        assert str(caught.value) == (
+            "Tool lookup subprocess sandbox exited with code 5: abc..."
+        )
+
+    asyncio.run(run())
+
+
+def test_subprocess_sandbox_runner_can_disable_output_size_limits() -> None:
+    async def run() -> None:
+        result = await _execute_subprocess_runner(
+            [
+                sys.executable,
+                "-c",
+                "import json; print(json.dumps({'content': 'ok'}))",
+            ],
+            max_stdout_bytes=-1,
+            max_stderr_bytes=-1,
+        )
+
+        assert result.content == "ok"
+        assert result.metadata["sandbox"]["allow_sandbox_bypass"] is False
+
+    asyncio.run(run())

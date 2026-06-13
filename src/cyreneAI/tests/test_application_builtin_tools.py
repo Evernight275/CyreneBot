@@ -6,8 +6,29 @@ import json
 import pytest
 
 from cyreneAI.bootstrap import build_cyrene_ai_runtime
-from cyreneAI.core.errors.tool import ToolExecutionError
+from cyreneAI.application.tools import builtin
+from cyreneAI.application.tools.builtin import register_core_builtin_tools
+from cyreneAI.application.tools import todo
+from cyreneAI.application.tools.todo import register_todo_tools
+from cyreneAI.core.errors.tool import ToolExecutionError, ToolInputError
 from cyreneAI.core.schema.tool import ToolCall
+from cyreneAI.core.tool.manager import ToolManager
+from cyreneAI.core.tool.registry import ToolRegistry
+
+
+def _tool_call(name: str, arguments: object, *, call_id: str = "call") -> ToolCall:
+    return ToolCall(
+        id=call_id,
+        name=name,
+        arguments=arguments if isinstance(arguments, str) else json.dumps(arguments),
+    )
+
+
+def _builtin_tool_manager() -> ToolManager:
+    registry = ToolRegistry()
+    register_core_builtin_tools(registry)
+    register_todo_tools(registry)
+    return ToolManager(registry)
 
 
 async def _run_builtin_tools_are_registered_by_default() -> None:
@@ -197,3 +218,280 @@ async def _run_code_interpreter_requires_sandbox_registration() -> None:
 
 def test_code_interpreter_requires_sandbox_registration() -> None:
     asyncio.run(_run_code_interpreter_requires_sandbox_registration())
+
+
+def test_current_time_supports_unix_format_and_validates_options() -> None:
+    async def run() -> None:
+        manager = _builtin_tool_manager()
+
+        result = await manager.execute(
+            _tool_call(
+                "get_current_time",
+                {"utc_offset": "-05:30", "format": "unix"},
+            )
+        )
+        payload = json.loads(result.content or "{}")
+        assert payload["utc_offset"] == "-05:30"
+        assert "unix" in payload
+
+        invalid_calls = [
+            ({"format": "bad"}, r"arguments.format must be one of"),
+            ({"utc_offset": 8}, "arguments.utc_offset has invalid type"),
+            ({"utc_offset": "8"}, "utc_offset must match"),
+            ({"utc_offset": "+24:00"}, "utc_offset is out of range"),
+        ]
+        for arguments, message in invalid_calls:
+            with pytest.raises((ToolExecutionError, ToolInputError), match=message):
+                await manager.execute(_tool_call("get_current_time", arguments))
+
+    asyncio.run(run())
+
+
+def test_current_time_executor_validates_format_after_argument_parse() -> None:
+    async def run() -> None:
+        executor = builtin._CurrentTimeToolExecutor()
+
+        with pytest.raises(ToolExecutionError, match="format must be iso or unix"):
+            await executor.execute(_tool_call("get_current_time", {"format": "bad"}))
+
+    asyncio.run(run())
+
+
+def test_calculate_covers_math_functions_and_rejects_bad_expressions() -> None:
+    async def run() -> None:
+        manager = _builtin_tool_manager()
+
+        result = await manager.execute(
+            _tool_call(
+                "calculate",
+                {
+                    "expression": (
+                        "abs(-2)+ceil(1.2)+floor(1.8)+max(1, 3)+min(1, 3)"
+                        "+pow(2, 3)+round(1.26, 1)+pi-pi"
+                    )
+                },
+            )
+        )
+        payload = json.loads(result.content or "{}")
+        assert payload["result"] == 18.3
+
+        invalid_expressions = [
+            ("1+", "expression must be valid arithmetic"),
+            ("'x'", "expression constants must be numbers"),
+            ("unknown", "unknown constant"),
+            ("10**13", "exponent is too large"),
+            ("1/0", "calculation failed"),
+            ("sqrt(-1)", "calculation failed"),
+            ("round(value=1)", "keyword arguments are not supported"),
+            ("sum(1)", "unknown function"),
+            ("(1).__str__()", "only direct math function calls are allowed"),
+            ("max(1,2,3,4,5,6,7,8,9)", "too many function arguments"),
+            ("[1]", "unsupported expression node"),
+            ("1 << 2", "unsupported arithmetic operator"),
+            ("~1", "unsupported unary operator"),
+            ("1000000000001", "expression number is too large"),
+            ("1000000000000*10000", "calculation result is too large"),
+            ("9" * 513, "expression is too large"),
+        ]
+        for expression, message in invalid_expressions:
+            with pytest.raises(ToolExecutionError, match=message):
+                await manager.execute(
+                    _tool_call("calculate", {"expression": expression})
+                )
+
+    asyncio.run(run())
+
+
+def test_json_get_covers_root_and_path_errors() -> None:
+    async def run() -> None:
+        manager = _builtin_tool_manager()
+
+        root_result = await manager.execute(
+            _tool_call("json_get", {"json": json.dumps({"ok": True})})
+        )
+        assert json.loads(root_result.content or "{}") == {
+            "path": "",
+            "value": {"ok": True},
+        }
+
+        invalid_calls = [
+            ({"json": "{"}, "json must be valid JSON"),
+            ({"json": "{}", "path": 123}, "arguments.path has invalid type"),
+            ({"json": "{}", "path": "."}, "path cannot contain empty segments"),
+            ({"json": "{}", "path": "missing"}, "path segment not found"),
+            ({"json": "[1]", "path": "name"}, "list path segment must be an index"),
+            ({"json": "[1]", "path": "1"}, "list index out of range"),
+            ({"json": "1", "path": "x"}, "path cannot descend into"),
+            (
+                {"json": "{}", "path": ".".join(["x"] * 65)},
+                "path is too deep",
+            ),
+        ]
+        for arguments, message in invalid_calls:
+            with pytest.raises((ToolExecutionError, ToolInputError), match=message):
+                await manager.execute(_tool_call("json_get", arguments))
+
+    asyncio.run(run())
+
+
+def test_text_search_covers_regex_and_validation_errors() -> None:
+    async def run() -> None:
+        manager = _builtin_tool_manager()
+
+        regex_result = await manager.execute(
+            _tool_call(
+                "text_search",
+                {
+                    "text": "Alpha beta ALPHA",
+                    "query": "alpha",
+                    "regex": True,
+                    "case_sensitive": False,
+                    "max_matches": 10,
+                },
+            )
+        )
+        regex_payload = json.loads(regex_result.content or "{}")
+        assert regex_payload["match_count"] == 2
+        assert [match["match"] for match in regex_payload["matches"]] == [
+            "Alpha",
+            "ALPHA",
+        ]
+
+        case_result = await manager.execute(
+            _tool_call(
+                "text_search",
+                {
+                    "text": "Alpha alpha",
+                    "query": "alpha",
+                    "case_sensitive": True,
+                },
+            )
+        )
+        case_payload = json.loads(case_result.content or "{}")
+        assert case_payload["match_count"] == 1
+        assert case_payload["matches"][0]["start"] == 6
+
+        invalid_calls = [
+            ({"text": "x", "query": "[", "regex": True}, "valid regular expression"),
+            ({"text": "x", "query": "x", "regex": "yes"}, "arguments.regex has invalid type"),
+            (
+                {"text": "x", "query": "x", "case_sensitive": "yes"},
+                "arguments.case_sensitive has invalid type",
+            ),
+            (
+                {"text": "x", "query": "x", "max_matches": True},
+                "arguments.max_matches has invalid type",
+            ),
+            ({"text": "x", "query": "x", "max_matches": 0}, "positive integer"),
+        ]
+        for arguments, message in invalid_calls:
+            with pytest.raises((ToolExecutionError, ToolInputError), match=message):
+                await manager.execute(_tool_call("text_search", arguments))
+
+    asyncio.run(run())
+
+
+def test_builtin_tool_argument_parsing_errors() -> None:
+    async def run() -> None:
+        manager = _builtin_tool_manager()
+
+        with pytest.raises(ToolInputError, match="valid JSON"):
+            await manager.execute(_tool_call("calculate", "{"))
+
+        with pytest.raises(ToolInputError, match="JSON object"):
+            await manager.execute(_tool_call("calculate", "[]"))
+
+        with pytest.raises(ToolInputError, match="arguments.expression is required"):
+            await manager.execute(_tool_call("calculate", {}))
+
+    asyncio.run(run())
+
+
+def test_todo_tools_cover_filters_and_validation_errors() -> None:
+    async def run() -> None:
+        manager = _builtin_tool_manager()
+
+        first = await manager.execute(
+            _tool_call(
+                "create_todo",
+                {
+                    "title": " First ",
+                    "due_at": " 2026-06-13 ",
+                    "tags": [" work ", "", "ship"],
+                },
+            )
+        )
+        first_id = json.loads(first.content or "{}")["todo"]["todo_id"]
+        second = await manager.execute(
+            _tool_call("create_todo", {"title": "Second"})
+        )
+        second_id = json.loads(second.content or "{}")["todo"]["todo_id"]
+
+        await manager.execute(_tool_call("complete_todo", {"todo_id": first_id}))
+
+        active = await manager.execute(_tool_call("list_todos", {"limit": 1}))
+        active_payload = json.loads(active.content or "{}")
+        assert active_payload["count"] == 1
+        assert active_payload["todos"][0]["todo_id"] == second_id
+
+        all_todos = await manager.execute(
+            _tool_call("list_todos", {"include_completed": True, "limit": 1000})
+        )
+        all_payload = json.loads(all_todos.content or "{}")
+        assert all_payload["count"] == 2
+        assert all_payload["todos"][0]["tags"] == ["work", "ship"]
+
+        invalid_calls = [
+            ("create_todo", {"title": "x", "due_at": 123}, "arguments.due_at has invalid type"),
+            ("create_todo", {"title": "x", "tags": "work"}, "arguments.tags has invalid type"),
+            (
+                "create_todo",
+                {"title": "x", "tags": [123]},
+                r"arguments.tags\[0\] has invalid type",
+            ),
+            (
+                "list_todos",
+                {"include_completed": "yes"},
+                "arguments.include_completed has invalid type",
+            ),
+            ("list_todos", {"limit": True}, "arguments.limit has invalid type"),
+            ("list_todos", {"limit": 0}, "positive integer"),
+            ("complete_todo", {"todo_id": "missing"}, "todo_id not found"),
+        ]
+        for name, arguments, message in invalid_calls:
+            with pytest.raises((ToolExecutionError, ToolInputError), match=message):
+                await manager.execute(_tool_call(name, arguments))
+
+    asyncio.run(run())
+
+
+def test_todo_executor_helpers_validate_after_argument_parse() -> None:
+    async def run() -> None:
+        store: dict = {}
+        create_executor = todo._CreateTodoToolExecutor(store)
+        list_executor = todo._ListTodosToolExecutor(store)
+
+        invalid_create_calls = [
+            ({"title": "x", "due_at": 123}, "value must be a string"),
+            ({"title": "x", "tags": "work"}, "tags must be an array"),
+            ({"title": "x", "tags": [123]}, "tags must contain only strings"),
+        ]
+        for arguments, message in invalid_create_calls:
+            with pytest.raises(ToolExecutionError, match=message):
+                await create_executor.execute(_tool_call("create_todo", arguments))
+
+        invalid_list_calls = [
+            ({"include_completed": "yes"}, "value must be a boolean"),
+            ({"limit": True}, "value must be a positive integer"),
+        ]
+        for arguments, message in invalid_list_calls:
+            with pytest.raises(ToolExecutionError, match=message):
+                await list_executor.execute(_tool_call("list_todos", arguments))
+
+        with pytest.raises(ToolExecutionError, match="Tool arguments must be valid JSON"):
+            await create_executor.execute(_tool_call("create_todo", "{"))
+
+        with pytest.raises(ToolExecutionError, match="Tool arguments must be a JSON object"):
+            await create_executor.execute(_tool_call("create_todo", "[]"))
+
+    asyncio.run(run())

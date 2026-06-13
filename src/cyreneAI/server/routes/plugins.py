@@ -123,7 +123,10 @@ async def list_plugin_sources(
 async def list_plugin_runtime_capabilities(
     service: PluginAdminService = Depends(get_plugin_admin_service),
 ) -> dict[str, list[PluginRuntimePermissionInfo] | list[PluginRuntimeDependencyInfo]]:
-    return service.runtime_capabilities()
+    try:
+        return service.runtime_capabilities()
+    except CyreneAIError as exc:
+        raise_http_error(exc)
 
 
 @router.post("/validate-path", response_model=PluginValidationReport)
@@ -131,7 +134,10 @@ async def validate_plugin_path(
     body: PluginPathRequestBody,
     service: PluginAdminService = Depends(get_plugin_admin_service),
 ) -> PluginValidationReport:
-    return service.validate_path(body)
+    try:
+        return service.validate_path(body)
+    except CyreneAIError as exc:
+        raise_http_error(exc)
 
 
 @router.post("/install-path", response_model=PluginInstallReport)

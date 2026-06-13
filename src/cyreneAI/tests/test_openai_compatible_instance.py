@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import timedelta
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -38,28 +39,53 @@ def _provider_info() -> ProviderInfo:
     )
 
 
+def _text(value: str) -> list[ContentPart]:
+    return [ContentPart(type=ContentPartType.TEXT, text=value)]
+
+
 class _FakeCompletions:
-    def __init__(self, response: ChatCompletion) -> None:
+    def __init__(
+        self,
+        response: ChatCompletion | None = None,
+        *,
+        error: Exception | None = None,
+    ) -> None:
         self.response = response
+        self.error = error
         self.payload = None
 
     async def create(self, **payload):
         self.payload = payload
+        if self.error is not None:
+            raise self.error
         return self.response
 
 
 class _FakeChat:
-    def __init__(self, response: ChatCompletion) -> None:
-        self.completions = _FakeCompletions(response)
+    def __init__(
+        self,
+        response: ChatCompletion | None = None,
+        *,
+        error: Exception | None = None,
+    ) -> None:
+        self.completions = _FakeCompletions(response, error=error)
 
 
 class _FakeEmbeddings:
-    def __init__(self, response: CreateEmbeddingResponse) -> None:
+    def __init__(
+        self,
+        response: CreateEmbeddingResponse,
+        *,
+        error: Exception | None = None,
+    ) -> None:
         self.response = response
+        self.error = error
         self.payload = None
 
     async def create(self, **payload):
         self.payload = payload
+        if self.error is not None:
+            raise self.error
         return self.response
 
 
@@ -96,7 +122,9 @@ class _FakeOpenAIClient:
     def __init__(
         self,
         response: ChatCompletion | None = None,
+        chat_error: Exception | None = None,
         embedding_response: CreateEmbeddingResponse | None = None,
+        embedding_error: Exception | None = None,
         model_data: list[Any] | None = None,
         model_error: Exception | None = None,
     ) -> None:
@@ -118,8 +146,8 @@ class _FakeOpenAIClient:
                     "total_tokens": 0,
                 },
             )
-        self.chat = _FakeChat(response)
-        self.embeddings = _FakeEmbeddings(embedding_response)
+        self.chat = _FakeChat(response, error=chat_error)
+        self.embeddings = _FakeEmbeddings(embedding_response, error=embedding_error)
         self.models = _FakeModels(data=model_data, error=model_error)
         self.closed = False
 
@@ -444,5 +472,220 @@ def test_openai_compatible_instance_translates_model_list_errors() -> None:
             await instance.list_models()
 
         assert caught.value.cause is error
+
+    asyncio.run(run())
+
+
+def test_openai_compatible_instance_filters_blank_models() -> None:
+    async def run() -> None:
+        instance = OpenAICompatibleProviderInstance(
+            config=ProviderConfig(
+                provider_id="test",
+                provider_type=ProviderType.OPENAI_COMPATIBLE,
+                api_key="test-key",
+            ),
+            info=_provider_info(),
+            client=_FakeOpenAIClient(
+                model_data=[
+                    "",
+                    {"id": ""},
+                    {"id": "dict-model", "display_name": "Dict Model"},
+                    SimpleNamespace(name="named-model", owned_by="owner"),
+                ]
+            ),
+        )
+
+        models = await instance.list_models()
+
+        assert [model.model_id for model in models] == ["dict-model", "named-model"]
+        assert models[0].name == "Dict Model"
+        assert models[1].metadata == {"owned_by": "owner"}
+
+    asyncio.run(run())
+
+
+def test_openai_compatible_instance_translates_chat_and_embedding_errors() -> None:
+    async def run() -> None:
+        chat_error = RuntimeError("chat failed")
+        chat_instance = OpenAICompatibleProviderInstance(
+            config=ProviderConfig(
+                provider_id="test",
+                provider_type=ProviderType.OPENAI_COMPATIBLE,
+                api_key="test-key",
+            ),
+            info=_provider_info(),
+            client=_FakeOpenAIClient(chat_error=chat_error),
+        )
+
+        with pytest.raises(ProviderError) as chat_caught:
+            await chat_instance.chat(
+                ChatRequest(
+                    provider_id="test",
+                    model="test-model",
+                    messages=[Message(role=MessageRole.USER, content=_text("hi"))],
+                )
+            )
+        assert chat_caught.value.cause is chat_error
+
+        embedding_error = RuntimeError("embedding failed")
+        embedding_instance = OpenAICompatibleProviderInstance(
+            config=ProviderConfig(
+                provider_id="test",
+                provider_type=ProviderType.OPENAI_COMPATIBLE,
+                api_key="test-key",
+            ),
+            info=_provider_info(),
+            client=_FakeOpenAIClient(embedding_error=embedding_error),
+        )
+
+        with pytest.raises(ProviderError) as embedding_caught:
+            await embedding_instance.embed(
+                EmbeddingRequest(
+                    provider_id="test",
+                    model="embed-model",
+                    input="hello",
+                )
+            )
+        assert embedding_caught.value.cause is embedding_error
+
+    asyncio.run(run())
+
+
+class _FakeStream:
+    def __init__(
+        self,
+        chunks: list[Any],
+        *,
+        error_after_chunks: Exception | None = None,
+    ) -> None:
+        self._chunks = chunks
+        self._error_after_chunks = error_after_chunks
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        if self._chunks:
+            return self._chunks.pop(0)
+        if self._error_after_chunks is not None:
+            error = self._error_after_chunks
+            self._error_after_chunks = None
+            raise error
+        raise StopAsyncIteration
+
+
+def _stream_chunk(
+    *,
+    content: str | None = None,
+    finish_reason: str | None = None,
+    model: str = "test-model",
+) -> Any:
+    return SimpleNamespace(
+        model=model,
+        choices=[
+            SimpleNamespace(
+                delta=SimpleNamespace(content=content, tool_calls=None),
+                finish_reason=finish_reason,
+            )
+        ],
+        usage=None,
+    )
+
+
+def test_openai_compatible_instance_streams_chunks_with_usage_options() -> None:
+    async def run() -> None:
+        stream = _FakeStream(
+            [
+                _stream_chunk(content="hello"),
+                _stream_chunk(finish_reason="stop"),
+            ]
+        )
+        client = _FakeOpenAIClient(response=stream)
+        instance = OpenAICompatibleProviderInstance(
+            config=ProviderConfig(
+                provider_id="test",
+                provider_type=ProviderType.OPENAI_COMPATIBLE,
+                api_key="test-key",
+            ),
+            info=_provider_info(),
+            client=client,
+        )
+
+        chunks = [
+            chunk
+            async for chunk in instance.chat_stream(
+                ChatRequest(
+                    provider_id="test",
+                    model="test-model",
+                    messages=[Message(role=MessageRole.USER, content=_text("hi"))],
+                )
+            )
+        ]
+
+        assert client.chat.completions.payload is not None
+        assert client.chat.completions.payload["stream"] is True
+        assert client.chat.completions.payload["stream_options"] == {
+            "include_usage": True
+        }
+        assert chunks[0].delta_text == "hello"
+        assert chunks[1].finish_reason == ChatFinishReason.STOP
+
+    asyncio.run(run())
+
+
+def test_openai_compatible_instance_translates_stream_create_and_iter_errors() -> None:
+    async def run() -> None:
+        create_error = RuntimeError("stream create failed")
+        create_instance = OpenAICompatibleProviderInstance(
+            config=ProviderConfig(
+                provider_id="test",
+                provider_type=ProviderType.OPENAI_COMPATIBLE,
+                api_key="test-key",
+            ),
+            info=_provider_info(),
+            client=_FakeOpenAIClient(chat_error=create_error),
+        )
+
+        with pytest.raises(ProviderError) as create_caught:
+            [
+                chunk
+                async for chunk in create_instance.chat_stream(
+                    ChatRequest(
+                        provider_id="test",
+                        model="test-model",
+                        messages=[Message(role=MessageRole.USER, content=_text("hi"))],
+                    )
+                )
+            ]
+        assert create_caught.value.cause is create_error
+
+        iter_error = RuntimeError("stream iter failed")
+        iter_instance = OpenAICompatibleProviderInstance(
+            config=ProviderConfig(
+                provider_id="test",
+                provider_type=ProviderType.OPENAI_COMPATIBLE,
+                api_key="test-key",
+            ),
+            info=_provider_info(),
+            client=_FakeOpenAIClient(
+                response=_FakeStream(
+                    [_stream_chunk(content="before error")],
+                    error_after_chunks=iter_error,
+                )
+            ),
+        )
+
+        with pytest.raises(ProviderError) as iter_caught:
+            [
+                chunk
+                async for chunk in iter_instance.chat_stream(
+                    ChatRequest(
+                        provider_id="test",
+                        model="test-model",
+                        messages=[Message(role=MessageRole.USER, content=_text("hi"))],
+                    )
+                )
+            ]
+        assert iter_caught.value.cause is iter_error
 
     asyncio.run(run())

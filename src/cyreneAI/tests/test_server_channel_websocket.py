@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import asyncio
 from datetime import timedelta
+from types import SimpleNamespace
+
+import pytest
 
 from cyreneAI.application.runtime import CyreneAIRuntime
+from cyreneAI.core.errors.base import CyreneAIError
 from cyreneAI.core.bot.registry import BotChannelRegistry
 from cyreneAI.core.context.builder import ContextWindowBuilder
 from cyreneAI.core.provider.factory import ProviderFactory
@@ -181,6 +185,111 @@ def test_channel_websocket_runner_closes_channel_source() -> None:
         await runner.stop()
 
         assert channel.closed is True
+        await runtime.close()
+
+    asyncio.run(run())
+
+
+def test_channel_websocket_runner_start_is_idempotent_and_stop_cancels() -> None:
+    async def run() -> None:
+        provider = FakeWebSocketProvider()
+        channel = FakeWebSocketChannel()
+
+        async def wait_forever(handler) -> None:
+            channel.handler = handler
+            await asyncio.Event().wait()
+
+        channel.run_websocket = wait_forever
+        runtime = await _build_runtime(provider, channel)
+        runner = ChannelWebSocketRunner(
+            runtime=runtime,
+            channel_id="qq",
+            provider_id="provider-1",
+            model="chat-model",
+        )
+
+        runner.start()
+        first_task = runner._task
+        assert runner.is_running is True
+
+        runner.start()
+        assert runner._task is first_task
+
+        await runner.stop()
+
+        assert runner.is_running is False
+        assert runner._task is None
+        assert channel.closed is True
+        await runtime.close()
+
+    asyncio.run(run())
+
+
+def test_channel_websocket_runner_reports_missing_registry_and_websocket() -> None:
+    async def run() -> None:
+        no_registry_runner = ChannelWebSocketRunner(
+            runtime=SimpleNamespace(bot_channel_registry=None),
+            channel_id="qq",
+            provider_id="provider-1",
+            model="chat-model",
+        )
+
+        with pytest.raises(RuntimeError, match="registry is not set"):
+            await no_registry_runner.run_until_closed()
+
+        registry = BotChannelRegistry()
+        registry.register(BotChannelDefinition(channel_id="qq", name="QQ"), object())
+        missing_websocket_runner = ChannelWebSocketRunner(
+            runtime=SimpleNamespace(bot_channel_registry=registry),
+            channel_id="qq",
+            provider_id="provider-1",
+            model="chat-model",
+        )
+
+        with pytest.raises(RuntimeError, match="does not support websocket"):
+            await missing_websocket_runner.run_until_closed()
+
+    asyncio.run(run())
+
+
+def test_channel_websocket_runner_handle_update_swallows_processing_errors() -> None:
+    class FailingHandler:
+        def __init__(self, error: Exception) -> None:
+            self.error = error
+            self.requests = []
+
+        async def handle(self, request) -> None:
+            self.requests.append(request)
+            raise self.error
+
+    async def run() -> None:
+        provider = FakeWebSocketProvider()
+        channel = FakeWebSocketChannel()
+        runtime = await _build_runtime(provider, channel)
+        runner = ChannelWebSocketRunner(
+            runtime=runtime,
+            channel_id="qq",
+            provider_id="provider-1",
+            model="chat-model",
+            temperature=0.2,
+            max_tokens=10,
+            max_agent_steps=7,
+            metadata={"source": "test"},
+        )
+
+        cyrene_handler = FailingHandler(CyreneAIError("rejected"))
+        runner._handler = cyrene_handler
+        await runner.handle_update({"id": "event-1", "t": "EVENT", "d": {}})
+        assert cyrene_handler.requests[0].temperature == 0.2
+        assert cyrene_handler.requests[0].max_tokens == 10
+        assert cyrene_handler.requests[0].max_agent_steps == 7
+        assert cyrene_handler.requests[0].metadata["websocket_event_type"] == "EVENT"
+
+        runtime_handler = FailingHandler(RuntimeError("boom"))
+        runner._handler = runtime_handler
+        await runner.handle_update({"d": {}})
+        assert runtime_handler.requests[0].metadata["websocket_event_id"] == ""
+
         await runtime.close()
 
     asyncio.run(run())

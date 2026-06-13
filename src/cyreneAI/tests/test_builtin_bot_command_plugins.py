@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import timedelta
+
+import pytest
 
 from cyreneAI.application.bootstrap import build_cyrene_ai_runtime
 from cyreneAI.application.plugins.builtin_bot_commands import (
@@ -8,6 +11,11 @@ from cyreneAI.application.plugins.builtin_bot_commands import (
 )
 from cyreneAI.core.bot.session_manager import BotSessionManager
 from cyreneAI.core.context.manager import ContextManager
+from cyreneAI.core.errors.base import NotFoundError
+from cyreneAI.core.errors.plugin import PluginInputError
+from cyreneAI.core.provider.factory import ProviderFactory
+from cyreneAI.core.provider.manager import ProviderManager
+from cyreneAI.core.provider.registry import ProviderRegistry
 from cyreneAI.core.schema.bot import BotCommand, BotEvent, BotEventType, BotMessage
 from cyreneAI.core.schema.context import (
     ContextItem,
@@ -26,12 +34,23 @@ from cyreneAI.core.schema.message import (
 )
 from cyreneAI.core.schema.plugin import (
     PluginCommandDefinition,
+    PluginCommandArgumentDefinition,
+    PluginCommandArgumentKind,
     PluginCommandRequest,
     PluginCommandResult,
     PluginDefinition,
     PluginLifecycleStatus,
     PluginStatusReport,
 )
+from cyreneAI.core.schema.provider import (
+    ProviderCapability,
+    ProviderConfig,
+    ProviderInfo,
+    ProviderModel,
+    ProviderType,
+)
+from cyreneAI.core.schema.tool import ToolDefinition, ToolResult
+from cyreneAI.core.tool.registry import ToolRegistry
 from cyreneAI.infra.adapters.bot_sessions.memory import InMemoryBotSessionStore
 
 
@@ -71,6 +90,56 @@ class FakePluginExecutor:
         return PluginCommandResult()
 
 
+class FakeToolExecutor:
+    async def execute(self, call) -> ToolResult:
+        return ToolResult(call_id=call.id, name=call.name, content="ok")
+
+
+class FakeProvider:
+    info = ProviderInfo(
+        provider_type=ProviderType.OPENAI_RESPONSES,
+        name="Fake Provider",
+        description="Fake provider.",
+        models=["catalog-model"],
+        capabilities=[ProviderCapability.CHAT],
+    )
+
+    def __init__(self, config: ProviderConfig) -> None:
+        self.config = config
+        self.closed = False
+
+    async def list_models(self) -> list[ProviderModel]:
+        return [ProviderModel(model_id="runtime-model")]
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+class FakeProviderConfigStore:
+    def __init__(self, *configs: ProviderConfig) -> None:
+        self.configs = {config.provider_id: config for config in configs}
+        self.upserted: list[ProviderConfig] = []
+
+    async def list_configs(self) -> list[ProviderConfig]:
+        return list(self.configs.values())
+
+    async def get_config(self, provider_id: str) -> ProviderConfig:
+        config = self.configs.get(provider_id)
+        if config is None:
+            raise NotFoundError(f"Provider config not found: {provider_id}")
+        return config
+
+    async def upsert_config(self, config: ProviderConfig) -> None:
+        self.configs[config.provider_id] = config
+        self.upserted.append(config)
+
+    async def delete_config(self, provider_id: str) -> None:
+        self.configs.pop(provider_id, None)
+
+    async def close(self) -> None:
+        pass
+
+
 def _event(text: str) -> BotEvent:
     return BotEvent(
         event_id="event-1",
@@ -87,6 +156,38 @@ def _event(text: str) -> BotEvent:
             ]
         ),
     )
+
+
+async def _provider_runtime(
+    *,
+    config_store: FakeProviderConfigStore | None = None,
+    provider_configs: list[ProviderConfig] | None = None,
+):
+    provider_registry = ProviderRegistry()
+    provider_registry.register_provider(FakeProvider.info)
+    provider_factory = ProviderFactory()
+    provider_factory.register(
+        ProviderType.OPENAI_RESPONSES,
+        lambda config: _build_fake_provider(config),
+    )
+    provider_manager = ProviderManager(provider_factory)
+    for config in provider_configs or []:
+        if config.enabled:
+            await provider_manager.add(config)
+    return await build_cyrene_ai_runtime(
+        provider_manager=provider_manager,
+        provider_registry=provider_registry,
+        provider_config_store=config_store,
+    )
+
+
+async def _build_fake_provider(config: ProviderConfig) -> FakeProvider:
+    return FakeProvider(config)
+
+
+def _text(result: PluginCommandResult) -> str:
+    assert result.actions[0].message is not None
+    return result.actions[0].message.content[0].text or ""
 
 
 def test_builtin_bot_command_plugin_is_registered_by_default() -> None:
@@ -150,6 +251,69 @@ def test_builtin_bot_command_plugin_can_be_disabled() -> None:
     asyncio.run(run())
 
 
+def test_builtin_basic_commands_require_event_and_render_common_replies() -> None:
+    async def run() -> None:
+        runtime = await build_cyrene_ai_runtime(register_builtin_tools=False)
+        assert runtime.plugin_manager is not None
+
+        with pytest.raises(PluginInputError, match="bot event"):
+            await runtime.plugin_manager.execute_command(
+                PluginCommandRequest(
+                    command=BotCommand(raw_text="/ping", name="ping"),
+                )
+            )
+
+        start = await runtime.plugin_manager.execute_command(
+            PluginCommandRequest(
+                command=BotCommand(raw_text="/start", name="start"),
+                event=_event("/start"),
+            )
+        )
+        ping = await runtime.plugin_manager.execute_command(
+            PluginCommandRequest(
+                command=BotCommand(raw_text="/ping", name="ping"),
+                event=_event("/ping"),
+            )
+        )
+        empty_echo = await runtime.plugin_manager.execute_command(
+            PluginCommandRequest(
+                command=BotCommand(raw_text="/echo", name="echo"),
+                event=_event("/echo"),
+            )
+        )
+        echo = await runtime.plugin_manager.execute_command(
+            PluginCommandRequest(
+                command=BotCommand(
+                    raw_text="/echo hello world",
+                    name="echo",
+                    args=("hello", "world"),
+                    args_text="hello world",
+                ),
+                event=_event("/echo hello world"),
+            )
+        )
+
+        assert _text(start) == "\n".join(
+            [
+                "CyreneAI bot is ready.",
+                "Use /help to see available commands.",
+            ]
+        )
+        assert start.metadata == {
+            "plugin_id": BUILTIN_BOT_COMMANDS_PLUGIN_ID,
+            "command": "start",
+            "command_args": [],
+        }
+        assert start.actions[0].metadata["bot_event_id"] == "event-1"
+        assert _text(ping) == "pong"
+        assert _text(empty_echo) == "(empty)"
+        assert _text(echo) == "hello world"
+
+        await runtime.close()
+
+    asyncio.run(run())
+
+
 def test_builtin_help_command_lists_registered_commands() -> None:
     async def run() -> None:
         runtime = await build_cyrene_ai_runtime()
@@ -184,6 +348,70 @@ def test_builtin_help_command_lists_registered_commands() -> None:
                 "/reset [session] - Reset current session context.",
             ]
         )
+
+        await runtime.close()
+
+    asyncio.run(run())
+
+
+def test_builtin_session_commands_report_disabled_usage_and_lookup_errors() -> None:
+    async def run() -> None:
+        disabled_runtime = await build_cyrene_ai_runtime()
+        assert disabled_runtime.plugin_manager is not None
+        disabled = await disabled_runtime.plugin_manager.execute_command(
+            PluginCommandRequest(
+                command=BotCommand(raw_text="/session", name="session"),
+                event=_event("/session"),
+            )
+        )
+        await disabled_runtime.close()
+
+        runtime = await build_cyrene_ai_runtime(
+            bot_session_manager=BotSessionManager(InMemoryBotSessionStore()),
+        )
+        assert runtime.plugin_manager is not None
+        event = _event("/session")
+        commands = [
+            BotCommand(raw_text="/session status", name="session status"),
+            BotCommand(raw_text="/session new", name="session new"),
+            BotCommand(raw_text="/session use", name="session use"),
+            BotCommand(
+                raw_text="/session rename old",
+                name="session rename",
+                args=("old",),
+                args_text="old",
+            ),
+            BotCommand(raw_text="/session clear", name="session clear"),
+            BotCommand(raw_text="/session delete", name="session delete"),
+        ]
+        usage_results = [
+            await runtime.plugin_manager.execute_command(
+                PluginCommandRequest(command=command, event=event)
+            )
+            for command in commands
+        ]
+        missing_status = await runtime.plugin_manager.execute_command(
+            PluginCommandRequest(
+                command=BotCommand(
+                    raw_text="/session status missing",
+                    name="session status",
+                    args=("missing",),
+                    args_text="missing",
+                ),
+                event=event,
+            )
+        )
+
+        assert _text(disabled) == "Bot sessions are disabled."
+        assert [_text(result) for result in usage_results] == [
+            "Usage: /session status <name>",
+            "Usage: /session new <name>",
+            "Usage: /session use <name>",
+            "Usage: /session rename <old> <new>",
+            "Usage: /session clear <name>",
+            "Usage: /session delete <name>",
+        ]
+        assert _text(missing_status).startswith("Session status failed:")
 
         await runtime.close()
 
@@ -436,6 +664,37 @@ def test_builtin_session_clear_keeps_conversation() -> None:
     asyncio.run(run())
 
 
+def test_builtin_reset_without_session_manager_uses_metadata_session_id() -> None:
+    async def run() -> None:
+        store = FakeContextStore()
+        runtime = await build_cyrene_ai_runtime(
+            context_manager=ContextManager(store),
+        )
+        assert runtime.plugin_manager is not None
+        await store.save_snapshot(
+            ContextSnapshot(
+                snapshot_id="metadata-snapshot",
+                session_id="ctx-1",
+                window=ContextWindow(window_id="window-1"),
+            )
+        )
+
+        result = await runtime.plugin_manager.execute_command(
+            PluginCommandRequest(
+                command=BotCommand(raw_text="/reset", name="reset"),
+                event=_event("/reset"),
+                metadata={"context_session_id": "ctx-1"},
+            )
+        )
+
+        assert _text(result) == "Context reset. Context snapshots deleted: 1."
+        assert await store.list_snapshots("ctx-1") == []
+
+        await runtime.close()
+
+    asyncio.run(run())
+
+
 def test_builtin_reset_command_reports_missing_context_manager() -> None:
     async def run() -> None:
         runtime = await build_cyrene_ai_runtime(
@@ -453,6 +712,54 @@ def test_builtin_reset_command_reports_missing_context_manager() -> None:
         assert result.actions[0].message is not None
         assert result.actions[0].message.content[0].text == (
             "Context manager is not configured."
+        )
+
+        await runtime.close()
+
+    asyncio.run(run())
+
+
+def test_builtin_agent_commands_report_usage_and_not_found() -> None:
+    async def run() -> None:
+        store = FakeContextStore()
+        runtime = await build_cyrene_ai_runtime(
+            context_manager=ContextManager(store),
+        )
+        assert runtime.plugin_manager is not None
+
+        missing_run_id = await runtime.plugin_manager.execute_command(
+            PluginCommandRequest(
+                command=BotCommand(raw_text="/agent run", name="agent run"),
+                event=_event("/agent run"),
+                is_admin=True,
+            )
+        )
+        too_many_run_args = await runtime.plugin_manager.execute_command(
+            PluginCommandRequest(
+                command=BotCommand(
+                    raw_text="/agent runs one two three",
+                    name="agent runs",
+                    args=("one", "two", "three"),
+                    args_text="one two three",
+                ),
+                event=_event("/agent runs one two three"),
+                is_admin=True,
+            )
+        )
+        missing_trace = await runtime.plugin_manager.execute_command(
+            PluginCommandRequest(
+                command=BotCommand(raw_text="/agent trace", name="agent trace"),
+                event=_event("/agent trace"),
+                is_admin=True,
+            )
+        )
+
+        assert _text(missing_run_id) == "Usage: /agent run <snapshot_id>"
+        assert _text(too_many_run_args) == (
+            "Agent runs failed: Usage: /agent runs [session] [limit]"
+        )
+        assert _text(missing_trace) == (
+            "No agent trace found for session memory:user-1."
         )
 
         await runtime.close()
@@ -819,6 +1126,357 @@ def test_builtin_agent_runs_command_reports_history_errors() -> None:
     asyncio.run(run())
 
 
+def test_builtin_tool_commands_report_disabled_empty_usage_and_toggle_states() -> None:
+    async def run() -> None:
+        disabled_runtime = await build_cyrene_ai_runtime(register_builtin_tools=False)
+        disabled_runtime.tool_registry = None
+        assert disabled_runtime.plugin_manager is not None
+        disabled = await disabled_runtime.plugin_manager.execute_command(
+            PluginCommandRequest(
+                command=BotCommand(raw_text="/tool ls", name="tool ls"),
+                event=_event("/tool ls"),
+                is_admin=True,
+            )
+        )
+        await disabled_runtime.close()
+
+        empty_runtime = await build_cyrene_ai_runtime(register_builtin_tools=False)
+        assert empty_runtime.plugin_manager is not None
+        empty = await empty_runtime.plugin_manager.execute_command(
+            PluginCommandRequest(
+                command=BotCommand(raw_text="/tool ls", name="tool ls"),
+                event=_event("/tool ls"),
+                is_admin=True,
+            )
+        )
+        usage_on = await empty_runtime.plugin_manager.execute_command(
+            PluginCommandRequest(
+                command=BotCommand(raw_text="/tool on", name="tool on"),
+                event=_event("/tool on"),
+                is_admin=True,
+            )
+        )
+        unknown = await empty_runtime.plugin_manager.execute_command(
+            PluginCommandRequest(
+                command=BotCommand(
+                    raw_text="/tool off missing",
+                    name="tool off",
+                    args=("missing",),
+                    args_text="missing",
+                ),
+                event=_event("/tool off missing"),
+                is_admin=True,
+            )
+        )
+        await empty_runtime.close()
+
+        registry = ToolRegistry()
+        registry.register(
+            ToolDefinition(
+                name="lookup",
+                description="Lookup data.",
+                metadata={"source": "test"},
+            ),
+            FakeToolExecutor(),
+        )
+        runtime = await build_cyrene_ai_runtime(
+            tool_registry=registry,
+            register_builtin_tools=False,
+        )
+        assert runtime.plugin_manager is not None
+        listed = await runtime.plugin_manager.execute_command(
+            PluginCommandRequest(
+                command=BotCommand(raw_text="/tool ls", name="tool ls"),
+                event=_event("/tool ls"),
+                is_admin=True,
+            )
+        )
+        off = await runtime.plugin_manager.execute_command(
+            PluginCommandRequest(
+                command=BotCommand(
+                    raw_text="/tool off lookup",
+                    name="tool off",
+                    args=("lookup",),
+                    args_text="lookup",
+                ),
+                event=_event("/tool off lookup"),
+                is_admin=True,
+            )
+        )
+        all_off = await runtime.plugin_manager.execute_command(
+            PluginCommandRequest(
+                command=BotCommand(raw_text="/tool off_all", name="tool off_all"),
+                event=_event("/tool off_all"),
+                is_admin=True,
+            )
+        )
+        on = await runtime.plugin_manager.execute_command(
+            PluginCommandRequest(
+                command=BotCommand(
+                    raw_text="/tool on lookup",
+                    name="tool on",
+                    args=("lookup",),
+                    args_text="lookup",
+                ),
+                event=_event("/tool on lookup"),
+                is_admin=True,
+            )
+        )
+
+        assert _text(disabled) == "Tools are disabled."
+        assert _text(empty) == "No tools registered."
+        assert _text(usage_on) == "Usage: /tool on <name>"
+        assert _text(unknown) == "Unknown tool: missing"
+        assert _text(listed) == "\n".join(
+            [
+                "Tools:",
+                "- lookup [on] risk=trusted source=test: Lookup data.",
+            ]
+        )
+        assert _text(off) == "Tool lookup disabled."
+        assert _text(all_off) == "Disabled 0 tool(s)."
+        assert _text(on) == "Tool lookup enabled."
+
+        await runtime.close()
+
+    asyncio.run(run())
+
+
+def test_builtin_provider_commands_report_empty_usage_and_missing_runtime() -> None:
+    async def run() -> None:
+        runtime = await build_cyrene_ai_runtime()
+        assert runtime.plugin_manager is not None
+
+        commands = [
+            BotCommand(raw_text="/provider ls", name="provider ls"),
+            BotCommand(raw_text="/provider catalog", name="provider catalog"),
+            BotCommand(raw_text="/provider status", name="provider status"),
+            BotCommand(raw_text="/provider models", name="provider models"),
+            BotCommand(raw_text="/provider start", name="provider start"),
+            BotCommand(
+                raw_text="/provider start missing",
+                name="provider start",
+                args=("missing",),
+                args_text="missing",
+            ),
+            BotCommand(raw_text="/provider stop", name="provider stop"),
+            BotCommand(raw_text="/provider reload", name="provider reload"),
+            BotCommand(raw_text="/provider check", name="provider check"),
+        ]
+
+        results = [
+            await runtime.plugin_manager.execute_command(
+                PluginCommandRequest(
+                    command=command,
+                    event=_event(command.raw_text),
+                    is_admin=True,
+                )
+            )
+            for command in commands
+        ]
+
+        assert [_text(result) for result in results] == [
+            "No providers configured.",
+            "Provider catalog is not configured.",
+            "Usage: /provider status <provider_id>",
+            "Usage: /provider models <provider_id>",
+            "Usage: /provider start <provider_id>",
+            "Provider config store is not configured.",
+            "Usage: /provider stop <provider_id>",
+            "Usage: /provider reload <provider_id>",
+            "Usage: /provider check <provider_id>",
+        ]
+
+        await runtime.close()
+
+    asyncio.run(run())
+
+
+def test_builtin_provider_commands_manage_saved_and_running_providers() -> None:
+    async def run() -> None:
+        running_config = ProviderConfig(
+            provider_id="running",
+            provider_type=ProviderType.OPENAI_RESPONSES,
+            api_key="secret",
+            base_url="https://provider.test",
+            timeout=timedelta(seconds=2),
+        )
+        saved_config = ProviderConfig(
+            provider_id="saved",
+            provider_type=ProviderType.OPENAI_RESPONSES,
+            enabled=False,
+            models=[ProviderModel(model_id="saved-model")],
+        )
+        store = FakeProviderConfigStore(running_config, saved_config)
+        runtime = await _provider_runtime(
+            config_store=store,
+            provider_configs=[running_config],
+        )
+        assert runtime.plugin_manager is not None
+
+        listed = await runtime.plugin_manager.execute_command(
+            PluginCommandRequest(
+                command=BotCommand(raw_text="/provider ls", name="provider ls"),
+                event=_event("/provider ls"),
+                is_admin=True,
+            )
+        )
+        catalog = await runtime.plugin_manager.execute_command(
+            PluginCommandRequest(
+                command=BotCommand(
+                    raw_text="/provider catalog",
+                    name="provider catalog",
+                ),
+                event=_event("/provider catalog"),
+                is_admin=True,
+            )
+        )
+        status = await runtime.plugin_manager.execute_command(
+            PluginCommandRequest(
+                command=BotCommand(
+                    raw_text="/provider status running",
+                    name="provider status",
+                    args=("running",),
+                    args_text="running",
+                ),
+                event=_event("/provider status running"),
+                is_admin=True,
+            )
+        )
+        saved_status = await runtime.plugin_manager.execute_command(
+            PluginCommandRequest(
+                command=BotCommand(
+                    raw_text="/provider status saved",
+                    name="provider status",
+                    args=("saved",),
+                    args_text="saved",
+                ),
+                event=_event("/provider status saved"),
+                is_admin=True,
+            )
+        )
+        models = await runtime.plugin_manager.execute_command(
+            PluginCommandRequest(
+                command=BotCommand(
+                    raw_text="/provider models running",
+                    name="provider models",
+                    args=("running",),
+                    args_text="running",
+                ),
+                event=_event("/provider models running"),
+                is_admin=True,
+            )
+        )
+        check = await runtime.plugin_manager.execute_command(
+            PluginCommandRequest(
+                command=BotCommand(
+                    raw_text="/provider check running",
+                    name="provider check",
+                    args=("running",),
+                    args_text="running",
+                ),
+                event=_event("/provider check running"),
+                is_admin=True,
+            )
+        )
+        started = await runtime.plugin_manager.execute_command(
+            PluginCommandRequest(
+                command=BotCommand(
+                    raw_text="/provider start saved",
+                    name="provider start",
+                    args=("saved",),
+                    args_text="saved",
+                ),
+                event=_event("/provider start saved"),
+                is_admin=True,
+            )
+        )
+        reloaded = await runtime.plugin_manager.execute_command(
+            PluginCommandRequest(
+                command=BotCommand(
+                    raw_text="/provider reload saved",
+                    name="provider reload",
+                    args=("saved",),
+                    args_text="saved",
+                ),
+                event=_event("/provider reload saved"),
+                is_admin=True,
+            )
+        )
+        stopped = await runtime.plugin_manager.execute_command(
+            PluginCommandRequest(
+                command=BotCommand(
+                    raw_text="/provider stop running",
+                    name="provider stop",
+                    args=("running",),
+                    args_text="running",
+                ),
+                event=_event("/provider stop running"),
+                is_admin=True,
+            )
+        )
+        unknown = await runtime.plugin_manager.execute_command(
+            PluginCommandRequest(
+                command=BotCommand(
+                    raw_text="/provider status missing",
+                    name="provider status",
+                    args=("missing",),
+                    args_text="missing",
+                ),
+                event=_event("/provider status missing"),
+                is_admin=True,
+            )
+        )
+
+        listed_text = _text(listed)
+        assert listed_text.startswith("Providers:")
+        assert (
+            "- running type=openai_responses status=running enabled=true "
+            "configured=true api_key=set"
+        ) in listed_text
+        assert (
+            "- saved type=openai_responses status=stopped enabled=false "
+            "configured=true api_key=missing"
+        ) in listed_text
+        assert _text(catalog) == "\n".join(
+            [
+                "Provider catalog:",
+                "- openai_responses name=Fake Provider capabilities=chat",
+            ]
+        )
+        assert _text(status) == "\n".join(
+            [
+                "Provider running:",
+                "status: running",
+                "type: openai_responses",
+                "configured: true",
+                "running: true",
+                "enabled: true",
+                "api_key: set",
+                "base_url: https://provider.test",
+                "timeout_seconds: 2",
+            ]
+        )
+        assert "status: stopped" in _text(saved_status)
+        assert _text(models) == "\n".join(
+            [
+                "Models for running:",
+                "- runtime-model",
+            ]
+        )
+        assert _text(check) == "Provider running reachable. models=1"
+        assert _text(started) == "Provider saved started."
+        assert store.configs["saved"].enabled is True
+        assert _text(reloaded) == "Provider saved reloaded."
+        assert _text(stopped) == "Provider running stopped."
+        assert store.configs["running"].enabled is False
+        assert _text(unknown) == "Unknown provider: missing"
+
+        await runtime.close()
+
+    asyncio.run(run())
+
+
 def test_builtin_help_command_lists_admin_commands_for_admin() -> None:
     async def run() -> None:
         runtime = await build_cyrene_ai_runtime()
@@ -999,6 +1657,105 @@ def test_builtin_plugin_admin_commands_show_command_audit() -> None:
         assert unknown_result.actions[0].message.content[0].text == (
             "Unknown plugin: missing.plugin"
         )
+
+        await runtime.close()
+
+    asyncio.run(run())
+
+
+def test_builtin_plugin_commands_render_argument_usage_shapes() -> None:
+    async def run() -> None:
+        runtime = await build_cyrene_ai_runtime()
+        assert runtime.plugin_manager is not None
+        registry = runtime.plugin_manager._registry
+        registry.register(
+            PluginDefinition(
+                plugin_id="thirdparty.deploy",
+                name="Deploy",
+                description="Deploy plugin.",
+                commands=[
+                    PluginCommandDefinition(
+                        name="deploy",
+                        description="Deploy an app.",
+                        arguments=[
+                            PluginCommandArgumentDefinition(
+                                name="environment",
+                                type="str",
+                            ),
+                            PluginCommandArgumentDefinition(
+                                name="version",
+                                type="str",
+                                kind=PluginCommandArgumentKind.OPTION,
+                                aliases=["-v"],
+                            ),
+                            PluginCommandArgumentDefinition(
+                                name="dry_run",
+                                type="bool",
+                                kind=PluginCommandArgumentKind.FLAG,
+                                aliases=["-n"],
+                                required=False,
+                            ),
+                            PluginCommandArgumentDefinition(
+                                name="notes",
+                                type="str",
+                                kind=PluginCommandArgumentKind.REST,
+                                required=False,
+                                default="none",
+                            ),
+                        ],
+                    ),
+                    PluginCommandDefinition(
+                        name="promote",
+                        description="Promote an app.",
+                        enabled=False,
+                    ),
+                ],
+            ),
+            FakePluginExecutor(),
+        )
+
+        result = await runtime.plugin_manager.execute_command(
+            PluginCommandRequest(
+                command=BotCommand(
+                    raw_text="/plugin commands thirdparty.deploy",
+                    name="plugin commands",
+                    args=("thirdparty.deploy",),
+                    args_text="thirdparty.deploy",
+                ),
+                event=_event("/plugin commands thirdparty.deploy"),
+                is_admin=True,
+            )
+        )
+        unknown = await runtime.plugin_manager.execute_command(
+            PluginCommandRequest(
+                command=BotCommand(
+                    raw_text="/plugin commands missing.plugin",
+                    name="plugin commands",
+                    args=("missing.plugin",),
+                    args_text="missing.plugin",
+                ),
+                event=_event("/plugin commands missing.plugin"),
+                is_admin=True,
+            )
+        )
+
+        assert _text(result) == "\n".join(
+            [
+                "Plugin commands:",
+                (
+                    "- /deploy <environment> <--version|-v> [--dry-run|-n] "
+                    "[notes...=none] plugin=thirdparty.deploy "
+                    "kind=third-party status=enabled aliases=- admin=false "
+                    "enabled=true: Deploy an app."
+                ),
+                (
+                    "- /promote plugin=thirdparty.deploy kind=third-party "
+                    "status=enabled aliases=- admin=false enabled=false: "
+                    "Promote an app."
+                ),
+            ]
+        )
+        assert _text(unknown) == "Unknown plugin: missing.plugin"
 
         await runtime.close()
 
