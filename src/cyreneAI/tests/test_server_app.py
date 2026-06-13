@@ -1512,6 +1512,9 @@ providers:
 
 
 def test_server_provider_config_file_requires_private_permissions(tmp_path) -> None:
+    if os.name == "nt":
+        pytest.skip("POSIX permission bits are not enforced on Windows")
+
     config_path = tmp_path / "cyrene.toml"
     config_path.write_text(
         """
@@ -1522,6 +1525,8 @@ api_key = "openai-file-key"
         encoding="utf-8",
     )
     config_path.chmod(0o644)
+    if not config_path.stat().st_mode & 0o027:
+        pytest.skip("filesystem does not expose group/other permission bits")
 
     with pytest.raises(PermissionError):
         build_provider_configs_from_file(config_path)
