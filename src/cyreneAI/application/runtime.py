@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
 from cyreneAI.core.bot.bot_protocol import BotChannelRegistryProtocol
 from cyreneAI.core.bot.polling_protocol import BotPollingStateStoreProtocol
@@ -20,6 +19,10 @@ from cyreneAI.core.plugin.plugin_protocol import (
 from cyreneAI.core.provider.manager import ProviderManager
 from cyreneAI.core.provider.provider_protocol import ProviderConfigStoreProtocol
 from cyreneAI.core.provider.registry import ProviderRegistry
+from cyreneAI.core.runtime.runtime_protocol import (
+    CyreneAIRuntimeProtocol,
+    PluginHostProtocol,
+)
 from cyreneAI.core.schema.application import BotAdminConfig
 from cyreneAI.core.skill.manager import SkillManager
 from cyreneAI.core.tool.manager import ToolManager
@@ -29,12 +32,9 @@ from cyreneAI.core.tool.tool_protocol import (
 )
 from cyreneAI.core.vector.manager import VectorManager
 
-if TYPE_CHECKING:
-    from cyreneAI.application.plugins.host import PluginHost
-
 
 @dataclass(slots=True)
-class CyreneAIRuntime:
+class CyreneAIRuntime(CyreneAIRuntimeProtocol):
     """
     CyreneAI 应用运行时
     """
@@ -47,7 +47,7 @@ class CyreneAIRuntime:
     vector_manager: VectorManager | None = None
     skill_manager: SkillManager | None = None
     plugin_manager: PluginManager | None = None
-    plugin_host: PluginHost | None = None
+    plugin_host: PluginHostProtocol | None = None
     plugin_storage: PluginStorageProtocol | None = None
     plugin_assets: PluginAssetsProtocol | None = None
     plugin_python_environment_manager: PluginPythonEnvironmentManagerProtocol | None = (
