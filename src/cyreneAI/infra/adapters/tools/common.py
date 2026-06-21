@@ -112,8 +112,8 @@ def decode_process_output(data: bytes) -> str:
     """
     Decode subprocess output into a stable cross-platform text form.
     """
-    return data.decode("utf-8", errors="replace").replace("\r\n", "\n").replace(
-        "\r", "\n"
+    return (
+        data.decode("utf-8", errors="replace").replace("\r\n", "\n").replace("\r", "\n")
     )
 
 
