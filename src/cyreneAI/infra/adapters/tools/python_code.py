@@ -14,7 +14,10 @@ from cyreneAI.core.schema.tool import (
     ToolSafetyProfile,
 )
 from cyreneAI.core.tool.tool_protocol import ToolRegistryProtocol
-from cyreneAI.infra.adapters.tools.common import parse_tool_arguments
+from cyreneAI.infra.adapters.tools.common import (
+    decode_process_output,
+    parse_tool_arguments,
+)
 
 
 def register_python_code_interpreter_tool(
@@ -108,8 +111,8 @@ class _PythonCodeInterpreterExecutor:
             raise ToolExecutionError("code_interpreter stderr exceeded maximum size")
 
         exit_code = process.returncode
-        stdout_text = stdout.decode("utf-8", errors="replace")
-        stderr_text = stderr.decode("utf-8", errors="replace")
+        stdout_text = decode_process_output(stdout)
+        stderr_text = decode_process_output(stderr)
         payload: dict[str, int | str | None] = {
             "exit_code": exit_code,
             "stdout": stdout_text,

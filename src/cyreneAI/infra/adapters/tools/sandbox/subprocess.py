@@ -14,6 +14,7 @@ from cyreneAI.core.schema.tool import (
 )
 from cyreneAI.core.tool.tool_protocol import ToolExecutorProtocol
 from cyreneAI.infra.adapters.tools.common import (
+    decode_process_output,
     make_tool_payload,
     map_json_text_tool_result,
     parse_tool_arguments,
@@ -116,7 +117,7 @@ class SubprocessToolSandboxRunner:
         )
         if process.returncode != 0:
             stderr_text = _truncate_text(
-                stderr.decode("utf-8", errors="replace").strip(),
+                decode_process_output(stderr).strip(),
                 max_chars=self._max_error_message_chars,
             )
             raise ToolExecutionError(
@@ -126,7 +127,7 @@ class SubprocessToolSandboxRunner:
 
         result = map_json_text_tool_result(
             call,
-            stdout.decode("utf-8", errors="replace"),
+            decode_process_output(stdout),
         )
         return _with_sandbox_metadata(
             result,

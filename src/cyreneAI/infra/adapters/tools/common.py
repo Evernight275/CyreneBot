@@ -108,6 +108,15 @@ def make_tool_payload(call: ToolCall, arguments: dict[str, Any]) -> dict[str, An
     }
 
 
+def decode_process_output(data: bytes) -> str:
+    """
+    Decode subprocess output into a stable cross-platform text form.
+    """
+    return data.decode("utf-8", errors="replace").replace("\r\n", "\n").replace(
+        "\r", "\n"
+    )
+
+
 def _looks_like_tool_result(payload: dict[str, Any]) -> bool:
     return any(
         key in payload

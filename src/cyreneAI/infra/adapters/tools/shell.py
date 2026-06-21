@@ -20,7 +20,10 @@ from cyreneAI.core.schema.tool import (
     ToolSafetyProfile,
 )
 from cyreneAI.core.tool.tool_protocol import ToolRegistryProtocol
-from cyreneAI.infra.adapters.tools.common import parse_tool_arguments
+from cyreneAI.infra.adapters.tools.common import (
+    decode_process_output,
+    parse_tool_arguments,
+)
 
 
 def register_controlled_shell_tool(
@@ -287,8 +290,8 @@ class _ControlledShellExecutor:
             max_stdout_bytes=self._max_stdout_bytes,
             max_stderr_bytes=self._max_stderr_bytes,
         )
-        stdout_text = stdout.decode("utf-8", errors="replace")
-        stderr_text = stderr.decode("utf-8", errors="replace")
+        stdout_text = decode_process_output(stdout)
+        stderr_text = decode_process_output(stderr)
         return _json_result(
             call,
             {
