@@ -5,6 +5,10 @@ on:
     branches: ["main", "master"]
   pull_request:
 
+permissions:
+  contents: write
+  pull-requests: read
+
 jobs:
   pr-evidence:
     name: PR Evidence
@@ -108,3 +112,47 @@ jobs:
 
       - name: Test
         run: uv run pytest src/cyreneAI/tests
+
+  format:
+    name: Format / Python 3.12
+    runs-on: ubuntu-latest
+
+    needs: [test]
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+
+    env:
+      PYTHONUTF8: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Format
+        run: uv run black src .github/scripts
+
+      - name: Commit format changes
+        run: |
+          if git diff --quiet; then
+            echo "No format changes."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src .github/scripts
+          git commit -m "chore: format code"
+          git push
